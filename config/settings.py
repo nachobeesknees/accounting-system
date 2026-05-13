@@ -143,6 +143,12 @@ ACCOUNT_UNIQUE_EMAIL = True
 ACCOUNT_USERNAME_REQUIRED = False
 LOGIN_REDIRECT_URL = '/dashboard/'
 
+# Session Configuration
+# Use signed cookies for sessions to avoid database dependency
+# This allows demo accounts to work without a functioning database
+SESSION_ENGINE = 'django.contrib.sessions.backends.signed_cookies'
+SESSION_COOKIE_AGE = 86400 * 30  # 30 days
+
 # Django-Q2
 Q_CLUSTER = {
     'name': 'accounting_system',
