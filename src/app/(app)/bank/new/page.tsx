@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { getAccounts, getCustomers, getEntities } from "@/lib/data";
 import { NewBankAccountForm } from "./NewBankAccountForm";
 
@@ -10,7 +11,8 @@ export default async function Page() {
   ]);
   return (
     <>
-      <PageHeader title="New bank account" meta="Bank / New" />
+      <Breadcrumbs items={[{ label: "Bank Accounts", href: "/bank" }, { label: "New" }]} />
+      <PageHeader title="New bank account" />
       <NewBankAccountForm
         glAccounts={glAccounts}
         entities={entities}

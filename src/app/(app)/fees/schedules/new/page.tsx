@@ -1,10 +1,18 @@
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { NewScheduleForm } from "./NewScheduleForm";
 
 export default function Page() {
   return (
     <>
-      <PageHeader title="New fee schedule" meta="Fees / Schedules / New" />
+      <Breadcrumbs
+        items={[
+          { label: "Fees", href: "/fees" },
+          { label: "Schedules", href: "/fees?tab=schedules" },
+          { label: "New" },
+        ]}
+      />
+      <PageHeader title="New fee schedule" />
       <NewScheduleForm />
     </>
   );

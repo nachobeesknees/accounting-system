@@ -1,6 +1,7 @@
 import { ButtonLink } from "@/components/ui/Button";
 import { Empty } from "@/components/ui/Empty";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { getAccounts, getBankAccounts, getVendors } from "@/lib/data";
 
 import { NewRecurringForm } from "./NewRecurringForm";
@@ -29,9 +30,15 @@ export default async function Page() {
   if (expenseAccounts.length === 0) {
     return (
       <>
+        <Breadcrumbs
+          items={[
+            { label: "Cash Forecast", href: "/cash-forecast" },
+            { label: "Recurring", href: "/cash-forecast/recurring" },
+            { label: "New" },
+          ]}
+        />
         <PageHeader
           title="New recurring payment"
-          meta="Recurring payments / New"
           actions={
             <ButtonLink href="/cash-forecast/recurring" variant="secondary">
               Cancel
@@ -55,9 +62,15 @@ export default async function Page() {
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Cash Forecast", href: "/cash-forecast" },
+          { label: "Recurring", href: "/cash-forecast/recurring" },
+          { label: "New" },
+        ]}
+      />
       <PageHeader
         title="New recurring payment"
-        meta="Recurring payments / New"
         actions={
           <ButtonLink href="/cash-forecast/recurring" variant="secondary">
             Cancel

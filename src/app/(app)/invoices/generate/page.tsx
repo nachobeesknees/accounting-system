@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { ButtonLink } from "@/components/ui/Button";
 import {
   getCustomers,
@@ -90,6 +91,7 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs items={[{ label: "Invoices", href: "/invoices" }, { label: "Generate" }]} />
       <PageHeader
         title="Generate invoice from annual fees"
         meta="Pull a client's entity fees for the year, optionally add common service charges, then send for approval."

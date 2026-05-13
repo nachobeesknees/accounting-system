@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
@@ -51,6 +52,12 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Price Lists", href: "/price-lists" },
+          { label: priceList.name },
+        ]}
+      />
       <PageHeader
         title={priceList.name}
         meta={office ? `${office.code} — ${office.name} · v${priceList.versionNumber}` : `v${priceList.versionNumber}`}

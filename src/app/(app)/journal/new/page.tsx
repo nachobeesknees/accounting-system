@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { getAccounts, getPeriods } from "@/lib/data";
 import { NewEntryForm } from "./NewEntryForm";
 
@@ -9,6 +10,12 @@ export default async function Page() {
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Journal Entries", href: "/journal" },
+          { label: "New" },
+        ]}
+      />
       <PageHeader
         title="New Journal Entry"
         meta="Draft a balanced entry — debits must equal credits."

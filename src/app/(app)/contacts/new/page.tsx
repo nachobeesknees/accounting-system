@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { getContacts } from "@/lib/data";
 import { NewContactForm } from "./NewContactForm";
 
@@ -16,7 +17,8 @@ export default async function Page() {
   const contacts = await getContacts();
   return (
     <>
-      <PageHeader title="New contact" meta="Contacts / New" />
+      <Breadcrumbs items={[{ label: "Contacts", href: "/contacts" }, { label: "New" }]} />
+      <PageHeader title="New contact" />
       <NewContactForm nextCode={nextContactCode(contacts.map((c) => c.code))} />
     </>
   );

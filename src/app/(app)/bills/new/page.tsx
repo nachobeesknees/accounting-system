@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { ButtonLink } from "@/components/ui/Button";
 import { Empty } from "@/components/ui/Empty";
 import { getAccounts, getVendors } from "@/lib/data";
@@ -25,9 +26,9 @@ export default async function Page() {
   if (vendors.length === 0) {
     return (
       <>
+        <Breadcrumbs items={[{ label: "Bills", href: "/bills" }, { label: "New" }]} />
         <PageHeader
           title="New bill"
-          meta="Bills / New"
           actions={
             <ButtonLink href="/bills" variant="secondary">
               Cancel
@@ -51,9 +52,9 @@ export default async function Page() {
 
   return (
     <>
+      <Breadcrumbs items={[{ label: "Bills", href: "/bills" }, { label: "New" }]} />
       <PageHeader
         title="New bill"
-        meta="Bills / New"
         actions={
           <ButtonLink href="/bills" variant="secondary">
             Cancel

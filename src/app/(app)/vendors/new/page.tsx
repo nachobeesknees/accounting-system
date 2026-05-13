@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Section } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -81,9 +82,9 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs items={[{ label: "Vendors", href: "/vendors" }, { label: "New" }]} />
       <PageHeader
         title="New vendor"
-        meta="Vendors / New"
         actions={
           <ButtonLink href="/vendors" variant="secondary">
             Cancel

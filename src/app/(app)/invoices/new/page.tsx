@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { getAccounts, getCustomers } from "@/lib/data";
 import { NewInvoiceForm } from "./NewInvoiceForm";
 
@@ -23,7 +24,8 @@ export default async function Page() {
 
   return (
     <>
-      <PageHeader title="New invoice" meta="Invoices / New" />
+      <Breadcrumbs items={[{ label: "Invoices", href: "/invoices" }, { label: "New" }]} />
+      <PageHeader title="New invoice" />
       <NewInvoiceForm
         customers={customers}
         revenueAccounts={revenueAccounts}

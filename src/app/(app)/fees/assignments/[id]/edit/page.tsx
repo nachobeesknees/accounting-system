@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { ButtonLink } from "@/components/ui/Button";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { getEntityById, getEntityFeeById } from "@/lib/data";
 import { getSessionUser } from "@/lib/session";
@@ -24,6 +25,16 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Fees", href: "/fees" },
+          {
+            label: `${entity?.code ?? "Entity"} · ${fee.billingYear}`,
+            href: `/fees/assignments/${fee.id}`,
+          },
+          { label: "Edit" },
+        ]}
+      />
       <PageHeader
         title="Edit billing schedule"
         meta={

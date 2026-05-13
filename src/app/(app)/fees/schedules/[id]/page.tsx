@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
@@ -36,6 +37,13 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Fees", href: "/fees" },
+          { label: "Schedules", href: "/fees?tab=schedules" },
+          { label: schedule.name },
+        ]}
+      />
       <PageHeader
         title={schedule.name}
         meta="Fee schedule"

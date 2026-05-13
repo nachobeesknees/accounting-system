@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
@@ -39,6 +40,13 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Entities", href: "/entities" },
+          { label: entity.name, href: `/entities/${entity.id}` },
+          { label: "Books" },
+        ]}
+      />
       <PageHeader
         title={`${entity.code} — books`}
         meta={`${entity.name} · ${client?.name ?? "—"} · ${ccy}`}

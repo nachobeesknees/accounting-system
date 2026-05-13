@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, TextareaField } from "@/components/ui/Field";
@@ -65,9 +66,9 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs items={[{ label: "Clients", href: "/customers" }, { label: "New" }]} />
       <PageHeader
         title="New client"
-        meta="Clients / New"
         actions={
           <Link
             href="/customers"

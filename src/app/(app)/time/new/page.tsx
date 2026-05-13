@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import {
   getCustomers,
   getEmployeeRates,
@@ -31,7 +32,8 @@ export default async function Page() {
 
   return (
     <>
-      <PageHeader title="Log time" meta="Time / New" />
+      <Breadcrumbs items={[{ label: "Time Entries", href: "/time" }, { label: "New" }]} />
+      <PageHeader title="Log time" />
       <NewTimeForm
         users={users}
         rates={rates}

@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import {
   getBaseCurrency,
   getCurrencies,
@@ -33,7 +34,8 @@ export default async function Page({
 
   return (
     <>
-      <PageHeader title="New entity" meta="Entities / New" />
+      <Breadcrumbs items={[{ label: "Entities", href: "/entities" }, { label: "New" }]} />
+      <PageHeader title="New entity" />
       <NewEntityForm
         customers={customers}
         currencies={currencies}

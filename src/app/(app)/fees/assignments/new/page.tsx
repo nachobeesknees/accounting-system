@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { getCustomers, getEntities, getFeeSchedules } from "@/lib/data";
 import { NewAssignmentForm } from "./NewAssignmentForm";
 
@@ -15,7 +16,8 @@ export default async function Page({
   ]);
   return (
     <>
-      <PageHeader title="Assign fee" meta="Fees / Assignments / New" />
+      <Breadcrumbs items={[{ label: "Fees", href: "/fees" }, { label: "Assign" }]} />
+      <PageHeader title="Assign fee" />
       <NewAssignmentForm
         entities={entities}
         customers={customers}

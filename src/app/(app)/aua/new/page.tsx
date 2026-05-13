@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { getCustomers, getEntities } from "@/lib/data";
 import { NewAssetForm } from "./NewAssetForm";
 
@@ -11,7 +12,8 @@ export default async function Page({
   const [entities, customers] = await Promise.all([getEntities(), getCustomers()]);
   return (
     <>
-      <PageHeader title="New asset" meta="Assets / New" />
+      <Breadcrumbs items={[{ label: "Assets / AUA", href: "/aua" }, { label: "New" }]} />
+      <PageHeader title="New asset" />
       <NewAssetForm
         entities={entities}
         customers={customers}

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { ButtonLink } from "@/components/ui/Button";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Pill, statusVariant } from "@/components/ui/Pill";
 import {
@@ -45,6 +46,13 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Cash Forecast", href: "/cash-forecast" },
+          { label: "Recurring", href: "/cash-forecast/recurring" },
+          { label: payment.name },
+        ]}
+      />
       <PageHeader
         title={payment.name}
         meta="Recurring payment"
