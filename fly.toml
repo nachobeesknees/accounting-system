@@ -16,7 +16,7 @@ dockerfile = "Dockerfile"
   DEBUG = 'False'
   ENVIRONMENT = 'production'
   ALLOWED_HOSTS = 'accounting-system-demo.fly.dev'
-  LOAD_DEMO_DATA = 'False'
+  LOAD_DEMO_DATA = 'True'
   SECRET_KEY = 'django-insecure-erp-demo-key-change-in-production-2026'
 
 [http_service]
