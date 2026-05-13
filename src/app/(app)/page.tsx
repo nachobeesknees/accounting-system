@@ -48,17 +48,21 @@ function Tile({
   label,
   value,
   sub,
+  href,
 }: {
   label: string;
   value: string;
   sub?: string;
+  href?: string;
 }) {
-  return (
+  const body = (
     <div
-      className="rounded-lg p-3.5"
+      className="rounded-lg p-3.5 kpi-tile"
       style={{
         border: "1px solid var(--line)",
         background: "var(--raised)",
+        cursor: href ? "pointer" : "default",
+        height: "100%",
       }}
     >
       <div
@@ -93,20 +97,36 @@ function Tile({
       )}
     </div>
   );
+  if (!href) return body;
+  return (
+    <Link href={href} style={{ textDecoration: "none", display: "block" }}>
+      {body}
+    </Link>
+  );
 }
 
 function AgingRow({
   label,
   amount,
   neg,
+  href,
 }: {
   label: string;
   amount: number;
   neg?: boolean;
+  href?: string;
 }) {
   return (
-    <TR>
-      <TD>{label}</TD>
+    <TR href={href}>
+      <TD>
+        {href ? (
+          <Link href={href} style={{ color: "var(--ink-2)", textDecoration: "none" }}>
+            {label}
+          </Link>
+        ) : (
+          label
+        )}
+      </TD>
       <TD num neg={neg && amount > 0}>
         {formatUSD(amount, { paren: true })}
       </TD>
@@ -207,6 +227,26 @@ export default async function Page() {
         }
       />
 
+      <div className="px-6 my-3.5">
+        <div className="flex flex-wrap gap-1.5">
+          <ButtonLink variant="secondary" href="/entities/new">
+            + New entity
+          </ButtonLink>
+          <ButtonLink variant="secondary" href="/time/new">
+            + Log time
+          </ButtonLink>
+          <ButtonLink variant="secondary" href="/invoices/new">
+            + New invoice
+          </ButtonLink>
+          <ButtonLink variant="secondary" href="/bills/new">
+            + New bill
+          </ButtonLink>
+          <ButtonLink variant="secondary" href="/contacts/new">
+            + New contact
+          </ButtonLink>
+        </div>
+      </div>
+
       {awaitingApproval.length > 0 && (
         <div className="px-6 my-3.5">
           <Card
@@ -266,21 +306,25 @@ export default async function Page() {
           label="Total Assets"
           value={formatUSD(kpis.assets, { paren: true })}
           sub="All asset accounts"
+          href="/reports"
         />
         <Tile
           label="Total Liabilities"
           value={formatUSD(kpis.liabilities, { paren: true })}
           sub="All liability accounts"
+          href="/reports"
         />
         <Tile
           label="Net Income (YTD)"
           value={formatUSD(kpis.netIncome, { paren: true })}
           sub="Revenue minus expense"
+          href="/reports"
         />
         <Tile
           label="Cash Balance"
           value={formatUSD(kpis.cash, { paren: true })}
           sub="Account 1000 — Cash"
+          href="/bank"
         />
       </div>
 
@@ -353,10 +397,15 @@ export default async function Page() {
               </TR>
             </THead>
             <TBody>
-              <AgingRow label="Current" amount={ar.current} />
-              <AgingRow label="1–30 days" amount={ar.d30} />
-              <AgingRow label="31–60 days" amount={ar.d60} />
-              <AgingRow label="60+ days" amount={ar.d90} neg />
+              <AgingRow label="Current" amount={ar.current} href="/invoices" />
+              <AgingRow label="1–30 days" amount={ar.d30} href="/invoices" />
+              <AgingRow label="31–60 days" amount={ar.d60} href="/invoices" />
+              <AgingRow
+                label="60+ days"
+                amount={ar.d90}
+                neg
+                href="/invoices?status=overdue"
+              />
             </TBody>
           </Table>
         </Card>
@@ -380,10 +429,10 @@ export default async function Page() {
               </TR>
             </THead>
             <TBody>
-              <AgingRow label="Current" amount={ap.current} />
-              <AgingRow label="1–30 days" amount={ap.d30} />
-              <AgingRow label="31–60 days" amount={ap.d60} />
-              <AgingRow label="60+ days" amount={ap.d90} neg />
+              <AgingRow label="Current" amount={ap.current} href="/bills" />
+              <AgingRow label="1–30 days" amount={ap.d30} href="/bills" />
+              <AgingRow label="31–60 days" amount={ap.d60} href="/bills" />
+              <AgingRow label="60+ days" amount={ap.d90} neg href="/bills" />
             </TBody>
           </Table>
         </Card>
