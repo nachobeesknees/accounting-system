@@ -1,0 +1,7 @@
+FROM postgres:16-alpine
+
+ENV POSTGRES_DB=accounting_system \
+    POSTGRES_USER=postgres \
+    POSTGRES_PASSWORD=postgres
+
+EXPOSE 5432
