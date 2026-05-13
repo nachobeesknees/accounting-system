@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import Link from "next/link";
 
@@ -33,13 +34,13 @@ function styleFor(variant: Variant) {
 
 const BASE_CLASSES = "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-medium cursor-pointer transition-colors no-underline";
 
-export function Button({
-  variant = "secondary",
-  children,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; children: ReactNode }) {
+export const Button = forwardRef<
+  HTMLButtonElement,
+  ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; children: ReactNode }
+>(function Button({ variant = "secondary", children, ...props }, ref) {
   return (
     <button
+      ref={ref}
       {...props}
       className={`${BASE_CLASSES} ${variantClasses[variant]} ${props.className ?? ""}`}
       style={{ ...styleFor(variant), ...(props.style ?? {}) }}
@@ -47,7 +48,7 @@ export function Button({
       {children}
     </button>
   );
-}
+});
 
 export function ButtonLink({
   variant = "secondary",
