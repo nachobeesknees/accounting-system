@@ -12,6 +12,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAccounts,
   getBankAccounts,
+  getCustomerAssignments,
   getCustomerById,
   getInvoiceById,
   getJournalEntryById,
@@ -20,7 +21,7 @@ import {
 import { getSessionUser } from "@/lib/session";
 import type { Customer, Invoice, User } from "@/lib/types";
 import { formatDate } from "@/lib/format";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import {
   assignedApproveInvoiceAction,
   cfoApproveInvoiceAction,
@@ -114,18 +115,26 @@ export default async function Page({
 
   const sessionUser = await getSessionUser();
 
-  const [customer, journalEntry, accounts, bankAccounts] = await Promise.all([
-    getCustomerById(invoice.customerId),
-    invoice.journalEntryId
-      ? getJournalEntryById(invoice.journalEntryId)
-      : Promise.resolve(undefined),
-    getAccounts(),
-    getBankAccounts(),
-  ]);
+  const [customer, journalEntry, accounts, bankAccounts, assignments] =
+    await Promise.all([
+      getCustomerById(invoice.customerId),
+      invoice.journalEntryId
+        ? getJournalEntryById(invoice.journalEntryId)
+        : Promise.resolve(undefined),
+      getAccounts(),
+      getBankAccounts(),
+      getCustomerAssignments(invoice.customerId),
+    ]);
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
 
   const assignedUserId = readAssignedUserId(customer);
   const approvals = approvalFields(invoice);
+  // Anyone marked can_approve in customer_assignments may grant the final
+  // approval — plus the legacy single assignee for backwards compat.
+  const approverIds = new Set<string>(
+    assignments.filter((a) => a.canApprove).map((a) => a.userId),
+  );
+  if (assignedUserId) approverIds.add(assignedUserId);
 
   // Resolve users referenced by the approval state.
   const userIdsToLoad = Array.from(
@@ -171,8 +180,7 @@ export default async function Page({
     !!sessionUser && (sessionUser.role === "CFO" || sessionUser.isSuperuser);
   const isAssignedApprover =
     !!sessionUser &&
-    !!assignedUserId &&
-    (sessionUser.userId === assignedUserId || sessionUser.isSuperuser);
+    (sessionUser.isSuperuser || approverIds.has(sessionUser.userId));
   const canActOnPending =
     (isPendingCfo && isCfo) || (isPendingAssigned && isAssignedApprover);
 
@@ -350,12 +358,12 @@ export default async function Page({
             />
             <KV
               k="Total"
-              v={formatUSD(invoice.total, { paren: true })}
+              v={formatMoney(invoice.total, invoice.currencyCode, { paren: true })}
               mono
             />
             <KV
               k="Amount paid"
-              v={formatUSD(invoice.amountPaid, { paren: true })}
+              v={formatMoney(invoice.amountPaid, invoice.currencyCode, { paren: true })}
               mono
             />
             <KV
@@ -368,7 +376,7 @@ export default async function Page({
                       : undefined,
                   }}
                 >
-                  {formatUSD(balance, { paren: true })}
+                  {formatMoney(balance, invoice.currencyCode, { paren: true })}
                 </span>
               }
               mono
@@ -638,8 +646,8 @@ export default async function Page({
                       )}
                     </TD>
                     <TD num>{line.quantity}</TD>
-                    <TD num>{formatUSD(line.unitPrice, { paren: true })}</TD>
-                    <TD num>{formatUSD(line.amount, { paren: true })}</TD>
+                    <TD num>{formatMoney(line.unitPrice, invoice.currencyCode, { paren: true })}</TD>
+                    <TD num>{formatMoney(line.amount, invoice.currencyCode, { paren: true })}</TD>
                   </TR>
                 );
               })}
@@ -649,7 +657,7 @@ export default async function Page({
                 <TD>Subtotal</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD num>{formatUSD(invoice.subtotal, { paren: true })}</TD>
+                <TD num>{formatMoney(invoice.subtotal, invoice.currencyCode, { paren: true })}</TD>
               </TR>
               <TR total hover={false}>
                 <TD>{""}</TD>
@@ -657,7 +665,7 @@ export default async function Page({
                 <TD>Tax</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD num>{formatUSD(invoice.taxAmount, { paren: true })}</TD>
+                <TD num>{formatMoney(invoice.taxAmount, invoice.currencyCode, { paren: true })}</TD>
               </TR>
               <TR total hover={false}>
                 <TD>{""}</TD>
@@ -665,7 +673,7 @@ export default async function Page({
                 <TD>Total</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD num>{formatUSD(invoice.total, { paren: true })}</TD>
+                <TD num>{formatMoney(invoice.total, invoice.currencyCode, { paren: true })}</TD>
               </TR>
             </TBody>
           </Table>

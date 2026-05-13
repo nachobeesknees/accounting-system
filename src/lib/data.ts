@@ -1244,7 +1244,9 @@ export async function getInvoices(): Promise<Invoice[]> {
 /**
  * Returns invoices that need the given user's action right now:
  * - status='pending_cfo' AND user role is 'CFO' or isSuperuser
- * - status='pending_assigned' AND user is the customer's assignedUserId, OR isSuperuser
+ * - status='pending_assigned' AND user is any can_approve assignee on the
+ *   customer (customer_assignments), or the legacy assigned_user_id, or
+ *   isSuperuser.
  */
 export async function getInvoicesAwaitingApproval(
   userId: string,
@@ -1261,18 +1263,39 @@ export async function getInvoicesAwaitingApproval(
   if (allPending.length === 0) return [];
 
   const customerIds = Array.from(new Set(allPending.map((i) => i.customerId)));
-  const customers = await db
-    .select()
-    .from(schema.customers)
-    .where(inArray(schema.customers.id, customerIds));
+  const [customers, assignments] = await Promise.all([
+    db
+      .select()
+      .from(schema.customers)
+      .where(inArray(schema.customers.id, customerIds)),
+    db
+      .select()
+      .from(schema.customerAssignments)
+      .where(inArray(schema.customerAssignments.customerId, customerIds)),
+  ]);
   const customerMap = new Map(customers.map((c) => [c.id, c] as const));
+  // customerId → set of userIds that can grant the assigned-approval.
+  const approversByCustomer = new Map<string, Set<string>>();
+  for (const a of assignments) {
+    if (!a.canApprove) continue;
+    const set = approversByCustomer.get(a.customerId) ?? new Set<string>();
+    set.add(a.userId);
+    approversByCustomer.set(a.customerId, set);
+  }
+  // Fold in the legacy single-assignee column so older customers without a
+  // row in customer_assignments still authorise their primary user.
+  for (const c of customers) {
+    if (!c.assignedUserId) continue;
+    const set = approversByCustomer.get(c.id) ?? new Set<string>();
+    set.add(c.assignedUserId);
+    approversByCustomer.set(c.id, set);
+  }
 
   const filtered = allPending.filter((inv) => {
     if (inv.status === "pending_cfo") return isCfo;
     if (inv.status === "pending_assigned") {
       if (isSuperuser) return true;
-      const cust = customerMap.get(inv.customerId);
-      return !!cust && cust.assignedUserId === userId;
+      return approversByCustomer.get(inv.customerId)?.has(userId) ?? false;
     }
     return false;
   });
@@ -1378,6 +1401,40 @@ export async function getJournalEntries(
       : effective == null
         ? await base.where(isNull(schema.journalEntries.firmEntityId))
         : await base.where(eq(schema.journalEntries.firmEntityId, effective));
+  if (heads.length === 0) return [];
+  const ids = heads.map((h) => h.id);
+  const lineRows = await db
+    .select()
+    .from(schema.journalLines)
+    .where(inArray(schema.journalLines.journalEntryId, ids));
+  const linesByEntry = new Map<string, JournalLine[]>();
+  for (const l of lineRows) {
+    const mapped = mapJournalLine(l);
+    const arr = linesByEntry.get(mapped.journalEntryId) ?? [];
+    arr.push(mapped);
+    linesByEntry.set(mapped.journalEntryId, arr);
+  }
+  return heads.map((h) => mapJournalEntry(h, linesByEntry.get(h.id) ?? []));
+}
+
+/**
+ * Journal entries scoped to a CLIENT entity (the `entities` table — Joe Smith
+ * Trust, etc.). Uses `journalEntries.entityId`, not `firmEntityId` which
+ * stores firm-issuer IDs. Used by /entities/[id]/books to show per-client-
+ * entity books regardless of which firm issued the entry.
+ */
+export async function getJournalEntriesByClientEntity(
+  clientEntityId: string,
+): Promise<JournalEntry[]> {
+  const db = getDb();
+  const heads = await db
+    .select()
+    .from(schema.journalEntries)
+    .where(eq(schema.journalEntries.entityId, clientEntityId))
+    .orderBy(
+      desc(schema.journalEntries.entryDate),
+      desc(schema.journalEntries.entryNumber),
+    );
   if (heads.length === 0) return [];
   const ids = heads.map((h) => h.id);
   const lineRows = await db

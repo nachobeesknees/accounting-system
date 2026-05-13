@@ -12,7 +12,7 @@ import {
   getCustomers,
   getEntityById,
   getEntityPlRollup,
-  getJournalEntries,
+  getJournalEntriesByClientEntity,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatAmount, parseAmount } from "@/lib/money";
@@ -28,7 +28,7 @@ export default async function Page({
 
   const [accounts, entries, rollup, customers] = await Promise.all([
     getAccounts(entity.id),
-    getJournalEntries(entity.id),
+    getJournalEntriesByClientEntity(entity.id),
     getEntityPlRollup(),
     getCustomers(),
   ]);

@@ -17,7 +17,7 @@ import {
   getUserById,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import type { AssetKind } from "@/lib/types";
 import { CustomFields } from "@/components/CustomFields";
 import { Attachments } from "@/components/Attachments";
@@ -215,7 +215,11 @@ export default async function Page({
                     fontVariantNumeric: "tabular-nums",
                   }}
                 >
-                  {formatUSD(parseAmount(latest.value), { paren: true })}
+                  {formatMoney(
+                    parseAmount(latest.value),
+                    latest.currencyCode || asset.currencyCode,
+                    { paren: true },
+                  )}
                 </div>
                 <div style={{ color: "var(--ink-3)" }}>
                   {formatDate(latest.snapshotDate)}
@@ -301,7 +305,13 @@ export default async function Page({
                 {snapshots.map((s) => (
                   <TR key={s.id}>
                     <TD>{formatDate(s.snapshotDate)}</TD>
-                    <TD num>{formatUSD(parseAmount(s.value), { paren: true })}</TD>
+                    <TD num>
+                      {formatMoney(
+                        parseAmount(s.value),
+                        s.currencyCode || asset.currencyCode,
+                        { paren: true },
+                      )}
+                    </TD>
                     <TD style={{ color: "var(--ink-3)" }}>{s.source ?? "—"}</TD>
                     <TD style={{ color: "var(--ink-3)" }}>{s.notes ?? "—"}</TD>
                     <TD style={{ color: "var(--ink-3)" }}>

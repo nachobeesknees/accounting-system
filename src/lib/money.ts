@@ -29,6 +29,21 @@ export function formatUSD(value: number | string, opts: { paren?: boolean } = {}
   return `USD ${formatAmount(value, opts)}`;
 }
 
+/**
+ * Currency-aware formatter. Shows `XYZ 1,234.56`, matching the JetBrains-Mono
+ * money style used everywhere. Falls back to "USD" when ccy is empty so the
+ * caller never has to special-case a missing column. Prefer this over
+ * `formatUSD` on any record that carries an explicit `currencyCode`.
+ */
+export function formatMoney(
+  value: number | string,
+  currencyCode: string | null | undefined,
+  opts: { paren?: boolean } = {},
+): string {
+  const code = (currencyCode ?? "").trim() || "USD";
+  return `${code} ${formatAmount(value, opts)}`;
+}
+
 export function sumDebits(lines: Array<{ debit: string }>): number {
   return lines.reduce((s, l) => s + parseAmount(l.debit), 0);
 }

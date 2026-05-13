@@ -17,7 +17,7 @@ import {
   getVendorById,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 
 import {
   approveBillAction,
@@ -211,12 +211,12 @@ export default async function Page({
             />
             <KV
               k="Total"
-              v={formatUSD(bill.total, { paren: true })}
+              v={formatMoney(bill.total, bill.currencyCode, { paren: true })}
               mono
             />
             <KV
               k="Amount paid"
-              v={formatUSD(bill.amountPaid, { paren: true })}
+              v={formatMoney(bill.amountPaid, bill.currencyCode, { paren: true })}
               mono
             />
             <KV
@@ -229,7 +229,7 @@ export default async function Page({
                       : undefined,
                   }}
                 >
-                  {formatUSD(balance, { paren: true })}
+                  {formatMoney(balance, bill.currencyCode, { paren: true })}
                 </span>
               }
               mono
@@ -353,8 +353,8 @@ export default async function Page({
                       )}
                     </TD>
                     <TD num>{line.quantity}</TD>
-                    <TD num>{formatUSD(line.unitPrice, { paren: true })}</TD>
-                    <TD num>{formatUSD(line.amount, { paren: true })}</TD>
+                    <TD num>{formatMoney(line.unitPrice, bill.currencyCode, { paren: true })}</TD>
+                    <TD num>{formatMoney(line.amount, bill.currencyCode, { paren: true })}</TD>
                   </TR>
                 );
               })}
@@ -364,7 +364,7 @@ export default async function Page({
                 <TD>Subtotal</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD num>{formatUSD(bill.subtotal, { paren: true })}</TD>
+                <TD num>{formatMoney(bill.subtotal, bill.currencyCode, { paren: true })}</TD>
               </TR>
               <TR total hover={false}>
                 <TD>{""}</TD>
@@ -372,7 +372,7 @@ export default async function Page({
                 <TD>Tax</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD num>{formatUSD(bill.taxAmount, { paren: true })}</TD>
+                <TD num>{formatMoney(bill.taxAmount, bill.currencyCode, { paren: true })}</TD>
               </TR>
               <TR total hover={false}>
                 <TD>{""}</TD>
@@ -380,7 +380,7 @@ export default async function Page({
                 <TD>Total</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD num>{formatUSD(bill.total, { paren: true })}</TD>
+                <TD num>{formatMoney(bill.total, bill.currencyCode, { paren: true })}</TD>
               </TR>
             </TBody>
           </Table>

@@ -18,6 +18,42 @@ import { getDb, schema } from "@/db";
 import { sumCredits, sumDebits, toDecimalString } from "./money";
 import type { JournalEntry, SessionUser } from "./types";
 import { getJournalEntryById } from "./data";
+import { getEntityScope } from "./entity-scope";
+
+/**
+ * Currency to use for a new transaction issued by the firm. Prefers the
+ * currently-scoped firm entity's currency; falls back to the first active
+ * firm's currency, then "USD". Used by createInvoice / createBill so a
+ * non-USD scope (e.g. Europe SARL) issues invoices in the right currency
+ * instead of always defaulting to USD.
+ */
+async function getFirmIssuingCurrency(): Promise<{
+  firmEntityId: string | null;
+  currencyCode: string;
+}> {
+  const db = getDb();
+  const scope = await getEntityScope();
+  if (scope) {
+    const [office] = await db
+      .select({ id: schema.offices.id, currencyCode: schema.offices.currencyCode })
+      .from(schema.offices)
+      .where(eq(schema.offices.id, scope))
+      .limit(1);
+    if (office) {
+      return { firmEntityId: office.id, currencyCode: office.currencyCode };
+    }
+  }
+  const [first] = await db
+    .select({ id: schema.offices.id, currencyCode: schema.offices.currencyCode })
+    .from(schema.offices)
+    .where(eq(schema.offices.isActive, true))
+    .orderBy(schema.offices.code)
+    .limit(1);
+  return {
+    firmEntityId: first?.id ?? null,
+    currencyCode: first?.currencyCode ?? "USD",
+  };
+}
 
 function uid(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -1794,6 +1830,10 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
   const invoiceNumber = await nextInvoiceNumber();
   const subtotal = input.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
   const now = new Date();
+  // Inherit currency + firm from the active entity scope. This way an invoice
+  // drafted under a non-USD scope (e.g. Europe SARL) gets the right ccy
+  // straight away rather than always defaulting to USD.
+  const { firmEntityId, currencyCode } = await getFirmIssuingCurrency();
 
   await db.transaction(async (tx) => {
     await tx.insert(schema.invoices).values({
@@ -1808,7 +1848,8 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
       total: toDecimalString(subtotal),
       amountPaid: "0.00",
       balanceDue: toDecimalString(subtotal),
-      currencyCode: "USD",
+      currencyCode,
+      firmEntityId,
       notes: input.notes ?? null,
       journalEntryId: null,
       createdAt: now,
@@ -2323,6 +2364,9 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
   const billNumber = input.reference?.trim() || (await nextBillNumber());
   const subtotal = input.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
   const now = new Date();
+  // Same firm-derived currency rule as invoices — a bill recorded under a
+  // non-USD scope picks up that firm's ccy.
+  const { currencyCode } = await getFirmIssuingCurrency();
 
   await db.transaction(async (tx) => {
     await tx.insert(schema.bills).values({
@@ -2337,7 +2381,7 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
       total: toDecimalString(subtotal),
       amountPaid: "0.00",
       balanceDue: toDecimalString(subtotal),
-      currencyCode: "USD",
+      currencyCode,
       notes: input.notes ?? null,
       journalEntryId: null,
       createdAt: now,
@@ -2387,12 +2431,17 @@ export async function approveBill(user: SessionUser, billId: string) {
     { accountId: AP_ACCOUNT_ID, description: bill.billNumber, debit: 0, credit: total },
   ];
 
+  // Attribute the JE to the firm that's currently scoped (or the default
+  // active firm) so bills show up in scoped views just like invoices do.
+  const { firmEntityId } = await getFirmIssuingCurrency();
+
   const je = await createJournalEntry(user, {
     entryDate: bill.billDate,
     description: `Bill approved (${bill.billNumber})`,
     reference: bill.billNumber,
     source: "bill",
     status: "posted",
+    firmEntityId,
     lines: jeLines,
   });
 
@@ -2449,12 +2498,14 @@ export async function recordBillPayment(
     if (ba) cashAccountId = ba.accountId;
   }
 
+  const { firmEntityId } = await getFirmIssuingCurrency();
   const je = await createJournalEntry(user, {
     entryDate: input.paymentDate,
     description: `Payment sent (${bill.billNumber})`,
     reference: input.reference ?? bill.billNumber,
     source: "bill",
     status: "posted",
+    firmEntityId,
     lines: [
       { accountId: AP_ACCOUNT_ID, description: "Pay AP", debit: input.amount, credit: 0 },
       { accountId: cashAccountId, description: "Bank out", debit: 0, credit: input.amount },
