@@ -197,7 +197,7 @@ export default async function Page({
                   const hrs = parseAmount(t.durationHours);
                   const rate = t.rateAtLog ? parseAmount(t.rateAtLog) : 0;
                   return (
-                    <TR key={t.id}>
+                    <TR key={t.id} href={`/time/${t.id}`}>
                       <TD>{formatDate(t.entryDate)}</TD>
                       <TD style={{ color: "var(--ink-3)" }}>{u?.fullName ?? "—"}</TD>
                       <TD style={{ color: "var(--ink-3)" }}>

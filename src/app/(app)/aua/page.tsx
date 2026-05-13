@@ -298,7 +298,7 @@ export default async function Page() {
                       : undefined;
                   const directHold = !entity && !!asset.clientId;
                   return (
-                    <TR key={asset.id}>
+                    <TR key={asset.id} href={`/aua/${asset.id}`}>
                       <TD>
                         <Link
                           href={`/aua/${asset.id}`}

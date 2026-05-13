@@ -128,7 +128,7 @@ export default async function Page({
               </THead>
               <TBody>
                 {entries.map((e) => (
-                  <TR key={e.id}>
+                  <TR key={e.id} href={`/journal/${e.entryNumber}`}>
                     <TD mono>
                       <Link
                         href={`/journal/${e.entryNumber}`}

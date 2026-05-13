@@ -14,6 +14,7 @@ import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumDebits, sumCredits } from "./money";
+import { getEntityScope } from "./entity-scope";
 import type {
   Account,
   AccountType,
@@ -1210,19 +1211,23 @@ export async function getBillById(id: string): Promise<Bill | undefined> {
  *   - `string` → just that entity.
  */
 export async function getJournalEntries(
-  scope: string | null | "all" = "all",
+  scope?: string | null | "all",
 ): Promise<JournalEntry[]> {
+  // Undefined → read from cookie. Explicit "all" or null/entityId still
+  // override so internal calls (consolidation rollups, etc.) can bypass.
+  const effective =
+    scope === undefined ? (await getEntityScope()) ?? "all" : scope;
   const db = getDb();
   const base = db
     .select()
     .from(schema.journalEntries)
     .orderBy(desc(schema.journalEntries.entryDate), desc(schema.journalEntries.entryNumber));
   const heads =
-    scope === "all"
+    effective === "all"
       ? await base
-      : scope == null
+      : effective == null
         ? await base.where(isNull(schema.journalEntries.entityId))
-        : await base.where(eq(schema.journalEntries.entityId, scope));
+        : await base.where(eq(schema.journalEntries.entityId, effective));
   if (heads.length === 0) return [];
   const ids = heads.map((h) => h.id);
   const lineRows = await db
@@ -1347,9 +1352,11 @@ export async function getUserById(id: string): Promise<User | undefined> {
  * one SELECT per account when callers need many balances (KPIs, TB,
  * accounts page).
  */
-async function getSignedBalancesByAccount(): Promise<Map<string, number>> {
+async function getSignedBalancesByAccount(
+  scope: string | null | "all" = "all",
+): Promise<Map<string, number>> {
   const db = getDb();
-  const rows = await db
+  const q = db
     .select({
       accountId: schema.journalLines.accountId,
       debit: schema.journalLines.debit,
@@ -1359,8 +1366,26 @@ async function getSignedBalancesByAccount(): Promise<Map<string, number>> {
     .innerJoin(
       schema.journalEntries,
       eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
-    )
-    .where(eq(schema.journalEntries.status, "posted"));
+    );
+
+  let rows;
+  if (scope === "all") {
+    rows = await q.where(eq(schema.journalEntries.status, "posted"));
+  } else if (scope == null) {
+    rows = await q.where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        isNull(schema.journalEntries.entityId),
+      ),
+    );
+  } else {
+    rows = await q.where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        eq(schema.journalEntries.entityId, scope),
+      ),
+    );
+  }
 
   const balances = new Map<string, number>();
   for (const r of rows) {
@@ -1438,8 +1463,12 @@ export async function getEntityPlRollup(): Promise<EntityPlRow[]> {
 }
 
 export async function getKpis() {
-  const accounts = await getAccounts();
-  const balances = await getSignedBalancesByAccount();
+  const scope = await getEntityScope();
+  // Scope "all" = consolidated across firm + every entity. When the user
+  // has selected a single entity we narrow both the chart and the postings.
+  const accountScope = scope ?? "all";
+  const accounts = await getAccounts(accountScope);
+  const balances = await getSignedBalancesByAccount(accountScope);
   let revenue = 0,
     expenses = 0,
     assets = 0,
@@ -1467,8 +1496,10 @@ export async function getKpis() {
 }
 
 export async function getTrialBalance() {
-  const accounts = await getAccounts();
-  const balances = await getSignedBalancesByAccount();
+  const scope = await getEntityScope();
+  const accountScope = scope ?? "all";
+  const accounts = await getAccounts(accountScope);
+  const balances = await getSignedBalancesByAccount(accountScope);
   return accounts.map((a) => {
     const signed = balances.get(a.id) ?? 0;
     const isDebit = a.normalBalance === "debit";

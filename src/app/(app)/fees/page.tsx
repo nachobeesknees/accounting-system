@@ -150,7 +150,7 @@ export default async function Page({
                       ? scheduleById.get(f.feeScheduleId)
                       : undefined;
                     return (
-                      <TR key={f.id}>
+                      <TR key={f.id} href={`/fees/assignments/${f.id}`}>
                         <TD mono>{f.billingYear}</TD>
                         <TD>
                           {ent ? (
@@ -233,7 +233,7 @@ export default async function Page({
                 </THead>
                 <TBody>
                   {schedules.map((s) => (
-                    <TR key={s.id}>
+                    <TR key={s.id} href={`/fees/schedules/${s.id}`}>
                       <TD>
                         <Link
                           href={`/fees/schedules/${s.id}`}

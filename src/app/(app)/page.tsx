@@ -229,7 +229,7 @@ export default async function Page() {
               </THead>
               <TBody>
                 {awaitingApproval.map((inv) => (
-                  <TR key={inv.id}>
+                  <TR key={inv.id} href={`/invoices/${inv.id}`}>
                     <TD mono>
                       <Link
                         href={`/invoices/${inv.id}`}
@@ -308,7 +308,7 @@ export default async function Page() {
               </THead>
               <TBody>
                 {entityPlRows.map((r) => (
-                  <TR key={r.entityId}>
+                  <TR key={r.entityId} href={`/entities/${r.entityId}/books`}>
                     <TD>
                       <Link
                         href={`/entities/${r.entityId}/books`}
@@ -412,7 +412,7 @@ export default async function Page() {
             </THead>
             <TBody>
               {recentJes.map((je) => (
-                <TR key={je.id}>
+                <TR key={je.id} href={`/journal/${je.entryNumber}`}>
                   <TD mono>
                     <Link
                       href={`/journal/${je.entryNumber}`}
@@ -459,7 +459,7 @@ export default async function Page() {
                 const vendor = vendorById.get(b.vendorId);
                 const bal = parseAmount(b.balanceDue);
                 return (
-                  <TR key={b.id}>
+                  <TR key={b.id} href={`/bills/${b.id}`}>
                     <TD mono>{b.billNumber}</TD>
                     <TD>{vendor?.name ?? "—"}</TD>
                     <TD>{formatShortDate(b.dueDate)}</TD>
@@ -496,7 +496,7 @@ export default async function Page() {
                   const customer = customerById.get(inv.customerId);
                   const bal = parseAmount(inv.balanceDue);
                   return (
-                    <TR key={inv.id}>
+                    <TR key={inv.id} href={`/invoices/${inv.id}`}>
                       <TD mono>{inv.invoiceNumber}</TD>
                       <TD>{customer?.name ?? "—"}</TD>
                       <TD>{formatShortDate(inv.dueDate)}</TD>

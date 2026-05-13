@@ -76,7 +76,7 @@ export default async function Page({
                 </THead>
                 <TBody>
                   {sorted.map((p) => (
-                    <TR key={p.id}>
+                    <TR key={p.id} href={`/price-lists/${p.id}`}>
                       <TD mono>v{p.versionNumber}</TD>
                       <TD>
                         <Link

@@ -108,7 +108,7 @@ export default async function Page({
                   const balance = balances.get(c.id) ?? 0;
                   const statusKey = c.isActive ? "active" : "inactive";
                   return (
-                    <TR key={c.id}>
+                    <TR key={c.id} href={`/customers/${c.id}`}>
                       <TD mono>
                         <Link
                           href={`/customers/${c.id}`}

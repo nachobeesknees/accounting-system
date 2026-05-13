@@ -90,7 +90,7 @@ export default async function Page() {
                       ? customerById.get(ent.clientId)
                       : undefined;
                   return (
-                    <TR key={b.id}>
+                    <TR key={b.id} href={`/bank/${b.id}`}>
                       <TD>
                         <Link
                           href={`/bank/${b.id}`}

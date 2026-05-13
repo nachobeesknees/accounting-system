@@ -176,7 +176,7 @@ export default async function Page({
               </THead>
               <TBody>
                 {rows.map((r) => (
-                  <TR key={r.key}>
+                  <TR key={r.key} href={`/journal/${r.entryNumber}`}>
                     <TD>{formatRowDate(r.date)}</TD>
                     <TD mono>
                       <Link

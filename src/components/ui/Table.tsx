@@ -1,4 +1,7 @@
-import type { ReactNode, ThHTMLAttributes, TdHTMLAttributes } from "react";
+"use client";
+
+import { useRouter } from "next/navigation";
+import type { ReactNode, ThHTMLAttributes, TdHTMLAttributes, MouseEvent } from "react";
 
 export function Table({ children }: { children: ReactNode }) {
   return (
@@ -18,11 +21,50 @@ export function TBody({ children }: { children: ReactNode }) {
   return <tbody>{children}</tbody>;
 }
 
-export function TR({ children, hover = true, total = false }: { children: ReactNode; hover?: boolean; total?: boolean }) {
+/**
+ * Row. When `href` is set the entire row becomes a navigation target —
+ * clicking anywhere navigates, but clicks on nested <a>/<button>/<input>
+ * still take precedence (so action links inside cells keep working).
+ */
+export function TR({
+  children,
+  hover = true,
+  total = false,
+  href,
+}: {
+  children: ReactNode;
+  hover?: boolean;
+  total?: boolean;
+  href?: string;
+}) {
+  const router = useRouter();
+
+  const onClick = href
+    ? (e: MouseEvent<HTMLTableRowElement>) => {
+        const t = e.target as HTMLElement | null;
+        if (!t) return;
+        // Don't hijack clicks on nested interactive elements.
+        if (t.closest("a, button, input, select, textarea, label")) return;
+        // Cmd/Ctrl/Shift/middle-click → new tab.
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) {
+          if (e.button === 0 && (e.metaKey || e.ctrlKey)) {
+            window.open(href, "_blank");
+            e.preventDefault();
+            return;
+          }
+          return;
+        }
+        router.push(href);
+      }
+    : undefined;
+
+  const baseHover = hover ? "hover:bg-[var(--hover)]" : "";
+  const clickable = href ? "cursor-pointer" : "";
   return (
     <tr
-      className={`${hover ? "hover:bg-[var(--hover)]" : ""}`}
+      className={`${baseHover} ${clickable}`.trim()}
       style={total ? { background: "var(--rail)", fontWeight: 600 } : undefined}
+      onClick={onClick}
     >
       {children}
     </tr>

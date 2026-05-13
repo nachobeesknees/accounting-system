@@ -1,8 +1,27 @@
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
+import { EntityScopePicker } from "./EntityScopePicker";
+import { setEntityScope } from "@/lib/entity-scope";
 import type { SessionUser } from "@/lib/types";
 
-export function Topbar({ user, breadcrumb }: { user: SessionUser; breadcrumb?: string }) {
+type EntityOption = { id: string; code: string; name: string };
+
+async function changeEntityScope(entityId: string | null) {
+  "use server";
+  await setEntityScope(entityId);
+}
+
+export function Topbar({
+  user,
+  breadcrumb,
+  entities,
+  currentEntityId,
+}: {
+  user: SessionUser;
+  breadcrumb?: string;
+  entities: EntityOption[];
+  currentEntityId: string | null;
+}) {
   return (
     <div
       className="topbar flex items-center justify-between px-3.5 h-full"
@@ -11,15 +30,15 @@ export function Topbar({ user, breadcrumb }: { user: SessionUser; breadcrumb?: s
         borderBottom: "1px solid var(--line)",
       }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         <Link
           href="/"
-          className="inline-flex items-center justify-center rounded-md w-[22px] h-[22px] font-bold text-[12px]"
+          className="inline-flex items-center justify-center rounded-md w-[22px] h-[22px] font-bold text-[12px] shrink-0"
           style={{ background: "var(--accent)", color: "var(--accent-fg)" }}
         >
           T
         </Link>
-        <div className="flex items-center gap-1.5 text-[12.5px]" style={{ color: "var(--ink-3)" }}>
+        <div className="flex items-center gap-1.5 text-[12.5px] min-w-0" style={{ color: "var(--ink-3)" }}>
           <Link href="/" style={{ color: "var(--ink-3)", textDecoration: "none" }}>
             Thistlewood &amp; Associates
           </Link>
@@ -33,6 +52,11 @@ export function Topbar({ user, breadcrumb }: { user: SessionUser; breadcrumb?: s
       </div>
 
       <div className="flex items-center gap-2">
+        <EntityScopePicker
+          entities={entities}
+          current={currentEntityId}
+          onChange={changeEntityScope}
+        />
         <ThemeToggle />
         <span className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--ink-2)" }}>
           <span

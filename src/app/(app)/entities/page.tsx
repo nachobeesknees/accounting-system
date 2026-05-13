@@ -143,7 +143,7 @@ export default async function Page({
                 {rows.map((e) => {
                   const client = customersById.get(e.clientId);
                   return (
-                    <TR key={e.id}>
+                    <TR key={e.id} href={`/entities/${e.id}`}>
                       <TD mono>
                         <Link
                           href={`/entities/${e.id}`}

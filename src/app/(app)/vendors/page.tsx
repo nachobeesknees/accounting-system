@@ -113,7 +113,7 @@ export default async function Page({
                     ? accountById.get(v.defaultExpenseAccountId)
                     : undefined;
                   return (
-                    <TR key={v.id}>
+                    <TR key={v.id} href={`/vendors/${v.id}`}>
                       <TD mono>
                         <Link
                           href={`/vendors/${v.id}`}

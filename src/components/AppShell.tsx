@@ -3,11 +3,13 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import {
   getBills,
+  getEntities,
   getInvoices,
   getInvoicesAwaitingApproval,
   getJournalEntries,
 } from "@/lib/data";
 import { parseAmount } from "@/lib/money";
+import { getEntityScope } from "@/lib/entity-scope";
 import type { SessionUser } from "@/lib/types";
 
 export async function AppShell({
@@ -19,11 +21,13 @@ export async function AppShell({
   breadcrumb?: string;
   children: ReactNode;
 }) {
-  const [entries, invoices, bills, awaiting] = await Promise.all([
+  const [entries, invoices, bills, awaiting, entities, currentScope] = await Promise.all([
     getJournalEntries(),
     getInvoices(),
     getBills(),
     getInvoicesAwaitingApproval(user.userId, user.role, user.isSuperuser),
+    getEntities(),
+    getEntityScope(),
   ]);
   const jeCount = entries.length;
   const outstandingInvoiceCount = invoices.filter(
@@ -32,9 +36,6 @@ export async function AppShell({
   const billCount = bills.filter((b) => parseAmount(b.balanceDue) > 0).length;
   const approvalsCount = awaiting.length;
 
-  // When the user has approvals pending, surface that count on the Invoices
-  // nav item — it's the more actionable number. Otherwise fall back to the
-  // outstanding-balance count.
   const counts = {
     "/journal": jeCount,
     "/invoices": approvalsCount > 0 ? approvalsCount : outstandingInvoiceCount,
@@ -43,6 +44,8 @@ export async function AppShell({
   const urgentItems = {
     "/invoices": approvalsCount > 0,
   };
+
+  const entityOptions = entities.map((e) => ({ id: e.id, code: e.code, name: e.name }));
 
   return (
     <div
@@ -56,7 +59,12 @@ export async function AppShell({
       }}
     >
       <div style={{ gridArea: "top" }}>
-        <Topbar user={user} breadcrumb={breadcrumb} />
+        <Topbar
+          user={user}
+          breadcrumb={breadcrumb}
+          entities={entityOptions}
+          currentEntityId={currentScope}
+        />
       </div>
       <div style={{ gridArea: "side" }}>
         <Sidebar counts={counts} urgentItems={urgentItems} />

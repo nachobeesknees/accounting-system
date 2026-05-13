@@ -134,7 +134,7 @@ export default async function Page({
                   const bal = parseAmount(bill.balanceDue);
                   const isOverdue = bill.status === "overdue" && bal > 0;
                   return (
-                    <TR key={bill.id}>
+                    <TR key={bill.id} href={`/bills/${bill.id}`}>
                       <TD mono>
                         <Link
                           href={`/bills/${bill.id}`}
