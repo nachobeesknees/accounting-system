@@ -16,7 +16,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . .
 
 # Run migrations and load demo data on startup
-RUN echo '#!/bin/bash\nset -e\npython manage.py migrate\nif [ "$LOAD_DEMO_DATA" = "True" ]; then\n  python manage.py load_demo_data\nfi\ngunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+RUN echo '#!/bin/bash\nset -e\npython manage.py makemigrations\npython manage.py migrate\nif [ "$LOAD_DEMO_DATA" = "True" ]; then\n  python manage.py load_demo_data\nfi\ngunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
 
