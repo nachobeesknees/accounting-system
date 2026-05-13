@@ -311,6 +311,10 @@ export const customers = pgTable("customers", {
   phone: text("phone"),
   billingAddress: text("billing_address"),
   paymentTerms: integer("payment_terms").notNull().default(30),
+  // The user (employee) assigned as the primary contact for this client.
+  // Used by the invoice approval workflow: after CFO approval, the assigned
+  // user must approve the invoice before it transitions to "sent".
+  assignedUserId: text("assigned_user_id"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -433,9 +437,22 @@ export const invoices = pgTable("invoices", {
   id: text("id").primaryKey(),
   invoiceNumber: text("invoice_number").notNull().unique(),
   customerId: text("customer_id").notNull(),
+  entityId: text("entity_id"),
+  clientId: text("client_id"),
   invoiceDate: date("invoice_date").notNull(),
   dueDate: date("due_date").notNull(),
+  // Status state machine. The approval-workflow values sit between draft and
+  // sent: a draft enters CFO review, then the assigned employee, then posts.
+  //   draft → pending_cfo → pending_assigned → sent → partial → paid
+  //   any non-terminal state → void
   status: text("status").notNull().default("draft"),
+  cfoApprovedAt: timestamp("cfo_approved_at", { withTimezone: true }),
+  cfoApprovedBy: text("cfo_approved_by"),
+  assignedApprovedAt: timestamp("assigned_approved_at", { withTimezone: true }),
+  assignedApprovedBy: text("assigned_approved_by"),
+  rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+  rejectedBy: text("rejected_by"),
+  rejectionReason: text("rejection_reason"),
   subtotal: numeric("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
   taxAmount: numeric("tax_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   total: numeric("total", { precision: 15, scale: 2 }).notNull().default("0"),

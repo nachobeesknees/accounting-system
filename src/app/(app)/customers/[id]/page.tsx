@@ -1,35 +1,57 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { ButtonLink } from "@/components/ui/Button";
+import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
+import { SelectField } from "@/components/ui/Field";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAssetsByClientId,
   getCustomerById,
   getEntitiesByClientId,
   getInvoices,
+  getUserById,
+  getUsers,
 } from "@/lib/data";
+import type { Customer } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
+import { setAssignedUserAction } from "./actions";
+
+// Local accessor: surface the `assignedUserId` column even if the shared
+// `Customer` type and `data.ts` mapper haven't yet been extended with the
+// new approval-workflow field. Falls back to `null` at runtime when absent.
+type CustomerWithAssignment = Customer & { assignedUserId?: string | null };
+function readAssignedUserId(c: Customer): string | null {
+  const v = (c as CustomerWithAssignment).assignedUserId;
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
 
 export default async function Page({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string; saved?: string }>;
 }) {
   const { id } = await params;
+  const sp = await searchParams;
   const customer = await getCustomerById(id);
   if (!customer) notFound();
 
-  const [allInvoices, entities, directAssets] = await Promise.all([
-    getInvoices(),
-    getEntitiesByClientId(customer.id),
-    getAssetsByClientId(customer.id),
-  ]);
+  const assignedUserId = readAssignedUserId(customer);
+
+  const [allInvoices, entities, directAssets, users, assignedUser] =
+    await Promise.all([
+      getInvoices(),
+      getEntitiesByClientId(customer.id),
+      getAssetsByClientId(customer.id),
+      getUsers(),
+      assignedUserId ? getUserById(assignedUserId) : Promise.resolve(undefined),
+    ]);
   const customerInvoices = allInvoices
     .filter((inv) => inv.customerId === customer.id)
     .slice()
@@ -62,6 +84,33 @@ export default async function Page({
           </ButtonLink>
         }
       />
+
+      <div className="px-6 my-3.5 flex flex-col gap-3.5">
+        {sp.saved && (
+          <div
+            className="rounded-md px-3 py-2 text-[12.5px]"
+            style={{
+              background: "var(--p-active-bg)",
+              color: "var(--p-active-fg)",
+              border: "1px solid var(--p-active-fg)",
+            }}
+          >
+            Assignment saved.
+          </div>
+        )}
+        {sp.error && (
+          <div
+            className="rounded-md px-3 py-2 text-[12.5px]"
+            style={{
+              background: "var(--p-review-bg)",
+              color: "var(--p-review-fg)",
+              border: "1px solid var(--p-review-fg)",
+            }}
+          >
+            {sp.error}
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 px-6 my-3.5">
         <Card title="Contact">
@@ -109,6 +158,59 @@ export default async function Page({
               v={lastInvoiceDate ? formatDate(lastInvoiceDate) : "—"}
             />
           </KVGrid>
+        </Card>
+      </div>
+
+      <div className="px-6 mb-3.5">
+        <Card title="Assignment">
+          <div className="p-3.5 flex flex-col gap-3">
+            <div className="text-[12.5px]" style={{ color: "var(--ink)" }}>
+              <span
+                className="text-[11.5px] mr-2"
+                style={{ color: "var(--ink-3)" }}
+              >
+                Assigned employee:
+              </span>
+              {assignedUser ? (
+                <span>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  >
+                    {assignedUser.fullName}
+                  </span>
+                  <span className="ml-2">
+                    <Pill variant="neutral">{assignedUser.role}</Pill>
+                  </span>
+                </span>
+              ) : (
+                <span style={{ color: "var(--ink-3)" }}>—</span>
+              )}
+            </div>
+
+            <form action={setAssignedUserAction} className="flex items-end gap-3">
+              <input type="hidden" name="customerId" value={customer.id} />
+              <div className="flex-1 max-w-md">
+                <SelectField
+                  label="Change assignment"
+                  name="assignedUserId"
+                  defaultValue={assignedUserId ?? ""}
+                >
+                  <option value="">— Unassigned —</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.fullName} · {u.role}
+                    </option>
+                  ))}
+                </SelectField>
+              </div>
+              <Button type="submit" variant="secondary">
+                Save
+              </Button>
+            </form>
+          </div>
         </Card>
       </div>
 

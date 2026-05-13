@@ -1535,11 +1535,26 @@ export async function createVendor(
   return created;
 }
 
+// --------- Customer assignment ---------
+
+export async function setCustomerAssignedUser(
+  _user: SessionUser,
+  customerId: string,
+  assignedUserId: string | null,
+) {
+  const db = getDb();
+  await db
+    .update(schema.customers)
+    .set({ assignedUserId, updatedAt: new Date() })
+    .where(eq(schema.customers.id, customerId));
+}
+
 // --------- Invoices (with auto-JE on post + payment) ---------
 
 const AR_ACCOUNT_ID = "a-1200";
 const AP_ACCOUNT_ID = "a-2000";
 const DEFAULT_CASH_ACCOUNT_ID = "a-1000";
+const SERVICE_REVENUE_ACCOUNT_ID = "a-4000";
 
 export type DraftInvoiceLine = {
   description: string;
@@ -1754,6 +1769,242 @@ export async function voidInvoice(user: SessionUser, invoiceId: string, reason: 
     .update(schema.invoices)
     .set({ status: "void", updatedAt: new Date() })
     .where(eq(schema.invoices.id, invoiceId));
+}
+
+// --------- Invoice approval workflow ---------
+
+/**
+ * State machine for invoice approvals:
+ *   draft ─ submit ─▶ pending_cfo
+ *   pending_cfo ─ cfo approve ─▶ pending_assigned
+ *   pending_cfo ─ reject ────────▶ draft
+ *   pending_assigned ─ assigned approve ─▶ sent  (auto-posts JE via postInvoice)
+ *   pending_assigned ─ reject ────────────▶ draft
+ * Any non-terminal state can void.
+ */
+
+export async function submitInvoiceForApproval(
+  _user: SessionUser,
+  invoiceId: string,
+) {
+  const db = getDb();
+  const [inv] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, invoiceId))
+    .limit(1);
+  if (!inv) throw new Error("Invoice not found.");
+  if (inv.status !== "draft") {
+    throw new Error(`Cannot submit invoice in status "${inv.status}".`);
+  }
+  await db
+    .update(schema.invoices)
+    .set({
+      status: "pending_cfo",
+      rejectedAt: null,
+      rejectedBy: null,
+      rejectionReason: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.invoices.id, invoiceId));
+}
+
+export async function cfoApproveInvoice(user: SessionUser, invoiceId: string) {
+  const db = getDb();
+  const [inv] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, invoiceId))
+    .limit(1);
+  if (!inv) throw new Error("Invoice not found.");
+  if (inv.status !== "pending_cfo") {
+    throw new Error(`Invoice is not pending CFO approval (status: ${inv.status}).`);
+  }
+  const [cust] = await db
+    .select({ assignedUserId: schema.customers.assignedUserId })
+    .from(schema.customers)
+    .where(eq(schema.customers.id, inv.customerId))
+    .limit(1);
+  if (!cust || !cust.assignedUserId) {
+    throw new Error(
+      "Customer has no assigned employee. Assign one on the customer detail page before approving.",
+    );
+  }
+  await db
+    .update(schema.invoices)
+    .set({
+      status: "pending_assigned",
+      cfoApprovedAt: new Date(),
+      cfoApprovedBy: user.userId,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.invoices.id, invoiceId));
+}
+
+export async function assignedApproveInvoice(user: SessionUser, invoiceId: string) {
+  const db = getDb();
+  const [inv] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, invoiceId))
+    .limit(1);
+  if (!inv) throw new Error("Invoice not found.");
+  if (inv.status !== "pending_assigned") {
+    throw new Error(`Invoice is not pending assigned approval (status: ${inv.status}).`);
+  }
+  const [cust] = await db
+    .select({ assignedUserId: schema.customers.assignedUserId })
+    .from(schema.customers)
+    .where(eq(schema.customers.id, inv.customerId))
+    .limit(1);
+  if (!cust || !cust.assignedUserId) {
+    throw new Error("Customer has no assigned employee.");
+  }
+  if (cust.assignedUserId !== user.userId && !user.isSuperuser) {
+    throw new Error(
+      "Only the assigned employee (or an Admin) can grant the final approval.",
+    );
+  }
+  // Mark approved AND flip back to draft so postInvoice's "must be draft"
+  // precondition is satisfied, then post — same JE posting path as the
+  // manual one-click "Post" button.
+  await db
+    .update(schema.invoices)
+    .set({
+      assignedApprovedAt: new Date(),
+      assignedApprovedBy: user.userId,
+      status: "draft",
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.invoices.id, invoiceId));
+  await postInvoice(user, invoiceId);
+}
+
+export async function rejectInvoice(
+  user: SessionUser,
+  invoiceId: string,
+  reason: string,
+) {
+  const db = getDb();
+  const [inv] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, invoiceId))
+    .limit(1);
+  if (!inv) throw new Error("Invoice not found.");
+  if (inv.status !== "pending_cfo" && inv.status !== "pending_assigned") {
+    throw new Error(`Cannot reject invoice in status "${inv.status}".`);
+  }
+  await db
+    .update(schema.invoices)
+    .set({
+      status: "draft",
+      cfoApprovedAt: null,
+      cfoApprovedBy: null,
+      assignedApprovedAt: null,
+      assignedApprovedBy: null,
+      rejectedAt: new Date(),
+      rejectedBy: user.userId,
+      rejectionReason: reason || "(no reason given)",
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.invoices.id, invoiceId));
+}
+
+// --------- Generate invoice from a client's entity fees ---------
+
+export type AddonCharge = {
+  /** Stable key from price_list_entries.item_key */
+  key: string;
+  /** Display label and unit price come from the price list at draft time. */
+  label: string;
+  unitPrice: number;
+  quantity: number;
+};
+
+export type GenerateInvoiceFromFeesInput = {
+  customerId: string;
+  billingYear: number;
+  invoiceDate?: string;
+  dueDate?: string;
+  /** Optional add-on charges (e.g. Compliance Fee, FS Preparation) */
+  addons?: AddonCharge[];
+  notes?: string | null;
+  /** If true, submit straight to CFO for approval after creating. */
+  submitForApproval?: boolean;
+};
+
+export async function generateInvoiceFromEntityFees(
+  user: SessionUser,
+  input: GenerateInvoiceFromFeesInput,
+): Promise<{ id: string; invoiceNumber: string; lineCount: number }> {
+  const db = getDb();
+
+  const [cust] = await db
+    .select()
+    .from(schema.customers)
+    .where(eq(schema.customers.id, input.customerId))
+    .limit(1);
+  if (!cust) throw new Error("Customer not found.");
+
+  // Entities owned by this client. In the demo seed, customer.id is used as
+  // the clientId reference on entities.
+  const entities = await db
+    .select()
+    .from(schema.entities)
+    .where(eq(schema.entities.clientId, cust.id));
+
+  // Fee lines (one per active entity fee for the billing year)
+  const feeLines: DraftInvoiceLine[] = [];
+  for (const ent of entities) {
+    const fees = await db
+      .select()
+      .from(schema.entityFees)
+      .where(eq(schema.entityFees.entityId, ent.id));
+    for (const fee of fees) {
+      if (fee.billingYear !== input.billingYear) continue;
+      const amount = parseFloat(fee.annualFee);
+      if (amount <= 0) continue;
+      feeLines.push({
+        description: `Annual fee — ${ent.name} (${ent.code}, ${input.billingYear})`,
+        quantity: 1,
+        unitPrice: amount,
+        accountId: SERVICE_REVENUE_ACCOUNT_ID,
+      });
+    }
+  }
+
+  const addonLines: DraftInvoiceLine[] = (input.addons ?? [])
+    .filter((a) => a.quantity > 0 && a.unitPrice >= 0)
+    .map((a) => ({
+      description: a.label,
+      quantity: a.quantity,
+      unitPrice: a.unitPrice,
+      accountId: SERVICE_REVENUE_ACCOUNT_ID,
+    }));
+
+  const lines = [...feeLines, ...addonLines];
+  if (lines.length === 0) {
+    throw new Error("No billable lines could be generated.");
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const due = new Date();
+  due.setDate(due.getDate() + (cust.paymentTerms ?? 30));
+
+  const { id, invoiceNumber } = await createInvoice(user, {
+    customerId: cust.id,
+    invoiceDate: input.invoiceDate ?? today,
+    dueDate: input.dueDate ?? due.toISOString().slice(0, 10),
+    notes: input.notes ?? `Auto-generated from ${input.billingYear} annual fees.`,
+    lines,
+  });
+
+  if (input.submitForApproval) {
+    await submitInvoiceForApproval(user, id);
+  }
+
+  return { id, invoiceNumber, lineCount: lines.length };
 }
 
 // --------- Bills (with auto-JE on approve + payment) ---------

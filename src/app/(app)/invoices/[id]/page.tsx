@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Row, SelectField } from "@/components/ui/Field";
+import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -13,12 +13,19 @@ import {
   getCustomerById,
   getInvoiceById,
   getJournalEntryById,
+  getUserById,
 } from "@/lib/data";
+import { getSessionUser } from "@/lib/session";
+import type { Customer, Invoice, User } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
 import {
+  assignedApproveInvoiceAction,
+  cfoApproveInvoiceAction,
   postInvoiceAction,
   recordPaymentAction,
+  rejectInvoiceAction,
+  submitInvoiceForApprovalAction,
   voidInvoiceAction,
 } from "./actions";
 
@@ -26,17 +33,82 @@ function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// --- Approval-workflow field accessors ---------------------------------------
+//
+// The shared `Invoice` and `Customer` types and the `data.ts` mappers may not
+// yet surface the approval-workflow columns (cfoApprovedAt, assignedApprovedAt,
+// rejectedAt, etc., and customer.assignedUserId). These accessors widen the
+// shape and fall back to null/undefined when the runtime value is missing.
+// When the data layer is updated to forward these fields, no change is needed
+// here — runtime values just start populating.
+
+type InvoiceWithApproval = Invoice & {
+  cfoApprovedAt?: string | null;
+  cfoApprovedBy?: string | null;
+  assignedApprovedAt?: string | null;
+  assignedApprovedBy?: string | null;
+  rejectedAt?: string | null;
+  rejectedBy?: string | null;
+  rejectionReason?: string | null;
+};
+
+type CustomerWithAssignment = Customer & { assignedUserId?: string | null };
+
+function readStr(v: unknown): string | null {
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+
+function approvalFields(inv: Invoice) {
+  const x = inv as InvoiceWithApproval;
+  return {
+    cfoApprovedAt: readStr(x.cfoApprovedAt),
+    cfoApprovedBy: readStr(x.cfoApprovedBy),
+    assignedApprovedAt: readStr(x.assignedApprovedAt),
+    assignedApprovedBy: readStr(x.assignedApprovedBy),
+    rejectedAt: readStr(x.rejectedAt),
+    rejectedBy: readStr(x.rejectedBy),
+    rejectionReason: readStr(x.rejectionReason),
+  };
+}
+
+function readAssignedUserId(c: Customer | undefined): string | null {
+  if (!c) return null;
+  return readStr((c as CustomerWithAssignment).assignedUserId);
+}
+
+function formatStamp(iso: string | null): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: "UTC",
+  });
+}
+
 export default async function Page({
   params,
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string; recorded?: string }>;
+  searchParams: Promise<{
+    error?: string;
+    recorded?: string;
+    submitted?: string;
+    approved?: string;
+    rejected?: string;
+  }>;
 }) {
   const { id } = await params;
   const sp = await searchParams;
   const invoice = await getInvoiceById(id);
   if (!invoice) notFound();
+
+  const sessionUser = await getSessionUser();
 
   const [customer, journalEntry, accounts, bankAccounts] = await Promise.all([
     getCustomerById(invoice.customerId),
@@ -48,28 +120,99 @@ export default async function Page({
   ]);
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
 
-  const status = invoice.status;
+  const assignedUserId = readAssignedUserId(customer);
+  const approvals = approvalFields(invoice);
+
+  // Resolve users referenced by the approval state.
+  const userIdsToLoad = Array.from(
+    new Set(
+      [
+        assignedUserId,
+        approvals.cfoApprovedBy,
+        approvals.assignedApprovedBy,
+        approvals.rejectedBy,
+      ].filter((v): v is string => !!v),
+    ),
+  );
+  const userEntries = await Promise.all(
+    userIdsToLoad.map(async (uid) => [uid, await getUserById(uid)] as const),
+  );
+  const usersById = new Map<string, User>();
+  for (const [uid, u] of userEntries) {
+    if (u) usersById.set(uid, u);
+  }
+  const assignedUser = assignedUserId ? usersById.get(assignedUserId) : undefined;
+  const cfoUser = approvals.cfoApprovedBy
+    ? usersById.get(approvals.cfoApprovedBy)
+    : undefined;
+  const assignedApproverUser = approvals.assignedApprovedBy
+    ? usersById.get(approvals.assignedApprovedBy)
+    : undefined;
+  const rejectorUser = approvals.rejectedBy
+    ? usersById.get(approvals.rejectedBy)
+    : undefined;
+
+  const status = invoice.status as string;
   const balance = parseAmount(invoice.balanceDue);
   const isOverdue = status === "overdue";
 
-  const canPost = status === "draft";
-  const canPay =
-    status === "sent" || status === "partial" || status === "overdue";
+  const isDraft = status === "draft";
+  const isPendingCfo = status === "pending_cfo";
+  const isPendingAssigned = status === "pending_assigned";
+  const isPending = isPendingCfo || isPendingAssigned;
+  const canPay = status === "sent" || status === "partial" || status === "overdue";
   const canVoid = status !== "paid" && status !== "void";
+
+  const isCfo =
+    !!sessionUser && (sessionUser.role === "CFO" || sessionUser.isSuperuser);
+  const isAssignedApprover =
+    !!sessionUser &&
+    !!assignedUserId &&
+    (sessionUser.userId === assignedUserId || sessionUser.isSuperuser);
+  const canActOnPending =
+    (isPendingCfo && isCfo) || (isPendingAssigned && isAssignedApprover);
 
   const actionButtons = (
     <>
       <ButtonLink href="/invoices" variant="secondary">
         ← All invoices
       </ButtonLink>
-      {canPost && (
-        <form action={postInvoiceAction}>
+      {isDraft && (
+        <form action={submitInvoiceForApprovalAction}>
           <input type="hidden" name="invoiceId" value={invoice.id} />
           <Button variant="primary" type="submit">
-            Post
+            Submit for approval
           </Button>
         </form>
       )}
+      {isPendingCfo &&
+        (isCfo ? (
+          <form action={cfoApproveInvoiceAction}>
+            <input type="hidden" name="invoiceId" value={invoice.id} />
+            <Button variant="primary" type="submit">
+              CFO Approve
+            </Button>
+          </form>
+        ) : (
+          <Button variant="secondary" type="button" disabled>
+            Pending CFO approval
+          </Button>
+        ))}
+      {isPendingAssigned &&
+        (isAssignedApprover ? (
+          <form action={assignedApproveInvoiceAction}>
+            <input type="hidden" name="invoiceId" value={invoice.id} />
+            <Button variant="primary" type="submit">
+              Final approve & post
+            </Button>
+          </form>
+        ) : (
+          <Button variant="secondary" type="button" disabled>
+            {assignedUser
+              ? `Pending ${assignedUser.fullName}'s approval`
+              : "Pending assigned employee's approval"}
+          </Button>
+        ))}
       {canVoid && (
         <form action={voidInvoiceAction}>
           <input type="hidden" name="invoiceId" value={invoice.id} />
@@ -81,6 +224,19 @@ export default async function Page({
       )}
     </>
   );
+
+  const approvedBanner = (() => {
+    if (sp.submitted === "1") {
+      return "Invoice submitted for CFO approval.";
+    }
+    if (sp.approved === "cfo") {
+      return "CFO approval recorded — pending final approval by the assigned employee.";
+    }
+    if (sp.approved === "assigned") {
+      return "Final approval recorded — invoice posted.";
+    }
+    return null;
+  })();
 
   return (
     <>
@@ -112,6 +268,30 @@ export default async function Page({
               {sp.recorded}
             </Link>
             .
+          </div>
+        )}
+        {approvedBanner && (
+          <div
+            className="rounded-md px-3 py-2 text-[12.5px]"
+            style={{
+              background: "var(--p-active-bg)",
+              color: "var(--p-active-fg)",
+              border: "1px solid var(--p-active-fg)",
+            }}
+          >
+            {approvedBanner}
+          </div>
+        )}
+        {sp.rejected === "1" && (
+          <div
+            className="rounded-md px-3 py-2 text-[12.5px]"
+            style={{
+              background: "var(--p-formation-bg)",
+              color: "var(--p-formation-fg)",
+              border: "1px solid var(--p-formation-fg)",
+            }}
+          >
+            Invoice rejected — returned to draft.
           </div>
         )}
         {sp.error && (
@@ -197,6 +377,120 @@ export default async function Page({
             )}
           </KVGrid>
         </Card>
+
+        <Card title="Approval history">
+          <KVGrid>
+            <KV
+              k="Assigned employee"
+              v={
+                assignedUser ? (
+                  <span>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono)",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {assignedUser.fullName}
+                    </span>
+                    <span
+                      className="ml-2"
+                      style={{ color: "var(--ink-3)", fontSize: 11.5 }}
+                    >
+                      {assignedUser.role}
+                    </span>
+                  </span>
+                ) : (
+                  <span style={{ color: "var(--ink-3)" }}>—</span>
+                )
+              }
+            />
+            {approvals.cfoApprovedAt && (
+              <KV
+                k="CFO approved"
+                v={
+                  <span>
+                    {formatStamp(approvals.cfoApprovedAt)}
+                    {cfoUser && (
+                      <span
+                        className="ml-2"
+                        style={{ color: "var(--ink-3)", fontSize: 11.5 }}
+                      >
+                        by {cfoUser.fullName}
+                      </span>
+                    )}
+                  </span>
+                }
+              />
+            )}
+            {approvals.assignedApprovedAt && (
+              <KV
+                k="Assigned approved"
+                v={
+                  <span>
+                    {formatStamp(approvals.assignedApprovedAt)}
+                    {assignedApproverUser && (
+                      <span
+                        className="ml-2"
+                        style={{ color: "var(--ink-3)", fontSize: 11.5 }}
+                      >
+                        by {assignedApproverUser.fullName}
+                      </span>
+                    )}
+                  </span>
+                }
+              />
+            )}
+            {approvals.rejectedAt && (
+              <KV
+                k="Rejected"
+                v={
+                  <span>
+                    <span style={{ color: "var(--p-review-fg)" }}>
+                      {formatStamp(approvals.rejectedAt)}
+                    </span>
+                    {rejectorUser && (
+                      <span
+                        className="ml-2"
+                        style={{ color: "var(--ink-3)", fontSize: 11.5 }}
+                      >
+                        by {rejectorUser.fullName}
+                      </span>
+                    )}
+                  </span>
+                }
+                sub={
+                  approvals.rejectionReason ? (
+                    <span style={{ color: "var(--ink-3)" }}>
+                      {approvals.rejectionReason}
+                    </span>
+                  ) : undefined
+                }
+              />
+            )}
+          </KVGrid>
+        </Card>
+
+        {isPending && canActOnPending && (
+          <Card title="Reject reason">
+            <form action={rejectInvoiceAction}>
+              <input type="hidden" name="invoiceId" value={invoice.id} />
+              <div className="p-3.5 flex flex-col gap-3">
+                <TextareaField
+                  label="Reason"
+                  name="reason"
+                  required
+                  placeholder="Explain why you're rejecting this invoice…"
+                />
+                <div className="flex justify-end">
+                  <Button variant="danger" type="submit">
+                    Reject
+                  </Button>
+                </div>
+              </div>
+            </form>
+          </Card>
+        )}
 
         {canPay && (
           <Card title="Record payment">

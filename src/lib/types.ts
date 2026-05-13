@@ -312,11 +312,21 @@ export type Customer = {
   phone: string | null;
   billingAddress: string | null;
   paymentTerms: number;
+  /** User (employee) assigned as primary contact + final invoice approver. */
+  assignedUserId: string | null;
   isActive: boolean;
   notes: string | null;
 };
 
-export type InvoiceStatus = "draft" | "sent" | "partial" | "paid" | "overdue" | "void";
+export type InvoiceStatus =
+  | "draft"
+  | "pending_cfo"
+  | "pending_assigned"
+  | "sent"
+  | "partial"
+  | "paid"
+  | "overdue"
+  | "void";
 
 export type InvoiceLine = {
   id: string;
@@ -333,9 +343,18 @@ export type Invoice = {
   id: string;
   invoiceNumber: string;
   customerId: string;
+  entityId: string | null;
+  clientId: string | null;
   invoiceDate: string;
   dueDate: string;
   status: InvoiceStatus;
+  cfoApprovedAt: string | null;
+  cfoApprovedBy: string | null;
+  assignedApprovedAt: string | null;
+  assignedApprovedBy: string | null;
+  rejectedAt: string | null;
+  rejectedBy: string | null;
+  rejectionReason: string | null;
   subtotal: string;
   taxAmount: string;
   total: string;

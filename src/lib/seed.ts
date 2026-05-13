@@ -100,11 +100,11 @@ export const PERIODS: FiscalPeriod[] = [
 ];
 
 export const CUSTOMERS: Customer[] = [
-  { id: id("c-001"), code: "CUST-001", name: "Pumpernickel Industries", email: "ap@pumpernickel.co", phone: "(415) 555-2210", billingAddress: "120 Hawthorne St, San Francisco CA 94105", paymentTerms: 30, isActive: true, notes: null },
-  { id: id("c-002"), code: "CUST-002", name: "Snickerthorpe Holdings", email: "finance@snickerthorpe.com", phone: "(212) 555-0930", billingAddress: "350 W 42nd St, New York NY 10036", paymentTerms: 45, isActive: true, notes: null },
-  { id: id("c-003"), code: "CUST-003", name: "Mumblethrottle Capital", email: "ar@mumblethrottle.io", phone: "(617) 555-7188", billingAddress: "1 Federal St, Boston MA 02110", paymentTerms: 30, isActive: true, notes: null },
-  { id: id("c-004"), code: "CUST-004", name: "Tsukimomo Ventures", email: "billing@tsukimomo.jp", phone: "+81 3 5555 4019", billingAddress: "1-1 Marunouchi, Chiyoda-ku, Tokyo", paymentTerms: 60, isActive: true, notes: null },
-  { id: id("c-005"), code: "CUST-005", name: "Frogsworth & Partners", email: "invoices@frogsworth.co.uk", phone: "+44 20 5555 0144", billingAddress: "12 Lombard St, London EC3V 9BJ", paymentTerms: 30, isActive: true, notes: null },
+  { id: id("c-001"), code: "CUST-001", name: "Pumpernickel Industries", email: "ap@pumpernickel.co", phone: "(415) 555-2210", billingAddress: "120 Hawthorne St, San Francisco CA 94105", paymentTerms: 30, assignedUserId: null, isActive: true, notes: null },
+  { id: id("c-002"), code: "CUST-002", name: "Snickerthorpe Holdings", email: "finance@snickerthorpe.com", phone: "(212) 555-0930", billingAddress: "350 W 42nd St, New York NY 10036", paymentTerms: 45, assignedUserId: null, isActive: true, notes: null },
+  { id: id("c-003"), code: "CUST-003", name: "Mumblethrottle Capital", email: "ar@mumblethrottle.io", phone: "(617) 555-7188", billingAddress: "1 Federal St, Boston MA 02110", paymentTerms: 30, assignedUserId: null, isActive: true, notes: null },
+  { id: id("c-004"), code: "CUST-004", name: "Tsukimomo Ventures", email: "billing@tsukimomo.jp", phone: "+81 3 5555 4019", billingAddress: "1-1 Marunouchi, Chiyoda-ku, Tokyo", paymentTerms: 60, assignedUserId: null, isActive: true, notes: null },
+  { id: id("c-005"), code: "CUST-005", name: "Frogsworth & Partners", email: "invoices@frogsworth.co.uk", phone: "+44 20 5555 0144", billingAddress: "12 Lombard St, London EC3V 9BJ", paymentTerms: 30, assignedUserId: null, isActive: true, notes: null },
 ];
 
 export const ENTITIES: Entity[] = [
@@ -431,9 +431,9 @@ const INVOICE_LINES = (invoiceId: string, lines: { description: string; quantity
 
 export const INVOICES: Invoice[] = [
   {
-    id: id("i-018"), invoiceNumber: "INV-000018", customerId: "c-004",
+    id: id("i-018"), invoiceNumber: "INV-000018", customerId: "c-004", entityId: null, clientId: null,
     invoiceDate: D("2026-05-11"), dueDate: D("2026-07-10"),
-    status: "sent", subtotal: "83250.00", taxAmount: "0.00", total: "83250.00",
+    status: "sent", cfoApprovedAt: null, cfoApprovedBy: null, assignedApprovedAt: null, assignedApprovedBy: null, rejectedAt: null, rejectedBy: null, rejectionReason: null, subtotal: "83250.00", taxAmount: "0.00", total: "83250.00",
     amountPaid: "0.00", balanceDue: "83250.00", currencyCode: "USD",
     notes: "Q2 retainer", journalEntryId: null,
     lines: INVOICE_LINES("i-018", [
@@ -442,9 +442,9 @@ export const INVOICES: Invoice[] = [
     ]),
   },
   {
-    id: id("i-017"), invoiceNumber: "INV-000017", customerId: "c-002",
+    id: id("i-017"), invoiceNumber: "INV-000017", customerId: "c-002", entityId: null, clientId: null,
     invoiceDate: D("2026-05-08"), dueDate: D("2026-06-22"),
-    status: "sent", subtotal: "62300.00", taxAmount: "0.00", total: "62300.00",
+    status: "sent", cfoApprovedAt: null, cfoApprovedBy: null, assignedApprovedAt: null, assignedApprovedBy: null, rejectedAt: null, rejectedBy: null, rejectionReason: null, subtotal: "62300.00", taxAmount: "0.00", total: "62300.00",
     amountPaid: "0.00", balanceDue: "62300.00", currencyCode: "USD",
     notes: null, journalEntryId: "j-139",
     lines: INVOICE_LINES("i-017", [
@@ -452,9 +452,9 @@ export const INVOICES: Invoice[] = [
     ]),
   },
   {
-    id: id("i-016"), invoiceNumber: "INV-000016", customerId: "c-001",
+    id: id("i-016"), invoiceNumber: "INV-000016", customerId: "c-001", entityId: null, clientId: null,
     invoiceDate: D("2026-05-04"), dueDate: D("2026-06-03"),
-    status: "partial", subtotal: "48500.00", taxAmount: "0.00", total: "48500.00",
+    status: "partial", cfoApprovedAt: null, cfoApprovedBy: null, assignedApprovedAt: null, assignedApprovedBy: null, rejectedAt: null, rejectedBy: null, rejectionReason: null, subtotal: "48500.00", taxAmount: "0.00", total: "48500.00",
     amountPaid: "10000.00", balanceDue: "38500.00", currencyCode: "USD",
     notes: null, journalEntryId: null,
     lines: INVOICE_LINES("i-016", [
@@ -462,9 +462,9 @@ export const INVOICES: Invoice[] = [
     ]),
   },
   {
-    id: id("i-015"), invoiceNumber: "INV-000015", customerId: "c-003",
+    id: id("i-015"), invoiceNumber: "INV-000015", customerId: "c-003", entityId: null, clientId: null,
     invoiceDate: D("2026-04-27"), dueDate: D("2026-05-27"),
-    status: "sent", subtotal: "21750.00", taxAmount: "0.00", total: "21750.00",
+    status: "sent", cfoApprovedAt: null, cfoApprovedBy: null, assignedApprovedAt: null, assignedApprovedBy: null, rejectedAt: null, rejectedBy: null, rejectionReason: null, subtotal: "21750.00", taxAmount: "0.00", total: "21750.00",
     amountPaid: "0.00", balanceDue: "21750.00", currencyCode: "USD",
     notes: null, journalEntryId: null,
     lines: INVOICE_LINES("i-015", [
@@ -472,9 +472,9 @@ export const INVOICES: Invoice[] = [
     ]),
   },
   {
-    id: id("i-014"), invoiceNumber: "INV-000014", customerId: "c-005",
+    id: id("i-014"), invoiceNumber: "INV-000014", customerId: "c-005", entityId: null, clientId: null,
     invoiceDate: D("2026-04-20"), dueDate: D("2026-05-20"),
-    status: "paid", subtotal: "17500.00", taxAmount: "0.00", total: "17500.00",
+    status: "paid", cfoApprovedAt: null, cfoApprovedBy: null, assignedApprovedAt: null, assignedApprovedBy: null, rejectedAt: null, rejectedBy: null, rejectionReason: null, subtotal: "17500.00", taxAmount: "0.00", total: "17500.00",
     amountPaid: "17500.00", balanceDue: "0.00", currencyCode: "USD",
     notes: null, journalEntryId: "j-141",
     lines: INVOICE_LINES("i-014", [
@@ -482,9 +482,9 @@ export const INVOICES: Invoice[] = [
     ]),
   },
   {
-    id: id("i-013"), invoiceNumber: "INV-000013", customerId: "c-001",
+    id: id("i-013"), invoiceNumber: "INV-000013", customerId: "c-001", entityId: null, clientId: null,
     invoiceDate: D("2026-03-28"), dueDate: D("2026-04-27"),
-    status: "overdue", subtotal: "12400.00", taxAmount: "0.00", total: "12400.00",
+    status: "overdue", cfoApprovedAt: null, cfoApprovedBy: null, assignedApprovedAt: null, assignedApprovedBy: null, rejectedAt: null, rejectedBy: null, rejectionReason: null, subtotal: "12400.00", taxAmount: "0.00", total: "12400.00",
     amountPaid: "0.00", balanceDue: "12400.00", currencyCode: "USD",
     notes: null, journalEntryId: null,
     lines: INVOICE_LINES("i-013", [
@@ -492,9 +492,9 @@ export const INVOICES: Invoice[] = [
     ]),
   },
   {
-    id: id("i-012"), invoiceNumber: "INV-000012", customerId: "c-002",
+    id: id("i-012"), invoiceNumber: "INV-000012", customerId: "c-002", entityId: null, clientId: null,
     invoiceDate: D("2026-03-14"), dueDate: D("2026-04-28"),
-    status: "paid", subtotal: "28200.00", taxAmount: "0.00", total: "28200.00",
+    status: "paid", cfoApprovedAt: null, cfoApprovedBy: null, assignedApprovedAt: null, assignedApprovedBy: null, rejectedAt: null, rejectedBy: null, rejectionReason: null, subtotal: "28200.00", taxAmount: "0.00", total: "28200.00",
     amountPaid: "28200.00", balanceDue: "0.00", currencyCode: "USD",
     notes: null, journalEntryId: "j-134",
     lines: INVOICE_LINES("i-012", [

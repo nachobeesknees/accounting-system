@@ -62,9 +62,14 @@ export default async function Page({
         title="Invoices"
         meta={`${rows.length} invoices`}
         actions={
-          <ButtonLink variant="primary" href="/invoices/new">
-            + New invoice
-          </ButtonLink>
+          <>
+            <ButtonLink variant="secondary" href="/invoices/generate">
+              Generate from fees
+            </ButtonLink>
+            <ButtonLink variant="primary" href="/invoices/new">
+              + New invoice
+            </ButtonLink>
+          </>
         }
       />
 

@@ -4,8 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
 import {
+  assignedApproveInvoice,
+  cfoApproveInvoice,
   postInvoice,
   recordInvoicePayment,
+  rejectInvoice,
+  submitInvoiceForApproval,
   voidInvoice,
 } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
@@ -117,4 +121,104 @@ export async function voidInvoiceAction(formData: FormData): Promise<void> {
 
   revalidateAfterMutation(invoiceId);
   redirect(`/invoices/${invoiceId}`);
+}
+
+export async function submitInvoiceForApprovalAction(
+  formData: FormData,
+): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  if (!invoiceId) {
+    redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
+  }
+
+  try {
+    await submitInvoiceForApproval(user, invoiceId);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const message =
+      err instanceof Error ? err.message : "Failed to submit invoice.";
+    redirect(`/invoices/${invoiceId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateAfterMutation(invoiceId);
+  redirect(`/invoices/${invoiceId}?submitted=1`);
+}
+
+export async function cfoApproveInvoiceAction(
+  formData: FormData,
+): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  if (!invoiceId) {
+    redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
+  }
+
+  try {
+    await cfoApproveInvoice(user, invoiceId);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const message =
+      err instanceof Error ? err.message : "Failed to approve invoice.";
+    redirect(`/invoices/${invoiceId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateAfterMutation(invoiceId);
+  redirect(`/invoices/${invoiceId}?approved=cfo`);
+}
+
+export async function assignedApproveInvoiceAction(
+  formData: FormData,
+): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  if (!invoiceId) {
+    redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
+  }
+
+  try {
+    await assignedApproveInvoice(user, invoiceId);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const message =
+      err instanceof Error ? err.message : "Failed to approve invoice.";
+    redirect(`/invoices/${invoiceId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateAfterMutation(invoiceId);
+  redirect(`/invoices/${invoiceId}?approved=assigned`);
+}
+
+export async function rejectInvoiceAction(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!invoiceId) {
+    redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
+  }
+  if (!reason) {
+    redirect(
+      `/invoices/${invoiceId}?error=${encodeURIComponent("A rejection reason is required.")}`,
+    );
+  }
+
+  try {
+    await rejectInvoice(user, invoiceId, reason);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const message =
+      err instanceof Error ? err.message : "Failed to reject invoice.";
+    redirect(`/invoices/${invoiceId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidateAfterMutation(invoiceId);
+  redirect(`/invoices/${invoiceId}?rejected=1`);
 }
