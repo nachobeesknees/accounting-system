@@ -1464,11 +1464,10 @@ export async function getEntityPlRollup(): Promise<EntityPlRow[]> {
 
 export async function getKpis() {
   const scope = await getEntityScope();
-  // Scope "all" = consolidated across firm + every entity. When the user
-  // has selected a single entity we narrow both the chart and the postings.
-  const accountScope = scope ?? "all";
-  const accounts = await getAccounts(accountScope);
-  const balances = await getSignedBalancesByAccount(accountScope);
+  // Chart of Accounts is firm-level (shared across entities), so we always
+  // read the full chart. Only the postings get filtered by entity scope.
+  const accounts = await getAccounts("all");
+  const balances = await getSignedBalancesByAccount(scope ?? "all");
   let revenue = 0,
     expenses = 0,
     assets = 0,
@@ -1497,10 +1496,11 @@ export async function getKpis() {
 
 export async function getTrialBalance() {
   const scope = await getEntityScope();
-  const accountScope = scope ?? "all";
-  const accounts = await getAccounts(accountScope);
-  const balances = await getSignedBalancesByAccount(accountScope);
-  return accounts.map((a) => {
+  const accounts = await getAccounts("all");
+  const balances = await getSignedBalancesByAccount(scope ?? "all");
+  return accounts
+    .filter((a) => (balances.get(a.id) ?? 0) !== 0) // drop unused rows when entity-scoped
+    .map((a) => {
     const signed = balances.get(a.id) ?? 0;
     const isDebit = a.normalBalance === "debit";
     const bal = isDebit ? signed : -signed;
