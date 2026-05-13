@@ -15,8 +15,24 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
 
-# Run migrations and load demo data on startup
-RUN echo '#!/bin/bash\nset -e\npython manage.py makemigrations\npython manage.py migrate\nif [ "$LOAD_DEMO_DATA" = "True" ]; then\n  python manage.py load_demo_data\nfi\ngunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+# Create entrypoint script with error handling
+RUN cat > /app/entrypoint.sh << 'EOF'
+#!/bin/bash
+set -e
+
+echo "Starting Django app..."
+echo "DEBUG: $DEBUG"
+echo "ALLOWED_HOSTS: $ALLOWED_HOSTS"
+
+echo "Running migrations..."
+python manage.py migrate --noinput 2>&1 || {
+  echo "WARNING: Migration failed, continuing anyway..."
+}
+
+echo "Starting gunicorn..."
+gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --timeout 120 --access-logfile - --error-logfile -
+EOF
+chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
 
