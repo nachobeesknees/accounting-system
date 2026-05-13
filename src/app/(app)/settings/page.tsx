@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Card";
 import { KV, KVGrid } from "@/components/ui/KV";
@@ -7,6 +8,7 @@ import {
   nextEntryNumber,
   nextInvoiceNumber,
 } from "@/lib/mutations";
+import { getSessionUser } from "@/lib/session";
 
 async function formatAccountRef(code: string): Promise<string> {
   const account = await getAccountByCode(code);
@@ -15,8 +17,9 @@ async function formatAccountRef(code: string): Promise<string> {
 }
 
 export default async function Page() {
-  const [nextInvoice, nextJournal, nextBill, arLabel, apLabel, reLabel, cashLabel] =
+  const [user, nextInvoice, nextJournal, nextBill, arLabel, apLabel, reLabel, cashLabel] =
     await Promise.all([
+      getSessionUser(),
       nextInvoiceNumber(),
       nextEntryNumber(),
       nextBillNumber(),
@@ -55,6 +58,22 @@ export default async function Page() {
             <KV k="Retained Earnings" v={reLabel} mono />
             <KV k="Cash" v={cashLabel} mono />
           </KVGrid>
+        </Section>
+
+        <Section title="Bulk operations">
+          <div className="flex flex-col gap-1 text-[13px]">
+            <Link
+              href="/settings/import-export"
+              style={{ color: "var(--ink)", textDecoration: "underline" }}
+            >
+              CSV import / export →
+            </Link>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+              {user?.isSuperuser
+                ? "Download templates, export current data, bulk-import new records."
+                : "Admin only — your current session does not have superuser access."}
+            </span>
+          </div>
         </Section>
       </div>
     </>
