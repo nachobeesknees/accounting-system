@@ -52,16 +52,7 @@ export async function AppShell({
   const firmOptions = firmEntities.map((f) => ({ id: f.id, code: f.code, name: f.name }));
 
   return (
-    <div
-      className="app-shell"
-      style={{
-        display: "grid",
-        height: "100dvh",
-        gridTemplateRows: "42px 1fr",
-        gridTemplateColumns: "220px 1fr",
-        gridTemplateAreas: '"top top" "side main"',
-      }}
-    >
+    <div className="app-shell">
       <div style={{ gridArea: "top" }}>
         <Topbar
           user={user}
@@ -70,7 +61,7 @@ export async function AppShell({
           currentEntityId={currentScope}
         />
       </div>
-      <div style={{ gridArea: "side" }}>
+      <div className="app-shell-side" style={{ gridArea: "side" }}>
         <Sidebar counts={counts} urgentItems={urgentItems} />
       </div>
       <main

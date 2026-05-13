@@ -108,3 +108,85 @@ body {
   background: var(--hover);
   color: var(--ink);
 }
+
+/* ------------------------------ App shell ------------------------------- */
+
+.app-shell {
+  display: grid;
+  height: 100dvh;
+  grid-template-rows: 42px 1fr;
+  grid-template-columns: 220px 1fr;
+  grid-template-areas: "top top" "side main";
+}
+
+.sidebar-toggle:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* Hide hamburger and overlay on desktop. */
+.topbar-burger,
+.sidebar-overlay {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+    grid-template-areas: "top" "main";
+  }
+
+  .topbar-burger {
+    display: inline-flex;
+  }
+
+  /* The brand text crowds the topbar on phones; keep just the T tile. */
+  .topbar-brand {
+    display: none;
+  }
+
+  .topbar-user-name {
+    display: none;
+  }
+
+  /* Sidebar becomes a fixed drawer. Off-screen by default, slides in when
+     <html> has .sidebar-open. */
+  .app-shell-side {
+    position: fixed;
+    top: 42px;
+    left: 0;
+    bottom: 0;
+    width: 240px;
+    transform: translateX(-100%);
+    transition: transform 0.18s ease-out;
+    z-index: 40;
+    background: var(--rail);
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.08);
+  }
+
+  .sidebar-overlay {
+    display: block;
+    position: fixed;
+    inset: 42px 0 0 0;
+    background: rgba(0, 0, 0, 0.35);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease-out;
+    z-index: 30;
+  }
+
+  html.sidebar-open .app-shell-side {
+    transform: translateX(0);
+  }
+
+  html.sidebar-open .sidebar-overlay {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* Always allow horizontal scroll on data tables so columns never get
+   crushed on small screens. */
+.overflow-auto {
+  -webkit-overflow-scrolling: touch;
+}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
 import { EntityScopePicker } from "./EntityScopePicker";
+import { SidebarToggle } from "./SidebarToggle";
 import { setEntityScope } from "@/lib/entity-scope";
 import type { SessionUser } from "@/lib/types";
 
@@ -30,7 +31,10 @@ export function Topbar({
         borderBottom: "1px solid var(--line)",
       }}
     >
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="topbar-burger">
+          <SidebarToggle />
+        </span>
         <Link
           href="/"
           className="inline-flex items-center justify-center rounded-md w-[22px] h-[22px] font-bold text-[12px] shrink-0"
@@ -38,7 +42,7 @@ export function Topbar({
         >
           T
         </Link>
-        <div className="flex items-center gap-1.5 text-[12.5px] min-w-0" style={{ color: "var(--ink-3)" }}>
+        <div className="topbar-brand flex items-center gap-1.5 text-[12.5px] min-w-0" style={{ color: "var(--ink-3)" }}>
           <Link href="/" style={{ color: "var(--ink-3)", textDecoration: "none" }}>
             Thistlewood &amp; Associates
           </Link>
@@ -58,14 +62,14 @@ export function Topbar({
           onChange={changeEntityScope}
         />
         <ThemeToggle />
-        <span className="flex items-center gap-2 text-[12.5px]" style={{ color: "var(--ink-2)" }}>
+        <span className="topbar-user flex items-center gap-2 text-[12.5px]" style={{ color: "var(--ink-2)" }}>
           <span
             className="inline-flex items-center justify-center w-[22px] h-[22px] rounded-full text-[10.5px] font-semibold"
             style={{ background: "var(--p-formation-bg)", color: "var(--p-formation-fg)" }}
           >
             {user.fullName.charAt(0)}
           </span>
-          <span>{user.fullName}</span>
+          <span className="topbar-user-name">{user.fullName}</span>
         </span>
         <form action="/api/logout" method="post">
           <button
