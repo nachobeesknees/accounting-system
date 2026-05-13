@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load humanize_money %}
+
+{% block title %}{{ entry.id }} - Journal Entry{% endblock %}
+
+{% block content %}
+<div class="section">
+    <a class="btn-link" href="{% url 'core:journal_entries' %}">← Back to all entries</a>
+    <h1 style="margin-top: 10px;">{{ entry.id }}</h1>
+    <p class="subtitle">{{ entry.description }}</p>
+</div>
+
+<div class="grid cols-3" style="margin-bottom: 24px;">
+    <div class="card">
+        <h3>Date</h3>
+        <div class="value" style="font-size: 18px;">{{ entry.date|date:"l, F j, Y" }}</div>
+    </div>
+    <div class="card">
+        <h3>Status</h3>
+        <div style="margin-top: 6px;">
+            {% if entry.status == 'Posted' %}
+                <span class="badge posted">Posted</span>
+            {% else %}
+                <span class="badge pending">Pending Approval</span>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <h3>Balance check</h3>
+        {% if total_debit == total_credit %}
+            <div class="value positive" style="font-size: 18px;">✓ Balanced</div>
+            <div class="meta">Debits = Credits = ${{ total_debit|money }}</div>
+        {% else %}
+            <div class="value negative" style="font-size: 18px;">✗ Unbalanced</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card">
+    <h2>Line items</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Account</th>
+                <th class="num">Debit</th>
+                <th class="num">Credit</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for line in entry.lines %}
+            <tr>
+                <td>{{ line.account }}</td>
+                <td class="num">{% if line.debit %}${{ line.debit|money }}{% else %}&mdash;{% endif %}</td>
+                <td class="num">{% if line.credit %}${{ line.credit|money }}{% else %}&mdash;{% endif %}</td>
+            </tr>
+            {% endfor %}
+            <tr style="background: #fafbfc; font-weight: 700;">
+                <td>Totals</td>
+                <td class="num">${{ total_debit|money }}</td>
+                <td class="num">${{ total_credit|money }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}

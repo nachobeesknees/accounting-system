@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% load humanize_money %}
+
+{% block title %}Journal Entries - Accounting System{% endblock %}
+
+{% block content %}
+<div class="section">
+    <h1>Journal Entries</h1>
+    <p class="subtitle">All double-entry transactions posted to the general ledger</p>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Status</th>
+                <th class="num">Debit total</th>
+                <th class="num">Credit total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entry in journal_entries %}
+                <tr>
+                    <td><a class="btn-link" href="{% url 'core:journal_entry_detail' entry.id %}">{{ entry.id }}</a></td>
+                    <td>{{ entry.date|date:"M j, Y" }}</td>
+                    <td>{{ entry.description }}</td>
+                    <td>
+                        {% if entry.status == 'Posted' %}
+                            <span class="badge posted">Posted</span>
+                        {% else %}
+                            <span class="badge pending">Pending Approval</span>
+                        {% endif %}
+                    </td>
+                    <td class="num">${{ entry.lines.0.debit|abs_money }}</td>
+                    <td class="num">${{ entry.lines.1.credit|abs_money }}</td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

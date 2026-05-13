@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Accounting System{% endblock %}</title>
+    <style>
+        :root {
+            --primary: #667eea;
+            --primary-dark: #5568d3;
+            --accent: #764ba2;
+            --bg: #f5f7fa;
+            --card: #ffffff;
+            --text: #1f2937;
+            --muted: #6b7280;
+            --border: #e5e7eb;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: #fff;
+            padding: 14px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .navbar .brand {
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .navbar nav { display: flex; gap: 4px; align-items: center; }
+        .navbar nav a {
+            color: rgba(255,255,255,0.92);
+            text-decoration: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.15s;
+        }
+        .navbar nav a:hover, .navbar nav a.active {
+            background: rgba(255,255,255,0.18);
+            color: #fff;
+        }
+
+        .user-chip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.16);
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 13px;
+        }
+        .user-chip a {
+            color: #fff;
+            opacity: 0.85;
+            text-decoration: none;
+            font-size: 12px;
+        }
+        .user-chip a:hover { opacity: 1; text-decoration: underline; }
+
+        main {
+            flex: 1;
+            max-width: 1280px;
+            margin: 0 auto;
+            padding: 32px;
+            width: 100%;
+        }
+
+        h1 { font-size: 28px; margin-bottom: 6px; }
+        h2 { font-size: 20px; margin-bottom: 16px; }
+        .subtitle { color: var(--muted); margin-bottom: 28px; }
+
+        .grid { display: grid; gap: 20px; }
+        .grid.cols-2 { grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+        .grid.cols-3 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+        .grid.cols-4 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 22px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+        }
+        .card h3 {
+            font-size: 14px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        .card .value {
+            font-size: 26px;
+            font-weight: 700;
+            color: var(--text);
+        }
+        .card .value.positive { color: var(--success); }
+        .card .value.negative { color: var(--danger); }
+        .card .meta {
+            font-size: 13px;
+            color: var(--muted);
+            margin-top: 6px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        thead th {
+            text-align: left;
+            padding: 12px 14px;
+            border-bottom: 2px solid var(--border);
+            font-weight: 600;
+            color: var(--muted);
+            text-transform: uppercase;
+            font-size: 12px;
+            letter-spacing: 0.04em;
+        }
+        tbody td {
+            padding: 12px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        tbody tr:hover { background: #fafbfc; }
+        td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge.posted { background: #d1fae5; color: #065f46; }
+        .badge.pending { background: #fef3c7; color: #92400e; }
+        .badge.asset { background: #dbeafe; color: #1e40af; }
+        .badge.liability { background: #fee2e2; color: #991b1b; }
+        .badge.equity { background: #ede9fe; color: #5b21b6; }
+        .badge.revenue { background: #d1fae5; color: #065f46; }
+        .badge.expense { background: #fed7aa; color: #9a3412; }
+
+        .section { margin-bottom: 32px; }
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 14px;
+        }
+
+        a.btn {
+            display: inline-block;
+            background: var(--primary);
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.15s;
+        }
+        a.btn:hover { background: var(--primary-dark); }
+        a.btn-link {
+            color: var(--primary);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        a.btn-link:hover { text-decoration: underline; }
+
+        @media (max-width: 720px) {
+            .navbar { flex-direction: column; gap: 10px; padding: 14px 16px; }
+            .navbar nav { flex-wrap: wrap; justify-content: center; }
+            main { padding: 20px 14px; }
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    {% if user %}
+    <header class="navbar">
+        <a class="brand" href="{% url 'core:dashboard' %}">📊 Accounting System</a>
+        <nav>
+            <a href="{% url 'core:dashboard' %}" {% if request.resolver_match.url_name == 'dashboard' or request.resolver_match.url_name == 'dashboard_alt' %}class="active"{% endif %}>Dashboard</a>
+            <a href="{% url 'core:journal_entries' %}" {% if 'journal' in request.resolver_match.url_name %}class="active"{% endif %}>Journal Entries</a>
+            <a href="{% url 'core:chart_of_accounts' %}" {% if request.resolver_match.url_name == 'chart_of_accounts' %}class="active"{% endif %}>Chart of Accounts</a>
+            <a href="{% url 'core:reports' %}" {% if request.resolver_match.url_name == 'reports' %}class="active"{% endif %}>Reports</a>
+            <a href="{% url 'core:entities' %}" {% if request.resolver_match.url_name == 'entities' %}class="active"{% endif %}>Entities</a>
+        </nav>
+        <div class="user-chip">
+            <span>{{ user.icon }} {{ user.full_name }} ({{ user.role }})</span>
+            <a href="{% url 'core:logout' %}">Logout</a>
+        </div>
+    </header>
+    {% endif %}
+
+    <main>
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% load humanize_money %}
+
+{% block title %}Chart of Accounts{% endblock %}
+
+{% block content %}
+<div class="section">
+    <h1>Chart of Accounts</h1>
+    <p class="subtitle">{{ account_groups|length }} account categories &middot; balances as of period close</p>
+</div>
+
+{% for type, accounts in account_groups %}
+<div class="card" style="margin-bottom: 22px;">
+    <div class="section-header">
+        <h2>
+            {% if type == 'Asset' %}<span class="badge asset">{{ type }}</span>
+            {% elif type == 'Liability' %}<span class="badge liability">{{ type }}</span>
+            {% elif type == 'Equity' %}<span class="badge equity">{{ type }}</span>
+            {% elif type == 'Revenue' %}<span class="badge revenue">{{ type }}</span>
+            {% elif type == 'Expense' %}<span class="badge expense">{{ type }}</span>
+            {% else %}{{ type }}{% endif %}
+            <span style="margin-left: 8px; color: var(--muted); font-size: 14px;">({{ accounts|length }} accounts)</span>
+        </h2>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 100px;">Code</th>
+                <th>Account</th>
+                <th class="num">Balance</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for account in accounts %}
+            <tr>
+                <td><strong>{{ account.code }}</strong></td>
+                <td>{{ account.name }}</td>
+                <td class="num">
+                    {% if account.balance < 0 %}
+                        <span style="color: var(--danger);">$({{ account.balance|abs_money }})</span>
+                    {% else %}
+                        ${{ account.balance|money }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endfor %}
+{% endblock %}

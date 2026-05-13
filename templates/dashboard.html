@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load humanize_money %}
+
+{% block title %}Dashboard - Accounting System{% endblock %}
+
+{% block content %}
+<div class="section">
+    <h1>Welcome back, {{ user.full_name }}</h1>
+    <p class="subtitle">{{ today|date:"l, F j, Y" }} · Viewing as <strong>{{ user.role }}</strong></p>
+</div>
+
+<div class="section">
+    <div class="grid cols-4">
+        <div class="card">
+            <h3>Revenue (YTD)</h3>
+            <div class="value positive">${{ kpis.revenue|money }}</div>
+            <div class="meta">+12.4% vs last year</div>
+        </div>
+        <div class="card">
+            <h3>Expenses (YTD)</h3>
+            <div class="value">${{ kpis.expenses|money }}</div>
+            <div class="meta">63.5% of revenue</div>
+        </div>
+        <div class="card">
+            <h3>Net Income</h3>
+            <div class="value positive">${{ kpis.net_income|money }}</div>
+            <div class="meta">36.5% margin</div>
+        </div>
+        <div class="card">
+            <h3>Cash on Hand</h3>
+            <div class="value">${{ kpis.cash|money }}</div>
+            <div class="meta">Across {{ entities|length }} entities</div>
+        </div>
+    </div>
+</div>
+
+<div class="grid cols-2">
+    <div class="card">
+        <div class="section-header">
+            <h2>Recent Journal Entries</h2>
+            <a class="btn-link" href="{% url 'core:journal_entries' %}">View all →</a>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in recent_entries %}
+                <tr>
+                    <td><a class="btn-link" href="{% url 'core:journal_entry_detail' entry.id %}">{{ entry.id }}</a></td>
+                    <td>{{ entry.date|date:"M j" }}</td>
+                    <td>{{ entry.description }}</td>
+                    <td>
+                        {% if entry.status == 'Posted' %}
+                            <span class="badge posted">Posted</span>
+                        {% else %}
+                            <span class="badge pending">Pending</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <div class="section-header">
+            <h2>Entities</h2>
+            <a class="btn-link" href="{% url 'core:entities' %}">Manage →</a>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Name</th>
+                    <th>Currency</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entity in entities %}
+                <tr>
+                    <td><strong>{{ entity.code }}</strong></td>
+                    <td>{{ entity.name }}</td>
+                    <td>{{ entity.currency }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if pending_entries %}
+        <div style="margin-top: 22px; padding: 14px; background: #fef3c7; border-radius: 6px; font-size: 13px; color: #92400e;">
+            <strong>⏳ {{ pending_entries|length }} journal entr{{ pending_entries|length|pluralize:"y,ies" }} pending approval.</strong>
+            <a class="btn-link" style="color: #92400e;" href="{% url 'core:journal_entries' %}">Review now →</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

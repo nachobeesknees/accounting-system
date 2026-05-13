@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+
+{% block title %}Entities{% endblock %}
+
+{% block content %}
+<div class="section">
+    <h1>Entities</h1>
+    <p class="subtitle">{{ entities|length }} legal entities across the group</p>
+</div>
+
+<div class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Legal name</th>
+                <th>Country</th>
+                <th>Functional currency</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for entity in entities %}
+            <tr>
+                <td><strong>{{ entity.code }}</strong></td>
+                <td>{{ entity.name }}</td>
+                <td>{{ entity.country }}</td>
+                <td><span class="badge equity">{{ entity.currency }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
