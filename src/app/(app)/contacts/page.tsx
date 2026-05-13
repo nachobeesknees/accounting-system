@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
+import { IconContact } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getContacts } from "@/lib/data";
@@ -94,8 +95,17 @@ export default async function Page({
         <Card title="Contacts">
           {rows.length === 0 ? (
             <Empty
-              title="No contacts match"
-              body="Try clearing filters or add a new contact."
+              icon={<IconContact size={20} />}
+              title={
+                all.length === 0
+                  ? "No contacts yet"
+                  : "No contacts match these filters"
+              }
+              body={
+                all.length === 0
+                  ? "Contacts are the people behind your entities — clients, employees, vendors, and intermediaries."
+                  : "Try clearing filters or add a new contact."
+              }
               cta={
                 <ButtonLink variant="primary" href="/contacts/new">
                   + New contact

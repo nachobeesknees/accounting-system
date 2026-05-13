@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
+import { IconCoins } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Tabs } from "@/components/ui/Tabs";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -121,8 +122,9 @@ export default async function Page({
           >
             {assignments.length === 0 ? (
               <Empty
+                icon={<IconCoins size={20} />}
                 title="No entity fees yet"
-                body="Assign an annual fee to an entity to start tracking."
+                body="Assign annual or recurring fees to entities. Assignments feed your AR pipeline and drive automated invoicing."
                 cta={
                   <ButtonLink variant="primary" href="/fees/assignments/new">
                     + Assign fee
@@ -211,8 +213,9 @@ export default async function Page({
           <Card title="Fee schedules">
             {schedules.length === 0 ? (
               <Empty
-                title="No fee schedules"
-                body="Create reusable templates per entity kind."
+                icon={<IconCoins size={20} />}
+                title="No fee schedules yet"
+                body="Create reusable fee templates per entity kind so you can assign them in one click."
                 cta={
                   <ButtonLink variant="primary" href="/fees/schedules/new">
                     + New schedule

@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
+import { IconBank } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
@@ -59,8 +60,9 @@ export default async function Page() {
         <Card title="Accounts">
           {bankAccounts.length === 0 ? (
             <Empty
-              title="No bank accounts"
-              body="Add an account to start tracking balances and signers."
+              icon={<IconBank size={20} />}
+              title="No bank accounts yet"
+              body="Track operating, escrow, and trust accounts. Add signers and reconcile against the GL."
               cta={
                 <ButtonLink variant="primary" href="/bank/new">
                   + New bank account

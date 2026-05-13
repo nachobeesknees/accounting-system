@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
+import { IconClock } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
@@ -166,8 +167,17 @@ export default async function Page({
         <Card title="Time entries">
           {rows.length === 0 ? (
             <Empty
-              title="No time entries match"
-              body="Log time from /time/new or clear filters."
+              icon={<IconClock size={20} />}
+              title={
+                allEntries.length === 0
+                  ? "No time logged yet"
+                  : "No time entries match these filters"
+              }
+              body={
+                allEntries.length === 0
+                  ? "Track billable and non-billable hours. Logged time rolls into utilization and feeds invoicing."
+                  : "Try clearing filters or log a new entry."
+              }
               cta={
                 <ButtonLink variant="primary" href="/time/new">
                   + Log time

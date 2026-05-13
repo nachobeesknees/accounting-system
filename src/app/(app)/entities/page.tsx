@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
+import { IconBuilding } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getCustomers, getEntities } from "@/lib/data";
@@ -118,8 +119,17 @@ export default async function Page({
         <Card title="Entities">
           {rows.length === 0 ? (
             <Empty
-              title="No entities match these filters"
-              body="Adjust filters or create a new entity."
+              icon={<IconBuilding size={20} />}
+              title={
+                allEntities.length === 0
+                  ? "No entities yet"
+                  : "No entities match these filters"
+              }
+              body={
+                allEntities.length === 0
+                  ? "Entities are the legal structures (LLCs, trusts, S-corps, individuals) you keep books for."
+                  : "Adjust filters or create a new entity."
+              }
               cta={
                 <ButtonLink variant="primary" href="/entities/new">
                   + New entity

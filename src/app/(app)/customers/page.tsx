@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field } from "@/components/ui/Field";
+import { IconUsers } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getCustomers, getInvoices } from "@/lib/data";
@@ -82,8 +83,17 @@ export default async function Page({
         <Card title="Clients">
           {rows.length === 0 ? (
             <Empty
-              title="No customers match your search"
-              body="Try a different query or add a new customer."
+              icon={<IconUsers size={20} />}
+              title={
+                allCustomers.length === 0
+                  ? "No clients yet"
+                  : "No clients match your search"
+              }
+              body={
+                allCustomers.length === 0
+                  ? "Clients are the families or organizations you serve. Each one owns one or more entities you keep books for."
+                  : "Try a different query or add a new client."
+              }
               cta={
                 <ButtonLink variant="primary" href="/customers/new">
                   + New client

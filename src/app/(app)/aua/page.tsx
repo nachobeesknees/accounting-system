@@ -3,6 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
+import { IconBox } from "@/components/ui/Icon";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   convertToBase,
@@ -265,8 +266,9 @@ export default async function Page() {
         >
           {assets.length === 0 ? (
             <Empty
-              title="No assets yet"
-              body="Track real estate, securities, art and more under each entity."
+              icon={<IconBox size={20} />}
+              title="No assets under administration yet"
+              body="Track real estate, securities, art, and private interests held by your entities or directly by a client."
               cta={
                 <ButtonLink variant="primary" href="/aua/new">
                   + New asset

@@ -6,6 +6,7 @@ import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { Field, SelectField } from "@/components/ui/Field";
 import { Empty } from "@/components/ui/Empty";
+import { IconBookOpen } from "@/components/ui/Icon";
 import { getJournalEntries, totalDebits } from "@/lib/data";
 import { formatUSD } from "@/lib/money";
 import type { JournalEntry } from "@/lib/types";
@@ -105,8 +106,17 @@ export default async function Page({
         <Card title="Entries">
           {entries.length === 0 ? (
             <Empty
-              title="No journal entries match these filters"
-              body="Try clearing the filters or create a new entry."
+              icon={<IconBookOpen size={20} />}
+              title={
+                allEntries.length === 0
+                  ? "No journal entries yet"
+                  : "No journal entries match these filters"
+              }
+              body={
+                allEntries.length === 0
+                  ? "Journal entries are how movement enters the books — created by hand or auto-generated from invoices, bills, and payments."
+                  : "Try clearing the filters or create a new entry."
+              }
               cta={
                 <ButtonLink variant="primary" href="/journal/new">
                   + New entry

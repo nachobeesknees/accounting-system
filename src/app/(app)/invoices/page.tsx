@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
+import { IconReceipt } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getCustomers, getInvoices } from "@/lib/data";
@@ -117,8 +118,17 @@ export default async function Page({
         <Card title="Invoices">
           {rows.length === 0 ? (
             <Empty
-              title="No invoices match these filters"
-              body="Try clearing the filters or create a new invoice."
+              icon={<IconReceipt size={20} />}
+              title={
+                allInvoices.length === 0
+                  ? "No invoices yet"
+                  : "No invoices match these filters"
+              }
+              body={
+                allInvoices.length === 0
+                  ? "Bill a client by hand, or auto-generate invoices from your fee schedules."
+                  : "Try clearing the filters or create a new invoice."
+              }
               cta={
                 <ButtonLink variant="primary" href="/invoices/new">
                   + New invoice

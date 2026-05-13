@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
+import { IconFile } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getBills, getVendors } from "@/lib/data";
@@ -107,8 +108,17 @@ export default async function Page({
         <Card title="Bills">
           {rows.length === 0 ? (
             <Empty
-              title="No bills match these filters"
-              body="Try clearing the filters or create a new bill."
+              icon={<IconFile size={20} />}
+              title={
+                allBills.length === 0
+                  ? "No bills yet"
+                  : "No bills match these filters"
+              }
+              body={
+                allBills.length === 0
+                  ? "Track what you owe vendors. Bills hit the books when approved and clear when paid."
+                  : "Try clearing the filters or create a new bill."
+              }
               cta={
                 <ButtonLink variant="primary" href="/bills/new">
                   + New bill
