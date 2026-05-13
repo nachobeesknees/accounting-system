@@ -6,6 +6,8 @@ import type {
   BankAccount,
   BankAccountSigner,
   BankTransaction,
+  Contact,
+  ContactLink,
   Customer,
   EmployeeRate,
   Entity,
@@ -140,6 +142,58 @@ export const ASSET_VALUE_SNAPSHOTS: AssetValueSnapshot[] = [
   { id: id("av-016"),  assetId: "as-016", snapshotDate: D("2026-03-31"), value: "3200000.00", currencyCode: "USD", source: "Internal valuation", notes: "Royalty-stream model", createdBy: "u-aldous", createdAt: "2026-04-15T17:00:00Z" },
   { id: id("av-017"),  assetId: "as-017", snapshotDate: D("2026-05-09"), value: "41500000.00", currencyCode: "USD", source: "Lloyds statement", notes: null, createdBy: "u-aldous", createdAt: "2026-05-10T17:00:00Z" },
   { id: id("av-018"),  assetId: "as-018", snapshotDate: D("2026-04-30"), value: "28900000.00", currencyCode: "USD", source: "UK valuation report", notes: null, createdBy: "u-aldous", createdAt: "2026-05-01T17:00:00Z" },
+];
+
+export const CONTACTS: Contact[] = [
+  // Clients (mirroring the 5 customers)
+  { id: id("co-001"), code: "CT-CLI-001", name: "Pumpernickel Industries", kind: "organization", email: "ap@pumpernickel.co", phone: "(415) 555-2210", address: "120 Hawthorne St, San Francisco CA 94105", notes: null, isClient: true, isVendor: false, isEmployee: false, isIntermediary: false, customerId: "c-001", vendorId: null, userId: null, isActive: true },
+  { id: id("co-002"), code: "CT-CLI-002", name: "Snickerthorpe Holdings", kind: "organization", email: "finance@snickerthorpe.com", phone: "(212) 555-0930", address: "350 W 42nd St, New York NY 10036", notes: null, isClient: true, isVendor: false, isEmployee: false, isIntermediary: false, customerId: "c-002", vendorId: null, userId: null, isActive: true },
+  { id: id("co-003"), code: "CT-CLI-003", name: "Mumblethrottle Capital", kind: "organization", email: "ar@mumblethrottle.io", phone: "(617) 555-7188", address: "1 Federal St, Boston MA 02110", notes: null, isClient: true, isVendor: false, isEmployee: false, isIntermediary: false, customerId: "c-003", vendorId: null, userId: null, isActive: true },
+  { id: id("co-004"), code: "CT-CLI-004", name: "Tsukimomo Ventures", kind: "organization", email: "billing@tsukimomo.jp", phone: "+81 3 5555 4019", address: "1-1 Marunouchi, Chiyoda-ku, Tokyo", notes: "Foreign parent", isClient: true, isVendor: false, isEmployee: false, isIntermediary: false, customerId: "c-004", vendorId: null, userId: null, isActive: true },
+  { id: id("co-005"), code: "CT-CLI-005", name: "Frogsworth & Partners", kind: "organization", email: "invoices@frogsworth.co.uk", phone: "+44 20 5555 0144", address: "12 Lombard St, London EC3V 9BJ", notes: null, isClient: true, isVendor: false, isEmployee: false, isIntermediary: false, customerId: "c-005", vendorId: null, userId: null, isActive: true },
+  // Vendors (5)
+  { id: id("co-006"), code: "CT-VEN-001", name: "Bramblewick Office Supply", kind: "organization", email: "orders@bramblewick.com", phone: "(312) 555-2200", address: "401 W Adams St, Chicago IL 60606", notes: null, isClient: false, isVendor: true, isEmployee: false, isIntermediary: false, customerId: null, vendorId: "v-001", userId: null, isActive: true },
+  { id: id("co-007"), code: "CT-VEN-002", name: "Quillfeather Technology", kind: "organization", email: "ar@quillfeather.tech", phone: "(206) 555-3304", address: "500 Pine St, Seattle WA 98101", notes: null, isClient: false, isVendor: true, isEmployee: false, isIntermediary: false, customerId: null, vendorId: "v-002", userId: null, isActive: true },
+  { id: id("co-008"), code: "CT-VEN-003", name: "Nettlesome Property Management", kind: "organization", email: "leases@nettlesome.com", phone: "(415) 555-9020", address: "55 Sutter St, San Francisco CA 94104", notes: null, isClient: false, isVendor: true, isEmployee: false, isIntermediary: false, customerId: null, vendorId: "v-003", userId: null, isActive: true },
+  { id: id("co-009"), code: "CT-VEN-004", name: "Thundermuffin Consulting", kind: "organization", email: "finance@thundermuffin.io", phone: "(404) 555-1122", address: "1 Atlantic Center, Atlanta GA 30309", notes: null, isClient: false, isVendor: true, isEmployee: false, isIntermediary: false, customerId: null, vendorId: "v-004", userId: null, isActive: true },
+  { id: id("co-010"), code: "CT-VEN-005", name: "Wobblesworth Insurance Group", kind: "organization", email: "billing@wobblesworth.com", phone: "(860) 555-7710", address: "1 Constitution Plaza, Hartford CT 06103", notes: null, isClient: false, isVendor: true, isEmployee: false, isIntermediary: false, customerId: null, vendorId: "v-005", userId: null, isActive: true },
+  // Employees (mirroring users — except admin which is internal)
+  { id: id("co-011"), code: "CT-EMP-001", name: "Margery Crumplebottom", kind: "individual", email: "margery@thistlewood.com", phone: null, address: null, notes: "Bookkeeper", isClient: false, isVendor: false, isEmployee: true, isIntermediary: false, customerId: null, vendorId: null, userId: "u-margery", isActive: true },
+  { id: id("co-012"), code: "CT-EMP-002", name: "Aldous Pepperton", kind: "individual", email: "aldous@thistlewood.com", phone: null, address: null, notes: "Controller", isClient: false, isVendor: false, isEmployee: true, isIntermediary: false, customerId: null, vendorId: null, userId: "u-aldous", isActive: true },
+  { id: id("co-013"), code: "CT-EMP-003", name: "Eustace Brindleworth", kind: "individual", email: "eustace@thistlewood.com", phone: null, address: null, notes: "CFO", isClient: false, isVendor: false, isEmployee: true, isIntermediary: false, customerId: null, vendorId: null, userId: "u-eustace", isActive: true },
+  // Intermediaries (advisors, attorneys etc.)
+  { id: id("co-014"), code: "CT-INT-001", name: "Dewey Cheatham & Howe LLP", kind: "organization", email: "trusts@dch.law", phone: "(212) 555-9988", address: "1 World Trade Center, NY 10007", notes: "Trust/estate counsel for Snickerthorpe + Pumpernickel", isClient: false, isVendor: false, isEmployee: false, isIntermediary: true, customerId: null, vendorId: null, userId: null, isActive: true },
+  { id: id("co-015"), code: "CT-INT-002", name: "Stannard Wealth Advisors", kind: "organization", email: "ops@stannardwealth.com", phone: "(617) 555-4040", address: "500 Boylston St, Boston MA 02116", notes: "RIA — Mumblethrottle relationship", isClient: false, isVendor: false, isEmployee: false, isIntermediary: true, customerId: null, vendorId: null, userId: null, isActive: true },
+  { id: id("co-016"), code: "CT-INT-003", name: "Hadley & Kettlewell CPAs", kind: "organization", email: "tax@hadleyk.com", phone: "(415) 555-7270", address: "100 Pine St, San Francisco CA 94111", notes: "Outside tax — Pumpernickel + Frogsworth", isClient: false, isVendor: false, isEmployee: false, isIntermediary: true, customerId: null, vendorId: null, userId: null, isActive: true },
+  // Beneficial owners (individuals also tagged via links)
+  { id: id("co-017"), code: "CT-IND-001", name: "Cordelia Pumpernickel", kind: "individual", email: "cordelia@pumpernickel.co", phone: "(415) 555-2200", address: null, notes: "Trustee + beneficial owner", isClient: false, isVendor: false, isEmployee: false, isIntermediary: false, customerId: null, vendorId: null, userId: null, isActive: true },
+  { id: id("co-018"), code: "CT-IND-002", name: "Beauregard Snickerthorpe", kind: "individual", email: "beau@snickerthorpe.com", phone: "(212) 555-2002", address: null, notes: "Managing Director", isClient: false, isVendor: false, isEmployee: false, isIntermediary: false, customerId: null, vendorId: null, userId: null, isActive: true },
+];
+
+export const CONTACT_LINKS: ContactLink[] = [
+  // Client contacts linked to their entities
+  { id: id("cl-001"), contactId: "co-001", refType: "entity", refId: "e-001", role: "Owner", notes: null },
+  { id: id("cl-002"), contactId: "co-001", refType: "entity", refId: "e-002", role: "Owner", notes: null },
+  { id: id("cl-003"), contactId: "co-002", refType: "entity", refId: "e-003", role: "Owner", notes: null },
+  { id: id("cl-004"), contactId: "co-002", refType: "entity", refId: "e-004", role: "Owner", notes: null },
+  { id: id("cl-005"), contactId: "co-002", refType: "entity", refId: "e-005", role: "Owner", notes: null },
+  { id: id("cl-006"), contactId: "co-003", refType: "entity", refId: "e-006", role: "Owner", notes: null },
+  { id: id("cl-007"), contactId: "co-003", refType: "entity", refId: "e-007", role: "Owner", notes: null },
+  { id: id("cl-008"), contactId: "co-004", refType: "entity", refId: "e-008", role: "Owner", notes: null },
+  { id: id("cl-009"), contactId: "co-005", refType: "entity", refId: "e-009", role: "Owner", notes: null },
+  { id: id("cl-010"), contactId: "co-005", refType: "entity", refId: "e-010", role: "Owner", notes: null },
+  // Intermediaries linked to their client entities
+  { id: id("cl-011"), contactId: "co-014", refType: "entity", refId: "e-002", role: "Trust counsel", notes: null },
+  { id: id("cl-012"), contactId: "co-014", refType: "entity", refId: "e-003", role: "Trust counsel", notes: null },
+  { id: id("cl-013"), contactId: "co-015", refType: "entity", refId: "e-006", role: "RIA", notes: null },
+  { id: id("cl-014"), contactId: "co-016", refType: "entity", refId: "e-001", role: "Outside tax preparer", notes: null },
+  { id: id("cl-015"), contactId: "co-016", refType: "entity", refId: "e-009", role: "Outside tax preparer", notes: null },
+  // Beneficial owners → bank accounts
+  { id: id("cl-016"), contactId: "co-017", refType: "bank_account", refId: "ba-002", role: "Primary trustee / signer", notes: null },
+  { id: id("cl-017"), contactId: "co-018", refType: "bank_account", refId: "ba-003", role: "Signer", notes: null },
+  // Beneficial owners → entities
+  { id: id("cl-018"), contactId: "co-017", refType: "entity", refId: "e-002", role: "Trustee", notes: null },
+  { id: id("cl-019"), contactId: "co-018", refType: "entity", refId: "e-004", role: "Beneficial owner", notes: null },
 ];
 
 export const EMPLOYEE_RATES: EmployeeRate[] = [

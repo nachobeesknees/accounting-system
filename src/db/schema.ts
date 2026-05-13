@@ -124,6 +124,50 @@ export const journalLines = pgTable(
   }),
 );
 
+export const contactKindEnum = pgEnum("contact_kind", [
+  "individual",
+  "organization",
+]);
+
+export const contacts = pgTable("contacts", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  kind: contactKindEnum("kind").notNull().default("organization"),
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  notes: text("notes"),
+  isClient: boolean("is_client").notNull().default(false),
+  isVendor: boolean("is_vendor").notNull().default(false),
+  isEmployee: boolean("is_employee").notNull().default(false),
+  isIntermediary: boolean("is_intermediary").notNull().default(false),
+  customerId: text("customer_id"),
+  vendorId: text("vendor_id"),
+  userId: text("user_id"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const contactLinkRefTypeEnum = pgEnum("contact_link_ref_type", [
+  "entity",
+  "bank_account",
+  "invoice",
+  "bill",
+  "asset",
+]);
+
+export const contactLinks = pgTable("contact_links", {
+  id: text("id").primaryKey(),
+  contactId: text("contact_id").notNull(),
+  refType: contactLinkRefTypeEnum("ref_type").notNull(),
+  refId: text("ref_id").notNull(),
+  role: text("role"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const customers = pgTable("customers", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -424,3 +468,5 @@ export type FeeSchedule = typeof feeSchedules.$inferSelect;
 export type EntityFee = typeof entityFees.$inferSelect;
 export type EmployeeRate = typeof employeeRates.$inferSelect;
 export type TimeEntry = typeof timeEntries.$inferSelect;
+export type Contact = typeof contacts.$inferSelect;
+export type ContactLink = typeof contactLinks.$inferSelect;

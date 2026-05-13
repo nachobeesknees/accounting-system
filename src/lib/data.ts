@@ -25,6 +25,10 @@ import type {
   BankAccount,
   BankAccountSigner,
   BankTransaction,
+  Contact,
+  ContactKind,
+  ContactLink,
+  ContactLinkRefType,
   Customer,
   EmployeeRate,
   Entity,
@@ -183,6 +187,38 @@ function mapEntityFee(r: typeof schema.entityFees.$inferSelect): EntityFee {
     includedHours: r.includedHours,
     status: r.status as EntityFeeStatus,
     invoiceId: r.invoiceId,
+    notes: r.notes,
+  };
+}
+
+function mapContact(r: typeof schema.contacts.$inferSelect): Contact {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    kind: r.kind as ContactKind,
+    email: r.email,
+    phone: r.phone,
+    address: r.address,
+    notes: r.notes,
+    isClient: r.isClient,
+    isVendor: r.isVendor,
+    isEmployee: r.isEmployee,
+    isIntermediary: r.isIntermediary,
+    customerId: r.customerId,
+    vendorId: r.vendorId,
+    userId: r.userId,
+    isActive: r.isActive,
+  };
+}
+
+function mapContactLink(r: typeof schema.contactLinks.$inferSelect): ContactLink {
+  return {
+    id: r.id,
+    contactId: r.contactId,
+    refType: r.refType as ContactLinkRefType,
+    refId: r.refId,
+    role: r.role,
     notes: r.notes,
   };
 }
@@ -414,6 +450,50 @@ export async function getCustomerById(id: string): Promise<Customer | undefined>
     .where(eq(schema.customers.id, id))
     .limit(1);
   return row ? mapCustomer(row) : undefined;
+}
+
+export async function getContacts(): Promise<Contact[]> {
+  const db = getDb();
+  const rows = await db.select().from(schema.contacts).orderBy(schema.contacts.name);
+  return rows.map(mapContact);
+}
+
+export async function getContactById(id: string): Promise<Contact | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.contacts)
+    .where(eq(schema.contacts.id, id))
+    .limit(1);
+  return row ? mapContact(row) : undefined;
+}
+
+export async function getContactLinksByContactId(
+  contactId: string,
+): Promise<ContactLink[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.contactLinks)
+    .where(eq(schema.contactLinks.contactId, contactId));
+  return rows.map(mapContactLink);
+}
+
+export async function getContactLinksByRef(
+  refType: ContactLinkRefType,
+  refId: string,
+): Promise<ContactLink[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.contactLinks)
+    .where(
+      and(
+        eq(schema.contactLinks.refType, refType),
+        eq(schema.contactLinks.refId, refId),
+      ),
+    );
+  return rows.map(mapContactLink);
 }
 
 export async function getEmployeeRates(): Promise<EmployeeRate[]> {

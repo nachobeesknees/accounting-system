@@ -741,6 +741,145 @@ export async function deleteTimeEntry(_user: SessionUser, id: string) {
   await db.delete(schema.timeEntries).where(eq(schema.timeEntries.id, id));
 }
 
+// --------- Contacts (unified Client/Vendor/Employee/Intermediary) ---------
+
+export type CreateContactInput = {
+  code: string;
+  name: string;
+  kind: "individual" | "organization";
+  email?: string | null;
+  phone?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  isClient?: boolean;
+  isVendor?: boolean;
+  isEmployee?: boolean;
+  isIntermediary?: boolean;
+  customerId?: string | null;
+  vendorId?: string | null;
+  userId?: string | null;
+};
+
+export async function createContact(_user: SessionUser, input: CreateContactInput) {
+  const db = getDb();
+  const [existing] = await db
+    .select({ id: schema.contacts.id })
+    .from(schema.contacts)
+    .where(eq(schema.contacts.code, input.code))
+    .limit(1);
+  if (existing) throw new Error(`Contact code ${input.code} already exists.`);
+  const id = uid("co");
+  const [created] = await db
+    .insert(schema.contacts)
+    .values({
+      id,
+      code: input.code,
+      name: input.name,
+      kind: input.kind,
+      email: input.email ?? null,
+      phone: input.phone ?? null,
+      address: input.address ?? null,
+      notes: input.notes ?? null,
+      isClient: input.isClient ?? false,
+      isVendor: input.isVendor ?? false,
+      isEmployee: input.isEmployee ?? false,
+      isIntermediary: input.isIntermediary ?? false,
+      customerId: input.customerId ?? null,
+      vendorId: input.vendorId ?? null,
+      userId: input.userId ?? null,
+      isActive: true,
+    })
+    .returning();
+  return created;
+}
+
+export type UpdateContactInput = Partial<CreateContactInput> & { isActive?: boolean };
+
+export async function updateContact(
+  _user: SessionUser,
+  id: string,
+  input: UpdateContactInput,
+) {
+  const db = getDb();
+  if (input.code) {
+    const [collision] = await db
+      .select({ id: schema.contacts.id })
+      .from(schema.contacts)
+      .where(eq(schema.contacts.code, input.code))
+      .limit(1);
+    if (collision && collision.id !== id) {
+      throw new Error(`Contact code ${input.code} already exists.`);
+    }
+  }
+  const [updated] = await db
+    .update(schema.contacts)
+    .set({
+      ...(input.code !== undefined && { code: input.code }),
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.kind !== undefined && { kind: input.kind }),
+      ...(input.email !== undefined && { email: input.email }),
+      ...(input.phone !== undefined && { phone: input.phone }),
+      ...(input.address !== undefined && { address: input.address }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      ...(input.isClient !== undefined && { isClient: input.isClient }),
+      ...(input.isVendor !== undefined && { isVendor: input.isVendor }),
+      ...(input.isEmployee !== undefined && { isEmployee: input.isEmployee }),
+      ...(input.isIntermediary !== undefined && {
+        isIntermediary: input.isIntermediary,
+      }),
+      ...(input.customerId !== undefined && { customerId: input.customerId }),
+      ...(input.vendorId !== undefined && { vendorId: input.vendorId }),
+      ...(input.userId !== undefined && { userId: input.userId }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.contacts.id, id))
+    .returning();
+  if (!updated) throw new Error("Contact not found.");
+  return updated;
+}
+
+export async function deleteContact(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx.delete(schema.contactLinks).where(eq(schema.contactLinks.contactId, id));
+    await tx.delete(schema.contacts).where(eq(schema.contacts.id, id));
+  });
+}
+
+export type CreateContactLinkInput = {
+  contactId: string;
+  refType: "entity" | "bank_account" | "invoice" | "bill" | "asset";
+  refId: string;
+  role?: string | null;
+  notes?: string | null;
+};
+
+export async function createContactLink(
+  _user: SessionUser,
+  input: CreateContactLinkInput,
+) {
+  const db = getDb();
+  const id = uid("cl");
+  const [created] = await db
+    .insert(schema.contactLinks)
+    .values({
+      id,
+      contactId: input.contactId,
+      refType: input.refType,
+      refId: input.refId,
+      role: input.role ?? null,
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export async function deleteContactLink(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.contactLinks).where(eq(schema.contactLinks.id, id));
+}
+
 // --------- Customers / Vendors ---------
 
 export async function createCustomer(

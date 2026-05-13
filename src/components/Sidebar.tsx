@@ -12,6 +12,7 @@ const SECTIONS: Section[] = [
     heading: "Main",
     items: [
       { href: "/", label: "Dashboard" },
+      { href: "/contacts", label: "Contacts" },
       { href: "/accounts", label: "Chart of Accounts" },
       { href: "/journal", label: "Journal Entries" },
       { href: "/ledger", label: "General Ledger" },

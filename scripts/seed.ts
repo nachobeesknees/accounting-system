@@ -37,6 +37,8 @@ import {
   BANK_ACCOUNT_SIGNERS,
   BANK_TRANSACTIONS,
   BILLS,
+  CONTACTS,
+  CONTACT_LINKS,
   CUSTOMERS,
   EMPLOYEE_RATES,
   ENTITIES,
@@ -140,6 +142,8 @@ async function main() {
       activity_log,
       asset_value_snapshots,
       assets,
+      contact_links,
+      contacts,
       time_entries,
       employee_rates,
       entity_fees,
@@ -236,6 +240,38 @@ async function main() {
       status: e.status,
       ein: e.ein,
       notes: e.notes,
+    })),
+  );
+
+  console.log("Inserting contacts + contact links…");
+  await db.insert(schema.contacts).values(
+    CONTACTS.map((c) => ({
+      id: c.id,
+      code: c.code,
+      name: c.name,
+      kind: c.kind,
+      email: c.email,
+      phone: c.phone,
+      address: c.address,
+      notes: c.notes,
+      isClient: c.isClient,
+      isVendor: c.isVendor,
+      isEmployee: c.isEmployee,
+      isIntermediary: c.isIntermediary,
+      customerId: c.customerId,
+      vendorId: c.vendorId,
+      userId: c.userId,
+      isActive: c.isActive,
+    })),
+  );
+  await db.insert(schema.contactLinks).values(
+    CONTACT_LINKS.map((l) => ({
+      id: l.id,
+      contactId: l.contactId,
+      refType: l.refType,
+      refId: l.refId,
+      role: l.role,
+      notes: l.notes,
     })),
   );
 

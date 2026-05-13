@@ -126,6 +126,43 @@ export type TimeEntry = {
   notes: string | null;
 };
 
+export type ContactKind = "individual" | "organization";
+
+export type ContactLinkRefType =
+  | "entity"
+  | "bank_account"
+  | "invoice"
+  | "bill"
+  | "asset";
+
+export type Contact = {
+  id: string;
+  code: string;
+  name: string;
+  kind: ContactKind;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  notes: string | null;
+  isClient: boolean;
+  isVendor: boolean;
+  isEmployee: boolean;
+  isIntermediary: boolean;
+  customerId: string | null;
+  vendorId: string | null;
+  userId: string | null;
+  isActive: boolean;
+};
+
+export type ContactLink = {
+  id: string;
+  contactId: string;
+  refType: ContactLinkRefType;
+  refId: string;
+  role: string | null;
+  notes: string | null;
+};
+
 export type AssetKind =
   | "real_estate"
   | "securities"
