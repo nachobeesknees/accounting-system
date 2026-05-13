@@ -124,6 +124,50 @@ export const journalLines = pgTable(
   }),
 );
 
+export const offices = pgTable("offices", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  address: text("address"),
+  currencyCode: text("currency_code").notNull().default("USD"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const priceLists = pgTable("price_lists", {
+  id: text("id").primaryKey(),
+  officeId: text("office_id").notNull(),
+  name: text("name").notNull(),
+  versionNumber: integer("version_number").notNull().default(1),
+  effectiveDate: date("effective_date").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  isCurrent: boolean("is_current").notNull().default(false),
+  parentVersionId: text("parent_version_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const priceListItemTypeEnum = pgEnum("price_list_item_type", [
+  "entity_fee",
+  "time_rate",
+  "service",
+]);
+
+export const priceListEntries = pgTable("price_list_entries", {
+  id: text("id").primaryKey(),
+  priceListId: text("price_list_id").notNull(),
+  itemType: priceListItemTypeEnum("item_type").notNull(),
+  itemKey: text("item_key").notNull(),
+  label: text("label").notNull(),
+  unitPrice: numeric("unit_price", { precision: 15, scale: 2 }).notNull(),
+  includedQuantity: numeric("included_quantity", { precision: 8, scale: 2 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const contactKindEnum = pgEnum("contact_kind", [
   "individual",
   "organization",
@@ -470,3 +514,6 @@ export type EmployeeRate = typeof employeeRates.$inferSelect;
 export type TimeEntry = typeof timeEntries.$inferSelect;
 export type Contact = typeof contacts.$inferSelect;
 export type ContactLink = typeof contactLinks.$inferSelect;
+export type Office = typeof offices.$inferSelect;
+export type PriceList = typeof priceLists.$inferSelect;
+export type PriceListEntry = typeof priceListEntries.$inferSelect;

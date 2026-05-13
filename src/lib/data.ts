@@ -43,6 +43,10 @@ import type {
   JournalEntry,
   JournalEntryStatus,
   JournalLine,
+  Office,
+  PriceList,
+  PriceListEntry,
+  PriceListItemType,
   SigningAuthority,
   TimeEntry,
   User,
@@ -187,6 +191,47 @@ function mapEntityFee(r: typeof schema.entityFees.$inferSelect): EntityFee {
     includedHours: r.includedHours,
     status: r.status as EntityFeeStatus,
     invoiceId: r.invoiceId,
+    notes: r.notes,
+  };
+}
+
+function mapOffice(r: typeof schema.offices.$inferSelect): Office {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    address: r.address,
+    currencyCode: r.currencyCode,
+    isActive: r.isActive,
+    notes: r.notes,
+  };
+}
+
+function mapPriceList(r: typeof schema.priceLists.$inferSelect): PriceList {
+  return {
+    id: r.id,
+    officeId: r.officeId,
+    name: r.name,
+    versionNumber: r.versionNumber,
+    effectiveDate: r.effectiveDate,
+    isActive: r.isActive,
+    isCurrent: r.isCurrent,
+    parentVersionId: r.parentVersionId,
+    notes: r.notes,
+  };
+}
+
+function mapPriceListEntry(
+  r: typeof schema.priceListEntries.$inferSelect,
+): PriceListEntry {
+  return {
+    id: r.id,
+    priceListId: r.priceListId,
+    itemType: r.itemType as PriceListItemType,
+    itemKey: r.itemKey,
+    label: r.label,
+    unitPrice: r.unitPrice,
+    includedQuantity: r.includedQuantity,
     notes: r.notes,
   };
 }
@@ -450,6 +495,65 @@ export async function getCustomerById(id: string): Promise<Customer | undefined>
     .where(eq(schema.customers.id, id))
     .limit(1);
   return row ? mapCustomer(row) : undefined;
+}
+
+export async function getOffices(): Promise<Office[]> {
+  const db = getDb();
+  const rows = await db.select().from(schema.offices).orderBy(schema.offices.name);
+  return rows.map(mapOffice);
+}
+
+export async function getOfficeById(id: string): Promise<Office | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.offices)
+    .where(eq(schema.offices.id, id))
+    .limit(1);
+  return row ? mapOffice(row) : undefined;
+}
+
+export async function getPriceLists(): Promise<PriceList[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.priceLists)
+    .orderBy(schema.priceLists.officeId, desc(schema.priceLists.versionNumber));
+  return rows.map(mapPriceList);
+}
+
+export async function getPriceListById(id: string): Promise<PriceList | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.priceLists)
+    .where(eq(schema.priceLists.id, id))
+    .limit(1);
+  return row ? mapPriceList(row) : undefined;
+}
+
+export async function getPriceListsByOfficeId(
+  officeId: string,
+): Promise<PriceList[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.priceLists)
+    .where(eq(schema.priceLists.officeId, officeId))
+    .orderBy(desc(schema.priceLists.versionNumber));
+  return rows.map(mapPriceList);
+}
+
+export async function getPriceListEntries(
+  priceListId: string,
+): Promise<PriceListEntry[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.priceListEntries)
+    .where(eq(schema.priceListEntries.priceListId, priceListId))
+    .orderBy(schema.priceListEntries.itemType, schema.priceListEntries.label);
+  return rows.map(mapPriceListEntry);
 }
 
 export async function getContacts(): Promise<Contact[]> {

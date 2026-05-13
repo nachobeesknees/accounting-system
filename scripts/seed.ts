@@ -46,7 +46,10 @@ import {
   FEE_SCHEDULES,
   INVOICES,
   JOURNAL_ENTRIES,
+  OFFICES,
   PERIODS,
+  PRICE_LISTS,
+  PRICE_LIST_ENTRIES,
   TIME_ENTRIES,
   USERS,
   VENDORS,
@@ -144,6 +147,9 @@ async function main() {
       assets,
       contact_links,
       contacts,
+      price_list_entries,
+      price_lists,
+      offices,
       time_entries,
       employee_rates,
       entity_fees,
@@ -239,6 +245,44 @@ async function main() {
       formationDate: e.formationDate,
       status: e.status,
       ein: e.ein,
+      notes: e.notes,
+    })),
+  );
+
+  console.log("Inserting offices + price lists + entries…");
+  await db.insert(schema.offices).values(
+    OFFICES.map((o) => ({
+      id: o.id,
+      code: o.code,
+      name: o.name,
+      address: o.address,
+      currencyCode: o.currencyCode,
+      isActive: o.isActive,
+      notes: o.notes,
+    })),
+  );
+  await db.insert(schema.priceLists).values(
+    PRICE_LISTS.map((p) => ({
+      id: p.id,
+      officeId: p.officeId,
+      name: p.name,
+      versionNumber: p.versionNumber,
+      effectiveDate: p.effectiveDate,
+      isActive: p.isActive,
+      isCurrent: p.isCurrent,
+      parentVersionId: p.parentVersionId,
+      notes: p.notes,
+    })),
+  );
+  await db.insert(schema.priceListEntries).values(
+    PRICE_LIST_ENTRIES.map((e) => ({
+      id: e.id,
+      priceListId: e.priceListId,
+      itemType: e.itemType,
+      itemKey: e.itemKey,
+      label: e.label,
+      unitPrice: e.unitPrice,
+      includedQuantity: e.includedQuantity,
       notes: e.notes,
     })),
   );

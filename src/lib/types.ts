@@ -126,6 +126,41 @@ export type TimeEntry = {
   notes: string | null;
 };
 
+export type Office = {
+  id: string;
+  code: string;
+  name: string;
+  address: string | null;
+  currencyCode: string;
+  isActive: boolean;
+  notes: string | null;
+};
+
+export type PriceList = {
+  id: string;
+  officeId: string;
+  name: string;
+  versionNumber: number;
+  effectiveDate: string;
+  isActive: boolean;
+  isCurrent: boolean;
+  parentVersionId: string | null;
+  notes: string | null;
+};
+
+export type PriceListItemType = "entity_fee" | "time_rate" | "service";
+
+export type PriceListEntry = {
+  id: string;
+  priceListId: string;
+  itemType: PriceListItemType;
+  itemKey: string;
+  label: string;
+  unitPrice: string;
+  includedQuantity: string | null;
+  notes: string | null;
+};
+
 export type ContactKind = "individual" | "organization";
 
 export type ContactLinkRefType =

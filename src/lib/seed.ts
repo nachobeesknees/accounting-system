@@ -16,6 +16,9 @@ import type {
   FiscalPeriod,
   Invoice,
   JournalEntry,
+  Office,
+  PriceList,
+  PriceListEntry,
   TimeEntry,
   User,
   Vendor,
@@ -142,6 +145,43 @@ export const ASSET_VALUE_SNAPSHOTS: AssetValueSnapshot[] = [
   { id: id("av-016"),  assetId: "as-016", snapshotDate: D("2026-03-31"), value: "3200000.00", currencyCode: "USD", source: "Internal valuation", notes: "Royalty-stream model", createdBy: "u-aldous", createdAt: "2026-04-15T17:00:00Z" },
   { id: id("av-017"),  assetId: "as-017", snapshotDate: D("2026-05-09"), value: "41500000.00", currencyCode: "USD", source: "Lloyds statement", notes: null, createdBy: "u-aldous", createdAt: "2026-05-10T17:00:00Z" },
   { id: id("av-018"),  assetId: "as-018", snapshotDate: D("2026-04-30"), value: "28900000.00", currencyCode: "USD", source: "UK valuation report", notes: null, createdBy: "u-aldous", createdAt: "2026-05-01T17:00:00Z" },
+];
+
+export const OFFICES: Office[] = [
+  { id: id("of-001"), code: "OFC-SF", name: "Thistlewood — San Francisco", address: "120 Hawthorne St, San Francisco CA 94105", currencyCode: "USD", isActive: true, notes: "HQ" },
+  { id: id("of-002"), code: "OFC-NY", name: "Thistlewood — New York", address: "350 W 42nd St, New York NY 10036", currencyCode: "USD", isActive: true, notes: "East-coast branch" },
+];
+
+export const PRICE_LISTS: PriceList[] = [
+  // San Francisco — current version 2 (high-volume), historical version 1
+  { id: id("pl-001"), officeId: "of-001", name: "Office SF — 2026 Standard", versionNumber: 1, effectiveDate: D("2026-01-01"), isActive: false, isCurrent: false, parentVersionId: null, notes: "Superseded by High-Volume tier" },
+  { id: id("pl-002"), officeId: "of-001", name: "Office SF — 2026 High Volume", versionNumber: 2, effectiveDate: D("2026-04-01"), isActive: true, isCurrent: true, parentVersionId: "pl-001", notes: "10% volume discount applied across the board" },
+  // New York — single current version
+  { id: id("pl-003"), officeId: "of-002", name: "Office NY — 2026 Standard", versionNumber: 1, effectiveDate: D("2026-01-01"), isActive: true, isCurrent: true, parentVersionId: null, notes: null },
+];
+
+export const PRICE_LIST_ENTRIES: PriceListEntry[] = [
+  // SF v1 — original prices
+  { id: id("pe-001"), priceListId: "pl-001", itemType: "entity_fee", itemKey: "llc", label: "LLC annual fee", unitPrice: "12000.00", includedQuantity: "40", notes: null },
+  { id: id("pe-002"), priceListId: "pl-001", itemType: "entity_fee", itemKey: "trust", label: "Trust annual fee", unitPrice: "18000.00", includedQuantity: "60", notes: null },
+  { id: id("pe-003"), priceListId: "pl-001", itemType: "entity_fee", itemKey: "ccorp", label: "C-Corp annual fee", unitPrice: "22000.00", includedQuantity: "80", notes: null },
+  { id: id("pe-004"), priceListId: "pl-001", itemType: "time_rate", itemKey: "Bookkeeper", label: "Bookkeeper hourly", unitPrice: "125.00", includedQuantity: null, notes: null },
+  { id: id("pe-005"), priceListId: "pl-001", itemType: "time_rate", itemKey: "Controller", label: "Controller hourly", unitPrice: "250.00", includedQuantity: null, notes: null },
+  { id: id("pe-006"), priceListId: "pl-001", itemType: "time_rate", itemKey: "CFO", label: "CFO hourly", unitPrice: "400.00", includedQuantity: null, notes: null },
+  // SF v2 — high-volume (10% off entity fees, +included hours)
+  { id: id("pe-007"), priceListId: "pl-002", itemType: "entity_fee", itemKey: "llc", label: "LLC annual fee (HV)", unitPrice: "10800.00", includedQuantity: "44", notes: "10% volume discount" },
+  { id: id("pe-008"), priceListId: "pl-002", itemType: "entity_fee", itemKey: "trust", label: "Trust annual fee (HV)", unitPrice: "16200.00", includedQuantity: "66", notes: "10% volume discount" },
+  { id: id("pe-009"), priceListId: "pl-002", itemType: "entity_fee", itemKey: "ccorp", label: "C-Corp annual fee (HV)", unitPrice: "19800.00", includedQuantity: "88", notes: "10% volume discount" },
+  { id: id("pe-010"), priceListId: "pl-002", itemType: "time_rate", itemKey: "Bookkeeper", label: "Bookkeeper hourly", unitPrice: "125.00", includedQuantity: null, notes: null },
+  { id: id("pe-011"), priceListId: "pl-002", itemType: "time_rate", itemKey: "Controller", label: "Controller hourly", unitPrice: "250.00", includedQuantity: null, notes: null },
+  { id: id("pe-012"), priceListId: "pl-002", itemType: "time_rate", itemKey: "CFO", label: "CFO hourly", unitPrice: "400.00", includedQuantity: null, notes: null },
+  { id: id("pe-013"), priceListId: "pl-002", itemType: "service", itemKey: "fund-admin", label: "Fund administration (per fund/yr)", unitPrice: "25000.00", includedQuantity: null, notes: null },
+  // NY v1 — premium rates
+  { id: id("pe-014"), priceListId: "pl-003", itemType: "entity_fee", itemKey: "llc", label: "LLC annual fee (NY)", unitPrice: "14000.00", includedQuantity: "40", notes: null },
+  { id: id("pe-015"), priceListId: "pl-003", itemType: "entity_fee", itemKey: "trust", label: "Trust annual fee (NY)", unitPrice: "21000.00", includedQuantity: "60", notes: null },
+  { id: id("pe-016"), priceListId: "pl-003", itemType: "time_rate", itemKey: "Bookkeeper", label: "Bookkeeper hourly (NY)", unitPrice: "150.00", includedQuantity: null, notes: null },
+  { id: id("pe-017"), priceListId: "pl-003", itemType: "time_rate", itemKey: "Controller", label: "Controller hourly (NY)", unitPrice: "290.00", includedQuantity: null, notes: null },
+  { id: id("pe-018"), priceListId: "pl-003", itemType: "time_rate", itemKey: "CFO", label: "CFO hourly (NY)", unitPrice: "450.00", includedQuantity: null, notes: null },
 ];
 
 export const CONTACTS: Contact[] = [

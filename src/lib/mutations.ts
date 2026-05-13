@@ -880,6 +880,278 @@ export async function deleteContactLink(_user: SessionUser, id: string) {
   await db.delete(schema.contactLinks).where(eq(schema.contactLinks.id, id));
 }
 
+// --------- Offices ---------
+
+export type CreateOfficeInput = {
+  code: string;
+  name: string;
+  address?: string | null;
+  currencyCode?: string;
+  notes?: string | null;
+};
+
+export async function createOffice(_user: SessionUser, input: CreateOfficeInput) {
+  const db = getDb();
+  const [existing] = await db
+    .select({ id: schema.offices.id })
+    .from(schema.offices)
+    .where(eq(schema.offices.code, input.code))
+    .limit(1);
+  if (existing) throw new Error(`Office code ${input.code} already exists.`);
+  const id = uid("of");
+  const [created] = await db
+    .insert(schema.offices)
+    .values({
+      id,
+      code: input.code,
+      name: input.name,
+      address: input.address ?? null,
+      currencyCode: input.currencyCode ?? "USD",
+      isActive: true,
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export type UpdateOfficeInput = Partial<CreateOfficeInput> & { isActive?: boolean };
+
+export async function updateOffice(
+  _user: SessionUser,
+  id: string,
+  input: UpdateOfficeInput,
+) {
+  const db = getDb();
+  const [updated] = await db
+    .update(schema.offices)
+    .set({
+      ...(input.code !== undefined && { code: input.code }),
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.address !== undefined && { address: input.address }),
+      ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.offices.id, id))
+    .returning();
+  if (!updated) throw new Error("Office not found.");
+  return updated;
+}
+
+export async function deleteOffice(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.offices).where(eq(schema.offices.id, id));
+}
+
+// --------- Price lists ---------
+
+export type CreatePriceListInput = {
+  officeId: string;
+  name: string;
+  versionNumber?: number;
+  effectiveDate: string;
+  isCurrent?: boolean;
+  parentVersionId?: string | null;
+  notes?: string | null;
+};
+
+export async function createPriceList(
+  _user: SessionUser,
+  input: CreatePriceListInput,
+) {
+  const db = getDb();
+  const id = uid("pl");
+  return await db.transaction(async (tx) => {
+    if (input.isCurrent) {
+      // Reset isCurrent on existing siblings for this office
+      await tx
+        .update(schema.priceLists)
+        .set({ isCurrent: false })
+        .where(eq(schema.priceLists.officeId, input.officeId));
+    }
+    const [created] = await tx
+      .insert(schema.priceLists)
+      .values({
+        id,
+        officeId: input.officeId,
+        name: input.name,
+        versionNumber: input.versionNumber ?? 1,
+        effectiveDate: input.effectiveDate,
+        isActive: true,
+        isCurrent: input.isCurrent ?? false,
+        parentVersionId: input.parentVersionId ?? null,
+        notes: input.notes ?? null,
+      })
+      .returning();
+    return created;
+  });
+}
+
+export type UpdatePriceListInput = Partial<CreatePriceListInput> & {
+  isActive?: boolean;
+};
+
+export async function updatePriceList(
+  _user: SessionUser,
+  id: string,
+  input: UpdatePriceListInput,
+) {
+  const db = getDb();
+  return await db.transaction(async (tx) => {
+    if (input.isCurrent) {
+      const [existing] = await tx
+        .select({ officeId: schema.priceLists.officeId })
+        .from(schema.priceLists)
+        .where(eq(schema.priceLists.id, id))
+        .limit(1);
+      if (existing) {
+        await tx
+          .update(schema.priceLists)
+          .set({ isCurrent: false })
+          .where(eq(schema.priceLists.officeId, existing.officeId));
+      }
+    }
+    const [updated] = await tx
+      .update(schema.priceLists)
+      .set({
+        ...(input.officeId !== undefined && { officeId: input.officeId }),
+        ...(input.name !== undefined && { name: input.name }),
+        ...(input.versionNumber !== undefined && {
+          versionNumber: input.versionNumber,
+        }),
+        ...(input.effectiveDate !== undefined && {
+          effectiveDate: input.effectiveDate,
+        }),
+        ...(input.isActive !== undefined && { isActive: input.isActive }),
+        ...(input.isCurrent !== undefined && { isCurrent: input.isCurrent }),
+        ...(input.parentVersionId !== undefined && {
+          parentVersionId: input.parentVersionId,
+        }),
+        ...(input.notes !== undefined && { notes: input.notes }),
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.priceLists.id, id))
+      .returning();
+    if (!updated) throw new Error("Price list not found.");
+    return updated;
+  });
+}
+
+export async function deletePriceList(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(schema.priceListEntries)
+      .where(eq(schema.priceListEntries.priceListId, id));
+    await tx.delete(schema.priceLists).where(eq(schema.priceLists.id, id));
+  });
+}
+
+/**
+ * Clone a price list as the next version of the same office. Copies all
+ * entries, increments versionNumber, sets parentVersionId, and (if
+ * requested) flips isCurrent — clearing the flag on siblings inside the
+ * same transaction.
+ */
+export async function clonePriceList(
+  _user: SessionUser,
+  sourceId: string,
+  options: { name: string; effectiveDate: string; setCurrent?: boolean } = {
+    name: "(cloned)",
+    effectiveDate: new Date().toISOString().slice(0, 10),
+  },
+) {
+  const db = getDb();
+  return await db.transaction(async (tx) => {
+    const [source] = await tx
+      .select()
+      .from(schema.priceLists)
+      .where(eq(schema.priceLists.id, sourceId))
+      .limit(1);
+    if (!source) throw new Error("Source price list not found.");
+    const sourceEntries = await tx
+      .select()
+      .from(schema.priceListEntries)
+      .where(eq(schema.priceListEntries.priceListId, sourceId));
+
+    if (options.setCurrent) {
+      await tx
+        .update(schema.priceLists)
+        .set({ isCurrent: false })
+        .where(eq(schema.priceLists.officeId, source.officeId));
+    }
+    const newId = uid("pl");
+    const [created] = await tx
+      .insert(schema.priceLists)
+      .values({
+        id: newId,
+        officeId: source.officeId,
+        name: options.name,
+        versionNumber: source.versionNumber + 1,
+        effectiveDate: options.effectiveDate,
+        isActive: true,
+        isCurrent: options.setCurrent ?? false,
+        parentVersionId: source.id,
+        notes: `Cloned from ${source.name}`,
+      })
+      .returning();
+    if (sourceEntries.length > 0) {
+      await tx.insert(schema.priceListEntries).values(
+        sourceEntries.map((e, i) => ({
+          id: `${newId}-e${i + 1}`,
+          priceListId: newId,
+          itemType: e.itemType,
+          itemKey: e.itemKey,
+          label: e.label,
+          unitPrice: e.unitPrice,
+          includedQuantity: e.includedQuantity,
+          notes: e.notes,
+        })),
+      );
+    }
+    return created;
+  });
+}
+
+export type CreatePriceListEntryInput = {
+  priceListId: string;
+  itemType: "entity_fee" | "time_rate" | "service";
+  itemKey: string;
+  label: string;
+  unitPrice: number;
+  includedQuantity?: number | null;
+  notes?: string | null;
+};
+
+export async function createPriceListEntry(
+  _user: SessionUser,
+  input: CreatePriceListEntryInput,
+) {
+  const db = getDb();
+  const id = uid("pe");
+  const [created] = await db
+    .insert(schema.priceListEntries)
+    .values({
+      id,
+      priceListId: input.priceListId,
+      itemType: input.itemType,
+      itemKey: input.itemKey,
+      label: input.label,
+      unitPrice: toDecimalString(input.unitPrice),
+      includedQuantity:
+        input.includedQuantity == null ? null : input.includedQuantity.toFixed(2),
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export async function deletePriceListEntry(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.priceListEntries).where(eq(schema.priceListEntries.id, id));
+}
+
 // --------- Customers / Vendors ---------
 
 export async function createCustomer(
