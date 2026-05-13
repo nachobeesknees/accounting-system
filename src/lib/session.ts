@@ -35,7 +35,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!raw) return null;
   const userId = verify(raw);
   if (!userId) return null;
-  const user = getUserById(userId);
+  const user = await getUserById(userId);
   if (!user) return null;
   return {
     userId: user.id,
@@ -66,9 +66,9 @@ export async function clearSession() {
  * Demo login — match against the seeded users by email + a known password.
  * Every demo account uses the password `demo123` regardless of role.
  */
-export function authenticate(email: string, password: string): SessionUser | null {
+export async function authenticate(email: string, password: string): Promise<SessionUser | null> {
   if (password !== "demo123") return null;
-  const users = getUsers();
+  const users = await getUsers();
   const user = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
   if (!user) return null;
   return {

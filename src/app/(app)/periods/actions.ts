@@ -11,7 +11,7 @@ export async function togglePeriod(formData: FormData) {
   const periodId = String(formData.get("periodId"));
   const status =
     formData.get("status") === "closed" ? "open" : "closed";
-  setPeriodStatus(user, periodId, status);
+  await setPeriodStatus(user, periodId, status);
   revalidatePath("/periods");
   redirect("/periods");
 }

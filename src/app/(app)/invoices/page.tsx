@@ -6,13 +6,14 @@ import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { getCustomerById, getCustomers, getInvoices } from "@/lib/data";
+import { getCustomers, getInvoices } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
-import type { Invoice } from "@/lib/types";
+import type { Customer, Invoice } from "@/lib/types";
 
 function filterInvoices(
   invoices: Invoice[],
+  customersById: Map<string, Customer>,
   q: string,
   status: string,
   customer: string,
@@ -22,7 +23,7 @@ function filterInvoices(
     if (status && inv.status !== status) return false;
     if (customer && inv.customerId !== customer) return false;
     if (needle) {
-      const cust = getCustomerById(inv.customerId);
+      const cust = customersById.get(inv.customerId);
       const hay = `${inv.invoiceNumber} ${cust?.name ?? ""} ${cust?.code ?? ""}`.toLowerCase();
       if (!hay.includes(needle)) return false;
     }
@@ -40,11 +41,17 @@ export default async function Page({
   const status = params.status ?? "";
   const customerId = params.customer ?? "";
 
-  const allInvoices = getInvoices();
-  const rows = filterInvoices(allInvoices, q, status, customerId).slice().sort(
-    (a, b) => b.invoiceDate.localeCompare(a.invoiceDate),
-  );
-  const customers = getCustomers().slice().sort((a, b) => a.name.localeCompare(b.name));
+  const [allInvoices, allCustomers] = await Promise.all([
+    getInvoices(),
+    getCustomers(),
+  ]);
+  const customersById = new Map(allCustomers.map((c) => [c.id, c] as const));
+  const rows = filterInvoices(allInvoices, customersById, q, status, customerId)
+    .slice()
+    .sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate));
+  const customers = allCustomers
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const totalSum = rows.reduce((s, inv) => s + parseAmount(inv.total), 0);
   const balanceSum = rows.reduce((s, inv) => s + parseAmount(inv.balanceDue), 0);
@@ -128,7 +135,7 @@ export default async function Page({
               </THead>
               <TBody>
                 {rows.map((inv) => {
-                  const cust = getCustomerById(inv.customerId);
+                  const cust = customersById.get(inv.customerId);
                   const bal = parseAmount(inv.balanceDue);
                   const isOverdue = inv.status === "overdue" && bal > 0;
                   return (

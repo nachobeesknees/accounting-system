@@ -77,7 +77,7 @@ export async function createEntry(
   }
 
   try {
-    const created = createJournalEntry(user, {
+    const created = await createJournalEntry(user, {
       entryDate,
       description: description.trim(),
       reference: reference.trim() === "" ? null : reference.trim(),

@@ -17,10 +17,11 @@ export default async function Page({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const customer = getCustomerById(id);
+  const customer = await getCustomerById(id);
   if (!customer) notFound();
 
-  const customerInvoices = getInvoices()
+  const allInvoices = await getInvoices();
+  const customerInvoices = allInvoices
     .filter((inv) => inv.customerId === customer.id)
     .slice()
     .sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate));

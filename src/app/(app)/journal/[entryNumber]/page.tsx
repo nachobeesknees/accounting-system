@@ -8,7 +8,7 @@ import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Tabs } from "@/components/ui/Tabs";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
-  getAccountById,
+  getAccounts,
   getJournalEntryByNumber,
   getPeriods,
   getUserById,
@@ -49,14 +49,18 @@ export default async function Page({
 }) {
   const { entryNumber } = await params;
   const { tab, error } = await searchParams;
-  const entry = getJournalEntryByNumber(entryNumber);
+  const entry = await getJournalEntryByNumber(entryNumber);
   if (!entry) notFound();
 
-  const periods = getPeriods();
+  const [periods, accounts, postedByUser] = await Promise.all([
+    getPeriods(),
+    getAccounts(),
+    entry.postedBy ? getUserById(entry.postedBy) : Promise.resolve(null),
+  ]);
   const period = entry.fiscalPeriodId
     ? periods.find((p) => p.id === entry.fiscalPeriodId)
     : null;
-  const postedByUser = entry.postedBy ? getUserById(entry.postedBy) : null;
+  const accountById = new Map(accounts.map((a) => [a.id, a] as const));
 
   const debitTotal = totalDebits(entry);
   const creditTotal = totalCredits(entry);
@@ -231,7 +235,7 @@ export default async function Page({
               </THead>
               <TBody>
                 {entry.lines.map((line) => {
-                  const account = getAccountById(line.accountId);
+                  const account = accountById.get(line.accountId);
                   const d = parseAmount(line.debit);
                   const c = parseAmount(line.credit);
                   return (

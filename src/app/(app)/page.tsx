@@ -9,11 +9,11 @@ import {
   getApAging,
   getArAging,
   getBills,
-  getCustomerById,
+  getCustomers,
   getInvoices,
   getJournalEntries,
   getKpis,
-  getVendorById,
+  getVendors,
 } from "@/lib/data";
 import { formatUSD } from "@/lib/money";
 import { parseAmount } from "@/lib/money";
@@ -112,19 +112,30 @@ export default async function Page() {
   const user = await getSessionUser();
   const role = user?.role ?? "Demo";
 
-  const kpis = getKpis();
-  const ar = getArAging(DEMO_TODAY);
-  const ap = getApAging(DEMO_TODAY);
+  const [kpis, ar, ap, allEntries, allBills, allInvoices, customers, vendors] =
+    await Promise.all([
+      getKpis(),
+      getArAging(DEMO_TODAY),
+      getApAging(DEMO_TODAY),
+      getJournalEntries(),
+      getBills(),
+      getInvoices(),
+      getCustomers(),
+      getVendors(),
+    ]);
 
-  const recentJes = getJournalEntries().slice(0, 8);
+  const customerById = new Map(customers.map((c) => [c.id, c] as const));
+  const vendorById = new Map(vendors.map((v) => [v.id, v] as const));
 
-  const upcomingBills = getBills()
+  const recentJes = allEntries.slice(0, 8);
+
+  const upcomingBills = allBills
     .filter((b) => parseAmount(b.balanceDue) > 0)
     .slice()
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     .slice(0, 5);
 
-  const overdueInvoices = getInvoices()
+  const overdueInvoices = allInvoices
     .filter((i) => {
       const bal = parseAmount(i.balanceDue);
       if (bal <= 0) return false;
@@ -297,7 +308,7 @@ export default async function Page() {
             </THead>
             <TBody>
               {upcomingBills.map((b) => {
-                const vendor = getVendorById(b.vendorId);
+                const vendor = vendorById.get(b.vendorId);
                 const bal = parseAmount(b.balanceDue);
                 return (
                   <TR key={b.id}>
@@ -334,7 +345,7 @@ export default async function Page() {
               </THead>
               <TBody>
                 {overdueInvoices.map((inv) => {
-                  const customer = getCustomerById(inv.customerId);
+                  const customer = customerById.get(inv.customerId);
                   const bal = parseAmount(inv.balanceDue);
                   return (
                     <TR key={inv.id}>

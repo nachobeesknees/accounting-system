@@ -7,7 +7,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   DEMO_TODAY,
   accountsByType,
-  getAccountBalance,
+  getDisplayBalances,
   getKpis,
   getTrialBalance,
 } from "@/lib/data";
@@ -74,8 +74,12 @@ export default async function Page({
     rawTab === "income" || rawTab === "trial" ? (rawTab as TabId) : "balance";
 
   const formattedDate = formatDate(DEMO_TODAY);
-  const kpis = getKpis();
-  const byType = accountsByType();
+  const [kpis, byType, balances, trial] = await Promise.all([
+    getKpis(),
+    accountsByType(),
+    getDisplayBalances(),
+    getTrialBalance(),
+  ]);
 
   const assetAccounts = byType.get("asset") ?? [];
   const liabilityAccounts = byType.get("liability") ?? [];
@@ -83,7 +87,6 @@ export default async function Page({
   const revenueAccounts = byType.get("revenue") ?? [];
   const expenseAccounts = byType.get("expense") ?? [];
 
-  const trial = getTrialBalance();
   const trialDebits = trial.reduce((s, r) => s + r.debit, 0);
   const trialCredits = trial.reduce((s, r) => s + r.credit, 0);
   const trialBalanced = Math.abs(trialDebits - trialCredits) < 0.005;
@@ -121,7 +124,7 @@ export default async function Page({
                   <AccountRow
                     key={a.id}
                     account={a}
-                    value={getAccountBalance(a.id)}
+                    value={balances.get(a.id) ?? 0}
                   />
                 ))}
                 <TotalRow label="Total Assets" value={kpis.assets} />
@@ -134,7 +137,7 @@ export default async function Page({
                   <AccountRow
                     key={a.id}
                     account={a}
-                    value={getAccountBalance(a.id)}
+                    value={balances.get(a.id) ?? 0}
                   />
                 ))}
                 <TotalRow label="Total Liabilities" value={kpis.liabilities} />
@@ -147,7 +150,7 @@ export default async function Page({
                   <AccountRow
                     key={a.id}
                     account={a}
-                    value={getAccountBalance(a.id)}
+                    value={balances.get(a.id) ?? 0}
                   />
                 ))}
                 <TR>
@@ -203,7 +206,7 @@ export default async function Page({
                   <AccountRow
                     key={a.id}
                     account={a}
-                    value={getAccountBalance(a.id)}
+                    value={balances.get(a.id) ?? 0}
                   />
                 ))}
                 <TotalRow label="Total Revenue" value={kpis.revenue} />
@@ -216,7 +219,7 @@ export default async function Page({
                   <AccountRow
                     key={a.id}
                     account={a}
-                    value={getAccountBalance(a.id)}
+                    value={balances.get(a.id) ?? 0}
                   />
                 ))}
                 <TotalRow label="Total Expenses" value={kpis.expenses} />

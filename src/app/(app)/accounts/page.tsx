@@ -5,8 +5,8 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   accountTypeOrder,
   accountsByType,
-  getAccountBalance,
   getAccounts,
+  getDisplayBalances,
 } from "@/lib/data";
 import { formatUSD } from "@/lib/money";
 import type { AccountType } from "@/lib/types";
@@ -38,8 +38,11 @@ export default async function Page({
   const activeFilter =
     ALL_FILTERS.find((f) => f.id === typeParam)?.id ?? "all";
 
-  const accounts = getAccounts();
-  const byType = accountsByType();
+  const [accounts, byType, balances] = await Promise.all([
+    getAccounts(),
+    accountsByType(),
+    getDisplayBalances(),
+  ]);
 
   const orderedTypes = accountTypeOrder().filter((t) =>
     activeFilter === "all" ? true : t === activeFilter,
@@ -112,7 +115,7 @@ export default async function Page({
                 </THead>
                 <TBody>
                   {list.map((a) => {
-                    const bal = getAccountBalance(a.id);
+                    const bal = balances.get(a.id) ?? 0;
                     return (
                       <TR key={a.id}>
                         <TD mono>{a.code}</TD>

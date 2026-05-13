@@ -6,7 +6,7 @@ import { Empty } from "@/components/ui/Empty";
 import { Field } from "@/components/ui/Field";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { getAccountById, getBills, getVendors } from "@/lib/data";
+import { getAccounts, getBills, getVendors } from "@/lib/data";
 import { formatUSD, parseAmount } from "@/lib/money";
 import type { Vendor } from "@/lib/types";
 
@@ -27,12 +27,16 @@ export default async function Page({
   const params = await searchParams;
   const q = params.q ?? "";
 
-  const allVendors = getVendors();
+  const [allVendors, allBills, accounts] = await Promise.all([
+    getVendors(),
+    getBills(),
+    getAccounts(),
+  ]);
+  const accountById = new Map(accounts.map((a) => [a.id, a] as const));
   const rows = filterVendors(allVendors, q).slice().sort((a, b) =>
     a.code.localeCompare(b.code),
   );
 
-  const allBills = getBills();
   const balanceFor = (vendorId: string): number =>
     allBills
       .filter((b) => b.vendorId === vendorId)
@@ -106,7 +110,7 @@ export default async function Page({
                   const balance = balances.get(v.id) ?? 0;
                   const statusKey = v.isActive ? "active" : "inactive";
                   const acct = v.defaultExpenseAccountId
-                    ? getAccountById(v.defaultExpenseAccountId)
+                    ? accountById.get(v.defaultExpenseAccountId)
                     : undefined;
                   return (
                     <TR key={v.id}>

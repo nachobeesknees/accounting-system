@@ -17,10 +17,11 @@ export default async function Page({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const vendor = getVendorById(id);
+  const vendor = await getVendorById(id);
   if (!vendor) notFound();
 
-  const vendorBills = getBills()
+  const allBills = await getBills();
+  const vendorBills = allBills
     .filter((b) => b.vendorId === vendor.id)
     .slice()
     .sort((a, b) => b.billDate.localeCompare(a.billDate));
@@ -41,7 +42,7 @@ export default async function Page({
 
   const addressLines = (vendor.address ?? "").split(/,\s*/);
   const defaultAcct = vendor.defaultExpenseAccountId
-    ? getAccountById(vendor.defaultExpenseAccountId)
+    ? await getAccountById(vendor.defaultExpenseAccountId)
     : undefined;
 
   return (

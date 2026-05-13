@@ -7,7 +7,7 @@ import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
-  getAccountById,
+  getAccounts,
   getCustomerById,
   getInvoiceById,
   getJournalEntryById,
@@ -21,13 +21,17 @@ export default async function Page({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const invoice = getInvoiceById(id);
+  const invoice = await getInvoiceById(id);
   if (!invoice) notFound();
 
-  const customer = getCustomerById(invoice.customerId);
-  const journalEntry = invoice.journalEntryId
-    ? getJournalEntryById(invoice.journalEntryId)
-    : undefined;
+  const [customer, journalEntry, accounts] = await Promise.all([
+    getCustomerById(invoice.customerId),
+    invoice.journalEntryId
+      ? getJournalEntryById(invoice.journalEntryId)
+      : Promise.resolve(undefined),
+    getAccounts(),
+  ]);
+  const accountById = new Map(accounts.map((a) => [a.id, a] as const));
 
   const status = invoice.status;
   const balance = parseAmount(invoice.balanceDue);
@@ -150,7 +154,7 @@ export default async function Page({
             </THead>
             <TBody>
               {invoice.lines.map((line) => {
-                const account = getAccountById(line.accountId);
+                const account = accountById.get(line.accountId);
                 return (
                   <TR key={line.id}>
                     <TD mono>{line.lineNumber}</TD>

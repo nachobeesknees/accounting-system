@@ -28,18 +28,18 @@ export async function postEntry(formData: FormData): Promise<void> {
   const entryId = String(formData.get("entryId") ?? "");
   if (!entryId) redirect("/journal");
 
-  const before = getJournalEntryById(entryId);
+  const before = await getJournalEntryById(entryId);
   const beforeTarget = before ? `/journal/${before.entryNumber}` : "/journal";
 
   try {
-    postJournalEntry(user, entryId);
+    await postJournalEntry(user, entryId);
   } catch (err) {
     if (isRedirect(err)) throw err;
     revalidatePath(beforeTarget);
     redirect(`${beforeTarget}?error=${encodeURIComponent(errorMessage(err))}`);
   }
 
-  const entry = getJournalEntryById(entryId);
+  const entry = await getJournalEntryById(entryId);
   const target = entry ? `/journal/${entry.entryNumber}` : "/journal";
   revalidatePath("/journal");
   revalidatePath(target);
@@ -54,18 +54,18 @@ export async function voidEntry(formData: FormData): Promise<void> {
   const reason = String(formData.get("reason") ?? "");
   if (!entryId) redirect("/journal");
 
-  const before = getJournalEntryById(entryId);
+  const before = await getJournalEntryById(entryId);
   const beforeTarget = before ? `/journal/${before.entryNumber}` : "/journal";
 
   try {
-    voidJournalEntry(user, entryId, reason);
+    await voidJournalEntry(user, entryId, reason);
   } catch (err) {
     if (isRedirect(err)) throw err;
     revalidatePath(beforeTarget);
     redirect(`${beforeTarget}?error=${encodeURIComponent(errorMessage(err))}`);
   }
 
-  const entry = getJournalEntryById(entryId);
+  const entry = await getJournalEntryById(entryId);
   const target = entry ? `/journal/${entry.entryNumber}` : "/journal";
   revalidatePath("/journal");
   revalidatePath(target);

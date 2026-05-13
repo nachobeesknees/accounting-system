@@ -2,23 +2,29 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Card";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { getAccountByCode } from "@/lib/data";
-import { store } from "@/lib/store";
+import {
+  nextBillNumber,
+  nextEntryNumber,
+  nextInvoiceNumber,
+} from "@/lib/mutations";
 
-function pad(n: number, w: number): string {
-  return n.toString().padStart(w, "0");
-}
-
-function formatAccountRef(code: string): string {
-  const account = getAccountByCode(code);
+async function formatAccountRef(code: string): Promise<string> {
+  const account = await getAccountByCode(code);
   if (!account) return code;
   return `${account.code} — ${account.name}`;
 }
 
 export default async function Page() {
-  const nextInvoice = `INV-${pad(store.nextInvoiceNumber, 6)}`;
-  const nextJournal = `JE-${pad(store.nextJeNumber, 6)}`;
-  const billYear = new Date().getFullYear();
-  const nextBill = `BILL-${billYear}-${pad(store.nextBillNumber, 3)}`;
+  const [nextInvoice, nextJournal, nextBill, arLabel, apLabel, reLabel, cashLabel] =
+    await Promise.all([
+      nextInvoiceNumber(),
+      nextEntryNumber(),
+      nextBillNumber(),
+      formatAccountRef("1200"),
+      formatAccountRef("2000"),
+      formatAccountRef("3100"),
+      formatAccountRef("1000"),
+    ]);
 
   return (
     <>
@@ -44,14 +50,10 @@ export default async function Page() {
 
         <Section title="Default accounts">
           <KVGrid>
-            <KV k="AR" v={formatAccountRef("1200")} mono />
-            <KV k="AP" v={formatAccountRef("2000")} mono />
-            <KV
-              k="Retained Earnings"
-              v={formatAccountRef("3100")}
-              mono
-            />
-            <KV k="Cash" v={formatAccountRef("1000")} mono />
+            <KV k="AR" v={arLabel} mono />
+            <KV k="AP" v={apLabel} mono />
+            <KV k="Retained Earnings" v={reLabel} mono />
+            <KV k="Cash" v={cashLabel} mono />
           </KVGrid>
         </Section>
       </div>

@@ -5,11 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { SelectField } from "@/components/ui/Field";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import {
-  getAccountByCode,
-  getAccounts,
-  getJournalEntries,
-} from "@/lib/data";
+import { getAccounts, getJournalEntries } from "@/lib/data";
 import { formatUSD, parseAmount } from "@/lib/money";
 
 function formatRowDate(iso: string): string {
@@ -28,13 +24,15 @@ export default async function Page({
   searchParams: Promise<{ account?: string }>;
 }) {
   const params = await searchParams;
-  const accounts = getAccounts();
+  const [accounts, allEntries] = await Promise.all([
+    getAccounts(),
+    getJournalEntries(),
+  ]);
   const defaultCode = accounts[0]?.code ?? "";
   const selectedCode = params.account ?? defaultCode;
-  const account = getAccountByCode(selectedCode) ?? accounts[0];
+  const account =
+    accounts.find((a) => a.code === selectedCode) ?? accounts[0];
 
-  // Walk posted JE lines for this account in date-ascending order, accumulating
-  // a signed running balance using the account's normal balance.
   type Row = {
     key: string;
     date: string;
@@ -49,7 +47,7 @@ export default async function Page({
   let running = 0;
   if (account) {
     const sign = account.normalBalance === "debit" ? 1 : -1;
-    const entries = getJournalEntries()
+    const entries = allEntries
       .filter((e) => e.status === "posted")
       .slice()
       .sort((a, b) => a.entryDate.localeCompare(b.entryDate));

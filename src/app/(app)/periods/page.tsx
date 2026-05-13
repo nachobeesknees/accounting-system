@@ -17,7 +17,7 @@ function formatDate(iso: string): string {
 }
 
 export default async function Page() {
-  const rows = getPeriods();
+  const rows = await getPeriods();
 
   return (
     <>

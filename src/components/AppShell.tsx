@@ -5,7 +5,7 @@ import { getBills, getInvoices, getJournalEntries } from "@/lib/data";
 import { parseAmount } from "@/lib/money";
 import type { SessionUser } from "@/lib/types";
 
-export function AppShell({
+export async function AppShell({
   user,
   breadcrumb,
   children,
@@ -14,9 +14,14 @@ export function AppShell({
   breadcrumb?: string;
   children: ReactNode;
 }) {
-  const jeCount = getJournalEntries().length;
-  const invoiceCount = getInvoices().filter((i) => parseAmount(i.balanceDue) > 0).length;
-  const billCount = getBills().filter((b) => parseAmount(b.balanceDue) > 0).length;
+  const [entries, invoices, bills] = await Promise.all([
+    getJournalEntries(),
+    getInvoices(),
+    getBills(),
+  ]);
+  const jeCount = entries.length;
+  const invoiceCount = invoices.filter((i) => parseAmount(i.balanceDue) > 0).length;
+  const billCount = bills.filter((b) => parseAmount(b.balanceDue) > 0).length;
 
   const counts = {
     "/journal": jeCount,

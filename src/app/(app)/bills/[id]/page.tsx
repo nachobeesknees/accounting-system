@@ -7,7 +7,7 @@ import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
-  getAccountById,
+  getAccounts,
   getBillById,
   getJournalEntryById,
   getVendorById,
@@ -21,13 +21,17 @@ export default async function Page({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const bill = getBillById(id);
+  const bill = await getBillById(id);
   if (!bill) notFound();
 
-  const vendor = getVendorById(bill.vendorId);
-  const journalEntry = bill.journalEntryId
-    ? getJournalEntryById(bill.journalEntryId)
-    : undefined;
+  const [vendor, journalEntry, accounts] = await Promise.all([
+    getVendorById(bill.vendorId),
+    bill.journalEntryId
+      ? getJournalEntryById(bill.journalEntryId)
+      : Promise.resolve(undefined),
+    getAccounts(),
+  ]);
+  const accountById = new Map(accounts.map((a) => [a.id, a] as const));
 
   const status = bill.status;
   const balance = parseAmount(bill.balanceDue);
@@ -150,7 +154,7 @@ export default async function Page({
             </THead>
             <TBody>
               {bill.lines.map((line) => {
-                const account = getAccountById(line.accountId);
+                const account = accountById.get(line.accountId);
                 return (
                   <TR key={line.id}>
                     <TD mono>{line.lineNumber}</TD>

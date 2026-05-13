@@ -9,7 +9,7 @@ import {
   getAccountBalance,
   getBankAccounts,
   getBankTransactions,
-  getJournalEntryById,
+  getJournalEntries,
 } from "@/lib/data";
 import { formatUSD, parseAmount } from "@/lib/money";
 
@@ -82,7 +82,7 @@ export default async function Page({
   searchParams: Promise<{ account?: string }>;
 }) {
   const params = await searchParams;
-  const bankAccounts = getBankAccounts();
+  const bankAccounts = await getBankAccounts();
   const selectedId = params.account ?? bankAccounts[0]?.id ?? "";
   const account =
     bankAccounts.find((b) => b.id === selectedId) ?? bankAccounts[0];
@@ -101,11 +101,15 @@ export default async function Page({
     );
   }
 
-  const txs = getBankTransactions(account.id);
+  const [txs, bookBalance, allEntries] = await Promise.all([
+    getBankTransactions(account.id),
+    getAccountBalance(account.accountId),
+    getJournalEntries(),
+  ]);
+  const entriesById = new Map(allEntries.map((e) => [e.id, e] as const));
   const reconciled = txs.filter((t) => t.isReconciled);
   const unreconciled = txs.filter((t) => !t.isReconciled);
 
-  const bookBalance = getAccountBalance(account.accountId);
   const clearedTotal = reconciled.reduce(
     (s, t) => s + parseAmount(t.amount),
     0,
@@ -245,7 +249,7 @@ export default async function Page({
                 {reconciled.map((t) => {
                   const amount = parseAmount(t.amount);
                   const je = t.journalEntryId
-                    ? getJournalEntryById(t.journalEntryId)
+                    ? entriesById.get(t.journalEntryId)
                     : undefined;
                   return (
                     <TR key={t.id}>

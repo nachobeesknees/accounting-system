@@ -49,7 +49,7 @@ export default async function Page({
   const status = params.status ?? "";
   const source = params.source ?? "";
 
-  const allEntries = getJournalEntries();
+  const allEntries = await getJournalEntries();
   const entries = filterEntries(allEntries, q, status, source);
   const grandTotal = entries.reduce((s, e) => s + totalDebits(e), 0);
 

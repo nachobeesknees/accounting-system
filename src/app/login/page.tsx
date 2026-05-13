@@ -20,7 +20,7 @@ async function login(formData: FormData) {
   "use server";
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
-  const user = authenticate(email, password);
+  const user = await authenticate(email, password);
   if (!user) {
     redirect("/login?error=1");
   }
@@ -36,7 +36,7 @@ export default async function LoginPage({
   const existing = await getSessionUser();
   if (existing) redirect("/");
   const params = await searchParams;
-  const users = getUsers();
+  const users = await getUsers();
   const errored = params.error === "1";
 
   return (

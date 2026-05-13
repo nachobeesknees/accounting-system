@@ -6,13 +6,14 @@ import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { getBills, getVendorById, getVendors } from "@/lib/data";
+import { getBills, getVendors } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
-import type { Bill } from "@/lib/types";
+import type { Bill, Vendor } from "@/lib/types";
 
 function filterBills(
   bills: Bill[],
+  vendorsById: Map<string, Vendor>,
   q: string,
   status: string,
   vendor: string,
@@ -22,7 +23,7 @@ function filterBills(
     if (status && bill.status !== status) return false;
     if (vendor && bill.vendorId !== vendor) return false;
     if (needle) {
-      const vend = getVendorById(bill.vendorId);
+      const vend = vendorsById.get(bill.vendorId);
       const hay = `${bill.billNumber} ${vend?.name ?? ""} ${vend?.code ?? ""}`.toLowerCase();
       if (!hay.includes(needle)) return false;
     }
@@ -40,11 +41,12 @@ export default async function Page({
   const status = params.status ?? "";
   const vendorId = params.vendor ?? "";
 
-  const allBills = getBills();
-  const rows = filterBills(allBills, q, status, vendorId).slice().sort(
-    (a, b) => b.billDate.localeCompare(a.billDate),
-  );
-  const vendors = getVendors().slice().sort((a, b) => a.name.localeCompare(b.name));
+  const [allBills, allVendors] = await Promise.all([getBills(), getVendors()]);
+  const vendorsById = new Map(allVendors.map((v) => [v.id, v] as const));
+  const rows = filterBills(allBills, vendorsById, q, status, vendorId)
+    .slice()
+    .sort((a, b) => b.billDate.localeCompare(a.billDate));
+  const vendors = allVendors.slice().sort((a, b) => a.name.localeCompare(b.name));
 
   const totalSum = rows.reduce((s, b) => s + parseAmount(b.total), 0);
   const balanceSum = rows.reduce((s, b) => s + parseAmount(b.balanceDue), 0);
@@ -128,7 +130,7 @@ export default async function Page({
               </THead>
               <TBody>
                 {rows.map((bill) => {
-                  const vend = getVendorById(bill.vendorId);
+                  const vend = vendorsById.get(bill.vendorId);
                   const bal = parseAmount(bill.balanceDue);
                   const isOverdue = bill.status === "overdue" && bal > 0;
                   return (

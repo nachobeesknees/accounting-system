@@ -27,12 +27,14 @@ export default async function Page({
   const params = await searchParams;
   const q = params.q ?? "";
 
-  const allCustomers = getCustomers();
+  const [allCustomers, allInvoices] = await Promise.all([
+    getCustomers(),
+    getInvoices(),
+  ]);
   const rows = filterCustomers(allCustomers, q).slice().sort((a, b) =>
     a.code.localeCompare(b.code),
   );
 
-  const allInvoices = getInvoices();
   const balanceFor = (customerId: string): number =>
     allInvoices
       .filter((inv) => inv.customerId === customerId)

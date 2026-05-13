@@ -1,172 +1,536 @@
 /**
- * Read-side data access. Pure functions reading from the in-memory store.
- * When we swap to a real DB, replace these with Drizzle queries; the
- * call-sites won't change.
+ * Read-side data access. Drizzle queries against the Postgres database.
+ * Returns the same shapes defined in src/lib/types.ts so existing pages
+ * keep compiling — assembled types like Invoice/Bill/JournalEntry are
+ * built up from their respective parent + lines tables.
+ *
+ * Every function is async; callers (server components and server actions)
+ * await them.
  */
 
-import { store } from "./store";
+import "server-only";
+
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
+
+import { getDb, schema } from "@/db";
 import { parseAmount, sumDebits, sumCredits } from "./money";
-import type { Account, JournalEntry, AccountType } from "./types";
+import type {
+  Account,
+  AccountType,
+  Bill,
+  BillLine,
+  BankAccount,
+  BankTransaction,
+  Customer,
+  FiscalPeriod,
+  Invoice,
+  InvoiceLine,
+  JournalEntry,
+  JournalEntryStatus,
+  JournalLine,
+  User,
+  Vendor,
+} from "./types";
+
+// --------- Row → type mappers ---------
+// Drizzle returns dates as Date objects and date columns as strings (YYYY-MM-DD)
+// already; here we just narrow status fields and convert timestamps to ISO.
+
+function isoOrNull(d: Date | null): string | null {
+  return d == null ? null : d.toISOString();
+}
+
+function mapAccount(r: typeof schema.accounts.$inferSelect): Account {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    accountType: r.accountType as AccountType,
+    subType: r.subType,
+    normalBalance: r.normalBalance as "debit" | "credit",
+    isActive: r.isActive,
+    currencyCode: r.currencyCode,
+  };
+}
+
+function mapPeriod(r: typeof schema.fiscalPeriods.$inferSelect): FiscalPeriod {
+  return {
+    id: r.id,
+    name: r.name,
+    startDate: r.startDate,
+    endDate: r.endDate,
+    status: r.status as FiscalPeriod["status"],
+  };
+}
+
+function mapUser(r: typeof schema.users.$inferSelect): User {
+  return {
+    id: r.id,
+    email: r.email,
+    fullName: r.fullName,
+    role: r.role,
+    isSuperuser: r.isSuperuser,
+  };
+}
+
+function mapCustomer(r: typeof schema.customers.$inferSelect): Customer {
+  return {
+    id: r.id,
+    name: r.name,
+    code: r.code,
+    email: r.email,
+    phone: r.phone,
+    billingAddress: r.billingAddress,
+    paymentTerms: r.paymentTerms,
+    isActive: r.isActive,
+    notes: r.notes,
+  };
+}
+
+function mapVendor(r: typeof schema.vendors.$inferSelect): Vendor {
+  return {
+    id: r.id,
+    name: r.name,
+    code: r.code,
+    email: r.email,
+    phone: r.phone,
+    address: r.address,
+    paymentTerms: r.paymentTerms,
+    defaultExpenseAccountId: r.defaultExpenseAccountId,
+    isActive: r.isActive,
+    notes: r.notes,
+  };
+}
+
+function mapBankAccount(r: typeof schema.bankAccounts.$inferSelect): BankAccount {
+  return {
+    id: r.id,
+    name: r.name,
+    accountId: r.accountId,
+    institution: r.institution,
+    lastFour: r.lastFour,
+    currencyCode: r.currencyCode,
+    isActive: r.isActive,
+  };
+}
+
+function mapBankTransaction(
+  r: typeof schema.bankTransactions.$inferSelect,
+): BankTransaction {
+  return {
+    id: r.id,
+    bankAccountId: r.bankAccountId,
+    transactionDate: r.transactionDate,
+    description: r.description,
+    amount: r.amount,
+    reference: r.reference,
+    isReconciled: r.isReconciled,
+    reconciledAt: isoOrNull(r.reconciledAt),
+    journalEntryId: r.journalEntryId,
+  };
+}
+
+function mapJournalLine(r: typeof schema.journalLines.$inferSelect): JournalLine {
+  return {
+    id: r.id,
+    journalEntryId: r.journalEntryId,
+    lineNumber: r.lineNumber,
+    accountId: r.accountId,
+    description: r.description,
+    debit: r.debit,
+    credit: r.credit,
+  };
+}
+
+function mapInvoiceLine(r: typeof schema.invoiceLines.$inferSelect): InvoiceLine {
+  return {
+    id: r.id,
+    invoiceId: r.invoiceId,
+    lineNumber: r.lineNumber,
+    description: r.description,
+    quantity: r.quantity,
+    unitPrice: r.unitPrice,
+    amount: r.amount,
+    accountId: r.accountId,
+  };
+}
+
+function mapBillLine(r: typeof schema.billLines.$inferSelect): BillLine {
+  return {
+    id: r.id,
+    billId: r.billId,
+    lineNumber: r.lineNumber,
+    description: r.description,
+    quantity: r.quantity,
+    unitPrice: r.unitPrice,
+    amount: r.amount,
+    accountId: r.accountId,
+  };
+}
+
+function mapJournalEntry(
+  r: typeof schema.journalEntries.$inferSelect,
+  lines: JournalLine[],
+): JournalEntry {
+  return {
+    id: r.id,
+    entryNumber: r.entryNumber,
+    entryDate: r.entryDate,
+    fiscalPeriodId: r.fiscalPeriodId,
+    description: r.description,
+    reference: r.reference,
+    source: r.source as JournalEntry["source"],
+    status: r.status as JournalEntryStatus,
+    postedAt: isoOrNull(r.postedAt),
+    postedBy: r.postedBy,
+    voidedAt: isoOrNull(r.voidedAt),
+    voidReason: r.voidReason,
+    createdBy: r.createdBy,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+    lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
+  };
+}
+
+function mapInvoice(
+  r: typeof schema.invoices.$inferSelect,
+  lines: InvoiceLine[],
+): Invoice {
+  return {
+    id: r.id,
+    invoiceNumber: r.invoiceNumber,
+    customerId: r.customerId,
+    invoiceDate: r.invoiceDate,
+    dueDate: r.dueDate,
+    status: r.status as Invoice["status"],
+    subtotal: r.subtotal,
+    taxAmount: r.taxAmount,
+    total: r.total,
+    amountPaid: r.amountPaid,
+    balanceDue: r.balanceDue,
+    currencyCode: r.currencyCode,
+    notes: r.notes,
+    journalEntryId: r.journalEntryId,
+    lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
+  };
+}
+
+function mapBill(r: typeof schema.bills.$inferSelect, lines: BillLine[]): Bill {
+  return {
+    id: r.id,
+    billNumber: r.billNumber,
+    vendorId: r.vendorId,
+    billDate: r.billDate,
+    dueDate: r.dueDate,
+    status: r.status as Bill["status"],
+    subtotal: r.subtotal,
+    taxAmount: r.taxAmount,
+    total: r.total,
+    amountPaid: r.amountPaid,
+    balanceDue: r.balanceDue,
+    currencyCode: r.currencyCode,
+    notes: r.notes,
+    journalEntryId: r.journalEntryId,
+    lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
+  };
+}
 
 // --------- Lookups ---------
 
-export function getAccounts(): Account[] {
-  return store.accounts;
+export async function getAccounts(): Promise<Account[]> {
+  const db = getDb();
+  const rows = await db.select().from(schema.accounts).orderBy(schema.accounts.code);
+  return rows.map(mapAccount);
 }
 
-export function getAccountByCode(code: string): Account | undefined {
-  return store.accounts.find((a) => a.code === code);
+export async function getAccountByCode(code: string): Promise<Account | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.accounts)
+    .where(eq(schema.accounts.code, code))
+    .limit(1);
+  return row ? mapAccount(row) : undefined;
 }
 
-export function getAccountById(id: string): Account | undefined {
-  return store.accounts.find((a) => a.id === id);
+export async function getAccountById(id: string): Promise<Account | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.accounts)
+    .where(eq(schema.accounts.id, id))
+    .limit(1);
+  return row ? mapAccount(row) : undefined;
 }
 
-export function getCustomers() {
-  return store.customers;
+export async function getCustomers(): Promise<Customer[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.customers)
+    .orderBy(schema.customers.code);
+  return rows.map(mapCustomer);
 }
 
-export function getCustomerById(id: string) {
-  return store.customers.find((c) => c.id === id);
+export async function getCustomerById(id: string): Promise<Customer | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.customers)
+    .where(eq(schema.customers.id, id))
+    .limit(1);
+  return row ? mapCustomer(row) : undefined;
 }
 
-export function getVendors() {
-  return store.vendors;
+export async function getVendors(): Promise<Vendor[]> {
+  const db = getDb();
+  const rows = await db.select().from(schema.vendors).orderBy(schema.vendors.code);
+  return rows.map(mapVendor);
 }
 
-export function getVendorById(id: string) {
-  return store.vendors.find((v) => v.id === id);
+export async function getVendorById(id: string): Promise<Vendor | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.vendors)
+    .where(eq(schema.vendors.id, id))
+    .limit(1);
+  return row ? mapVendor(row) : undefined;
 }
 
-export function getInvoices() {
-  return store.invoices;
+export async function getInvoices(): Promise<Invoice[]> {
+  const db = getDb();
+  const heads = await db
+    .select()
+    .from(schema.invoices)
+    .orderBy(desc(schema.invoices.invoiceDate));
+  if (heads.length === 0) return [];
+  const ids = heads.map((h) => h.id);
+  const lineRows = await db
+    .select()
+    .from(schema.invoiceLines)
+    .where(inArray(schema.invoiceLines.invoiceId, ids));
+  const linesByInvoice = new Map<string, InvoiceLine[]>();
+  for (const l of lineRows) {
+    const mapped = mapInvoiceLine(l);
+    const arr = linesByInvoice.get(mapped.invoiceId) ?? [];
+    arr.push(mapped);
+    linesByInvoice.set(mapped.invoiceId, arr);
+  }
+  return heads.map((h) => mapInvoice(h, linesByInvoice.get(h.id) ?? []));
 }
 
-export function getInvoiceById(id: string) {
-  return store.invoices.find((i) => i.id === id);
+export async function getInvoiceById(id: string): Promise<Invoice | undefined> {
+  const db = getDb();
+  const [head] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, id))
+    .limit(1);
+  if (!head) return undefined;
+  const lines = await db
+    .select()
+    .from(schema.invoiceLines)
+    .where(eq(schema.invoiceLines.invoiceId, id));
+  return mapInvoice(head, lines.map(mapInvoiceLine));
 }
 
-export function getBills() {
-  return store.bills;
+export async function getBills(): Promise<Bill[]> {
+  const db = getDb();
+  const heads = await db
+    .select()
+    .from(schema.bills)
+    .orderBy(desc(schema.bills.billDate));
+  if (heads.length === 0) return [];
+  const ids = heads.map((h) => h.id);
+  const lineRows = await db
+    .select()
+    .from(schema.billLines)
+    .where(inArray(schema.billLines.billId, ids));
+  const linesByBill = new Map<string, BillLine[]>();
+  for (const l of lineRows) {
+    const mapped = mapBillLine(l);
+    const arr = linesByBill.get(mapped.billId) ?? [];
+    arr.push(mapped);
+    linesByBill.set(mapped.billId, arr);
+  }
+  return heads.map((h) => mapBill(h, linesByBill.get(h.id) ?? []));
 }
 
-export function getBillById(id: string) {
-  return store.bills.find((b) => b.id === id);
+export async function getBillById(id: string): Promise<Bill | undefined> {
+  const db = getDb();
+  const [head] = await db
+    .select()
+    .from(schema.bills)
+    .where(eq(schema.bills.id, id))
+    .limit(1);
+  if (!head) return undefined;
+  const lines = await db
+    .select()
+    .from(schema.billLines)
+    .where(eq(schema.billLines.billId, id));
+  return mapBill(head, lines.map(mapBillLine));
 }
 
-export function getJournalEntries(): JournalEntry[] {
-  return store.journalEntries.slice().sort((a, b) => b.entryDate.localeCompare(a.entryDate));
+export async function getJournalEntries(): Promise<JournalEntry[]> {
+  const db = getDb();
+  const heads = await db
+    .select()
+    .from(schema.journalEntries)
+    .orderBy(desc(schema.journalEntries.entryDate), desc(schema.journalEntries.entryNumber));
+  if (heads.length === 0) return [];
+  const ids = heads.map((h) => h.id);
+  const lineRows = await db
+    .select()
+    .from(schema.journalLines)
+    .where(inArray(schema.journalLines.journalEntryId, ids));
+  const linesByEntry = new Map<string, JournalLine[]>();
+  for (const l of lineRows) {
+    const mapped = mapJournalLine(l);
+    const arr = linesByEntry.get(mapped.journalEntryId) ?? [];
+    arr.push(mapped);
+    linesByEntry.set(mapped.journalEntryId, arr);
+  }
+  return heads.map((h) => mapJournalEntry(h, linesByEntry.get(h.id) ?? []));
 }
 
-export function getJournalEntryById(id: string): JournalEntry | undefined {
-  return store.journalEntries.find((j) => j.id === id);
+export async function getJournalEntryById(id: string): Promise<JournalEntry | undefined> {
+  const db = getDb();
+  const [head] = await db
+    .select()
+    .from(schema.journalEntries)
+    .where(eq(schema.journalEntries.id, id))
+    .limit(1);
+  if (!head) return undefined;
+  const lines = await db
+    .select()
+    .from(schema.journalLines)
+    .where(eq(schema.journalLines.journalEntryId, id));
+  return mapJournalEntry(head, lines.map(mapJournalLine));
 }
 
-export function getJournalEntryByNumber(num: string): JournalEntry | undefined {
-  return store.journalEntries.find((j) => j.entryNumber === num);
+export async function getJournalEntryByNumber(num: string): Promise<JournalEntry | undefined> {
+  const db = getDb();
+  const [head] = await db
+    .select()
+    .from(schema.journalEntries)
+    .where(eq(schema.journalEntries.entryNumber, num))
+    .limit(1);
+  if (!head) return undefined;
+  const lines = await db
+    .select()
+    .from(schema.journalLines)
+    .where(eq(schema.journalLines.journalEntryId, head.id));
+  return mapJournalEntry(head, lines.map(mapJournalLine));
 }
 
-export function getPeriods() {
-  return store.periods;
+export async function getPeriods(): Promise<FiscalPeriod[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.fiscalPeriods)
+    .orderBy(asc(schema.fiscalPeriods.startDate));
+  return rows.map(mapPeriod);
 }
 
-export function getBankAccounts() {
-  return store.bankAccounts;
+export async function getBankAccounts(): Promise<BankAccount[]> {
+  const db = getDb();
+  const rows = await db.select().from(schema.bankAccounts);
+  return rows.map(mapBankAccount);
 }
 
-export function getBankTransactions(bankAccountId?: string) {
-  return bankAccountId
-    ? store.bankTransactions.filter((t) => t.bankAccountId === bankAccountId)
-    : store.bankTransactions;
+export async function getBankTransactions(bankAccountId?: string): Promise<BankTransaction[]> {
+  const db = getDb();
+  const rows = bankAccountId
+    ? await db
+        .select()
+        .from(schema.bankTransactions)
+        .where(eq(schema.bankTransactions.bankAccountId, bankAccountId))
+        .orderBy(desc(schema.bankTransactions.transactionDate))
+    : await db
+        .select()
+        .from(schema.bankTransactions)
+        .orderBy(desc(schema.bankTransactions.transactionDate));
+  return rows.map(mapBankTransaction);
 }
 
-export function getUsers() {
-  return store.users;
+export async function getUsers(): Promise<User[]> {
+  const db = getDb();
+  const rows = await db.select().from(schema.users).orderBy(schema.users.fullName);
+  return rows.map(mapUser);
 }
 
-export function getUserById(id: string) {
-  return store.users.find((u) => u.id === id);
+export async function getUserById(id: string): Promise<User | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.id, id))
+    .limit(1);
+  return row ? mapUser(row) : undefined;
 }
 
 // --------- Derived: balances ---------
 
 /**
- * Calculate balance for a single account from posted journal lines.
- * Debit-normal: SUM(debit) - SUM(credit). Credit-normal: SUM(credit) - SUM(debit).
+ * Fetch all posted journal lines once and bucket by account. Cheaper than
+ * one SELECT per account when callers need many balances (KPIs, TB,
+ * accounts page).
  */
-export function getAccountBalance(accountId: string): number {
-  let bal = 0;
-  for (const entry of store.journalEntries) {
-    if (entry.status !== "posted") continue;
-    for (const line of entry.lines) {
-      if (line.accountId !== accountId) continue;
-      bal += parseAmount(line.debit) - parseAmount(line.credit);
-    }
-  }
-  // Seed the chart of accounts with prior-period openings so the demo
-  // numbers feel real even before user activity:
-  const opening = OPENING_BALANCES[accountId];
-  if (opening !== undefined) bal += opening;
-  const account = getAccountById(accountId);
-  if (!account) return bal;
-  return account.normalBalance === "debit" ? bal : -bal;
-}
+async function getSignedBalancesByAccount(): Promise<Map<string, number>> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      accountId: schema.journalLines.accountId,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .where(eq(schema.journalEntries.status, "posted"));
 
-// Prior-period opening balances so the demo books look populated.
-// Stored as signed debit-normal amounts.
-// These must sum to zero so the trial balance balances.
-// (Cash carries the offsetting amount.)
-const OPENING_BALANCES: Record<string, number> = {
-  "a-1000": 540_130,
-  "a-1200": 165_000,
-  "a-1300": 18_250,
-  "a-1500": 73_200,
-  "a-1510": -21_400,
-  "a-2000": -22_500,
-  "a-2100": -18_750,
-  "a-3000": -200_000,
-  "a-3100": -225_350,
-  "a-4000": -720_400,
-  "a-4100": -4_200,
-  "a-5000": 44_000,
-  "a-5100": 313_500,
-  "a-5200": 5_200,
-  "a-5300": 10_020,
-  "a-5400": 38_900,
-  "a-5500": 4_400,
-};
+  const balances = new Map<string, number>();
+  for (const r of rows) {
+    const cur = balances.get(r.accountId) ?? 0;
+    balances.set(r.accountId, cur + parseAmount(r.debit) - parseAmount(r.credit));
+  }
+  return balances;
+}
 
 /**
- * Raw signed (debit-normal) balance — debits positive, credits negative.
- * Equal to getAccountBalance() flipped for credit-normal accounts. Used
- * for accounting-equation arithmetic where contra accounts should subtract
- * naturally from their parent category.
+ * Display balance for a single account. Debit-normal accounts show
+ * SUM(debit) - SUM(credit); credit-normal accounts show the inverse so
+ * the displayed number is always non-negative for a "normal" balance.
  */
-function getSignedDebitBalance(accountId: string): number {
-  let bal = 0;
-  for (const entry of store.journalEntries) {
-    if (entry.status !== "posted") continue;
-    for (const line of entry.lines) {
-      if (line.accountId !== accountId) continue;
-      bal += parseAmount(line.debit) - parseAmount(line.credit);
-    }
-  }
-  const opening = OPENING_BALANCES[accountId];
-  if (opening !== undefined) bal += opening;
-  return bal;
+export async function getAccountBalance(accountId: string): Promise<number> {
+  const balances = await getSignedBalancesByAccount();
+  const account = await getAccountById(accountId);
+  const signed = balances.get(accountId) ?? 0;
+  if (!account) return signed;
+  return account.normalBalance === "debit" ? signed : -signed;
 }
 
-export function getKpis() {
-  let revenue = 0, expenses = 0, assets = 0, liabilities = 0, equity = 0;
-  for (const a of store.accounts) {
-    const raw = getSignedDebitBalance(a.id);
+export async function getKpis() {
+  const accounts = await getAccounts();
+  const balances = await getSignedBalancesByAccount();
+  let revenue = 0,
+    expenses = 0,
+    assets = 0,
+    liabilities = 0,
+    equity = 0;
+  let cash = 0;
+  for (const a of accounts) {
+    const raw = balances.get(a.id) ?? 0;
     if (a.accountType === "asset") assets += raw;
     else if (a.accountType === "liability") liabilities += -raw;
     else if (a.accountType === "equity") equity += -raw;
     else if (a.accountType === "revenue") revenue += -raw;
     else if (a.accountType === "expense") expenses += raw;
+    if (a.code === "1000") cash = a.normalBalance === "debit" ? raw : -raw;
   }
-  const cash = getAccountBalance("a-1000");
   return {
     revenue,
     expenses,
@@ -178,10 +542,13 @@ export function getKpis() {
   };
 }
 
-export function getTrialBalance() {
-  return store.accounts.map((a) => {
-    const bal = getAccountBalance(a.id);
+export async function getTrialBalance() {
+  const accounts = await getAccounts();
+  const balances = await getSignedBalancesByAccount();
+  return accounts.map((a) => {
+    const signed = balances.get(a.id) ?? 0;
     const isDebit = a.normalBalance === "debit";
+    const bal = isDebit ? signed : -signed;
     if (bal >= 0) {
       return {
         accountId: a.id,
@@ -190,28 +557,30 @@ export function getTrialBalance() {
         debit: isDebit ? bal : 0,
         credit: isDebit ? 0 : bal,
       };
-    } else {
-      // Contra balance — flip
-      return {
-        accountId: a.id,
-        code: a.code,
-        name: a.name,
-        debit: isDebit ? 0 : -bal,
-        credit: isDebit ? -bal : 0,
-      };
     }
+    // Contra balance — flip
+    return {
+      accountId: a.id,
+      code: a.code,
+      name: a.name,
+      debit: isDebit ? 0 : -bal,
+      credit: isDebit ? -bal : 0,
+    };
   });
 }
 
 // --------- Derived: aging ---------
 
-export function getArAging(today: Date) {
+export async function getArAging(today: Date) {
+  const invoices = await getInvoices();
   const buckets = { current: 0, d30: 0, d60: 0, d90: 0 };
-  for (const inv of store.invoices) {
+  for (const inv of invoices) {
     const bal = parseAmount(inv.balanceDue);
     if (bal <= 0) continue;
-    const due = new Date(inv.dueDate);
-    const daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+    const due = new Date(`${inv.dueDate}T00:00:00Z`);
+    const daysOverdue = Math.floor(
+      (today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24),
+    );
     if (daysOverdue <= 0) buckets.current += bal;
     else if (daysOverdue <= 30) buckets.d30 += bal;
     else if (daysOverdue <= 60) buckets.d60 += bal;
@@ -220,13 +589,16 @@ export function getArAging(today: Date) {
   return buckets;
 }
 
-export function getApAging(today: Date) {
+export async function getApAging(today: Date) {
+  const bills = await getBills();
   const buckets = { current: 0, d30: 0, d60: 0, d90: 0 };
-  for (const bill of store.bills) {
+  for (const bill of bills) {
     const bal = parseAmount(bill.balanceDue);
     if (bal <= 0) continue;
-    const due = new Date(bill.dueDate);
-    const daysOverdue = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+    const due = new Date(`${bill.dueDate}T00:00:00Z`);
+    const daysOverdue = Math.floor(
+      (today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24),
+    );
     if (daysOverdue <= 0) buckets.current += bal;
     else if (daysOverdue <= 30) buckets.d30 += bal;
     else if (daysOverdue <= 60) buckets.d60 += bal;
@@ -235,7 +607,7 @@ export function getApAging(today: Date) {
   return buckets;
 }
 
-// --------- Helpers ---------
+// --------- Helpers (pure, no DB) ---------
 
 export function totalDebits(entry: JournalEntry): number {
   return sumDebits(entry.lines);
@@ -253,13 +625,32 @@ export function accountTypeOrder(): AccountType[] {
   return ["asset", "liability", "equity", "revenue", "expense"];
 }
 
-export function accountsByType() {
+export async function accountsByType(): Promise<Map<AccountType, Account[]>> {
+  const accounts = await getAccounts();
   const map = new Map<AccountType, Account[]>();
-  for (const a of store.accounts) {
+  for (const a of accounts) {
     if (!map.has(a.accountType)) map.set(a.accountType, []);
     map.get(a.accountType)!.push(a);
   }
   return map;
+}
+
+/**
+ * Convenience for pages that compute multiple balances at once — exposes
+ * the prefetched-balances helper so callers can avoid N+1 queries.
+ *
+ * Returns a Map of accountId → displayed balance (signed for debit-normal,
+ * negated for credit-normal so the value follows accounting conventions).
+ */
+export async function getDisplayBalances(): Promise<Map<string, number>> {
+  const accounts = await getAccounts();
+  const balances = await getSignedBalancesByAccount();
+  const out = new Map<string, number>();
+  for (const a of accounts) {
+    const signed = balances.get(a.id) ?? 0;
+    out.set(a.id, a.normalBalance === "debit" ? signed : -signed);
+  }
+  return out;
 }
 
 // The "today" for the demo. Fix it so reports match the seeded data.
