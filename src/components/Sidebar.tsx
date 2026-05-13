@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState } from "react";
 
 type Item = { href: string; label: string; count?: number };
 type Section = { heading: string; items: Item[] };
@@ -86,17 +86,38 @@ export function Sidebar({
   urgentItems?: Record<string, boolean>;
 }) {
   const path = usePathname();
+  const [mobileOpen, setMobileOpen] = useState(false);
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
+  // Listen for the menu-toggle event from the Topbar.
+  useEffect(() => {
+    const handler = () => setMobileOpen((v) => !v);
+    window.addEventListener("sidebar:toggle", handler);
+    return () => window.removeEventListener("sidebar:toggle", handler);
+  }, []);
+
+  // Close drawer when route changes (mobile UX).
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [path]);
+
   return (
-    <aside
-      className="sidebar overflow-y-auto"
-      style={{
-        background: "var(--rail)",
-        borderRight: "1px solid var(--line)",
-        padding: "8px 6px",
-      }}
-    >
+    <>
+      {mobileOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden
+        />
+      )}
+      <aside
+        className={`sidebar overflow-y-auto ${mobileOpen ? "sidebar-open" : ""}`}
+        style={{
+          background: "var(--rail)",
+          borderRight: "1px solid var(--line)",
+          padding: "8px 6px",
+        }}
+      >
       {SECTIONS.map((sec) => (
         <div key={sec.heading} className="mt-2.5 first:mt-0">
           <div
@@ -146,6 +167,7 @@ export function Sidebar({
           })}
         </div>
       ))}
-    </aside>
+      </aside>
+    </>
   );
 }
