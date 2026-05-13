@@ -48,19 +48,15 @@ function Tile({
   label,
   value,
   sub,
+  href,
 }: {
   label: string;
   value: string;
   sub?: string;
+  href?: string;
 }) {
-  return (
-    <div
-      className="rounded-lg p-3.5"
-      style={{
-        border: "1px solid var(--line)",
-        background: "var(--raised)",
-      }}
-    >
+  const body = (
+    <>
       <div
         className="uppercase"
         style={{
@@ -91,6 +87,28 @@ function Tile({
           {sub}
         </div>
       )}
+    </>
+  );
+
+  const tileStyle = {
+    border: "1px solid var(--line)",
+    background: "var(--raised)",
+  } as const;
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="rounded-lg p-3.5 block transition-colors hover:bg-[var(--hover)]"
+        style={{ ...tileStyle, textDecoration: "none", color: "inherit" }}
+      >
+        {body}
+      </Link>
+    );
+  }
+  return (
+    <div className="rounded-lg p-3.5" style={tileStyle}>
+      {body}
     </div>
   );
 }
@@ -200,6 +218,15 @@ export default async function Page() {
             <ButtonLink variant="secondary" href="/reports">
               Reports
             </ButtonLink>
+            <ButtonLink variant="ghost" href="/time/new">
+              + Log time
+            </ButtonLink>
+            <ButtonLink variant="ghost" href="/entities/new">
+              + New entity
+            </ButtonLink>
+            <ButtonLink variant="ghost" href="/invoices/new">
+              + New invoice
+            </ButtonLink>
             <ButtonLink variant="primary" href="/journal/new">
               + New entry
             </ButtonLink>
@@ -266,21 +293,25 @@ export default async function Page() {
           label="Total Assets"
           value={formatUSD(kpis.assets, { paren: true })}
           sub="All asset accounts"
+          href="/reports?tab=balance"
         />
         <Tile
           label="Total Liabilities"
           value={formatUSD(kpis.liabilities, { paren: true })}
           sub="All liability accounts"
+          href="/reports?tab=balance"
         />
         <Tile
           label="Net Income (YTD)"
           value={formatUSD(kpis.netIncome, { paren: true })}
           sub="Revenue minus expense"
+          href="/reports?tab=income"
         />
         <Tile
           label="Cash Balance"
           value={formatUSD(kpis.cash, { paren: true })}
           sub="Account 1000 — Cash"
+          href="/ledger?account=1000"
         />
       </div>
 
