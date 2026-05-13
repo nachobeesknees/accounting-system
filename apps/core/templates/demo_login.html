@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo Login - Accounting System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 800px;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #333;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .error {
+            background-color: #fee;
+            color: #c33;
+            padding: 12px 16px;
+            border-radius: 6px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            border-left: 4px solid #c33;
+        }
+
+        .accounts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .account-button {
+            border: none;
+            background: #f5f5f5;
+            border-radius: 8px;
+            padding: 24px 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+        }
+
+        .account-button:hover {
+            background: #f0f0f0;
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+        }
+
+        .account-button:active {
+            transform: translateY(0);
+        }
+
+        .account-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .account-role {
+            font-weight: 600;
+            color: #333;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .account-username {
+            color: #667eea;
+            font-size: 12px;
+            font-family: 'Monaco', 'Courier New', monospace;
+            margin-bottom: 8px;
+        }
+
+        .account-description {
+            color: #666;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+
+        .footer {
+            text-align: center;
+            color: #999;
+            font-size: 12px;
+            border-top: 1px solid #eee;
+            padding-top: 20px;
+            margin-top: 20px;
+        }
+
+        .links {
+            display: flex;
+            gap: 16px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+
+        .links a {
+            color: #667eea;
+            text-decoration: none;
+            font-size: 13px;
+        }
+
+        .links a:hover {
+            text-decoration: underline;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+
+            .header h1 {
+                font-size: 22px;
+            }
+
+            .accounts-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏢 Demo Accounting System</h1>
+            <p>Click any account to login instantly</p>
+        </div>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+
+        <div class="accounts-grid">
+            {% for account in demo_accounts %}
+            <form method="post" style="width: 100%;">
+                {% csrf_token %}
+                <input type="hidden" name="username" value="{{ account.username }}">
+                <input type="hidden" name="password" value="{{ account.password }}">
+                <button type="submit" class="account-button">
+                    <span class="account-icon">{{ account.icon }}</span>
+                    <div class="account-role">{{ account.role }}</div>
+                    <div class="account-username">{{ account.username }}</div>
+                    <div class="account-description">{{ account.description }}</div>
+                </button>
+            </form>
+            {% endfor %}
+        </div>
+
+        <div class="footer">
+            <div class="links">
+                <a href="/admin/">Admin Panel</a>
+                <a href="/api/docs/">API Docs</a>
+                <a href="/api/auth/health/">Health Check</a>
+            </div>
+            <p>All demo accounts use password: <code>demo123</code></p>
+        </div>
+    </div>
+</body>
+</html>
