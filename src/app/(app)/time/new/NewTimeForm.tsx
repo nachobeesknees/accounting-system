@@ -6,7 +6,30 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { createTimeEntryAction, type CreateTimeState } from "./actions";
-import type { Customer, EmployeeRate, Entity, User } from "@/lib/types";
+import type {
+  Customer,
+  EmployeeRate,
+  Entity,
+  EntityFee,
+  FeeFrequency,
+  User,
+} from "@/lib/types";
+
+function frequencyShortLabel(f: FeeFrequency | undefined | null): string {
+  switch (f) {
+    case "monthly":
+      return "monthly";
+    case "quarterly":
+      return "quarterly";
+    case "semiannual":
+      return "semi-annual";
+    case "one_time":
+      return "one-time";
+    case "annual":
+    default:
+      return "annual";
+  }
+}
 
 const initial: CreateTimeState = { error: null };
 
@@ -15,12 +38,14 @@ export function NewTimeForm({
   rates,
   customers,
   entities,
+  feesByEntityId,
   currentUserId,
 }: {
   users: User[];
   rates: EmployeeRate[];
   customers: Customer[];
   entities: Entity[];
+  feesByEntityId: Record<string, EntityFee[]>;
   currentUserId: string;
 }) {
   const [state, action] = useActionState(createTimeEntryAction, initial);
@@ -28,6 +53,8 @@ export function NewTimeForm({
 
   const [userId, setUserId] = useState(currentUserId);
   const [clientId, setClientId] = useState("");
+  const [entityId, setEntityId] = useState("");
+  const [entityFeeId, setEntityFeeId] = useState("");
 
   const defaultRate = useMemo(() => {
     const r = rates.find((r) => r.userId === userId && r.isDefault);
@@ -38,6 +65,11 @@ export function NewTimeForm({
     if (!clientId) return entities;
     return entities.filter((e) => e.clientId === clientId);
   }, [clientId, entities]);
+
+  const entityFees = useMemo(() => {
+    if (!entityId) return [];
+    return feesByEntityId[entityId] ?? [];
+  }, [entityId, feesByEntityId]);
 
   return (
     <form action={action}>
@@ -111,7 +143,15 @@ export function NewTimeForm({
                   </option>
                 ))}
               </SelectField>
-              <SelectField label="Entity" name="entityId" defaultValue="">
+              <SelectField
+                label="Entity"
+                name="entityId"
+                value={entityId}
+                onChange={(e) => {
+                  setEntityId(e.target.value);
+                  setEntityFeeId("");
+                }}
+              >
                 <option value="">— None —</option>
                 {filteredEntities.map((e) => (
                   <option key={e.id} value={e.id}>
@@ -120,6 +160,25 @@ export function NewTimeForm({
                 ))}
               </SelectField>
             </Row>
+            {entityId && entityFees.length > 0 && (
+              <Row>
+                <SelectField
+                  label="Service (optional)"
+                  name="entityFeeId"
+                  value={entityFeeId}
+                  onChange={(e) => setEntityFeeId(e.target.value)}
+                >
+                  <option value="">— No specific service —</option>
+                  {entityFees.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.billingYear} ·{" "}
+                      {frequencyShortLabel(f.frequency)} · ${f.annualFee}/yr
+                    </option>
+                  ))}
+                </SelectField>
+                <div />
+              </Row>
+            )}
             <Row>
               <Field label="Task type" name="taskType" placeholder="Bookkeeping, Tax, Advisory…" />
               <label className="flex items-end gap-2 text-[13px]">

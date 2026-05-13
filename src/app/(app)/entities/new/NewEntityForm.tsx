@@ -94,6 +94,14 @@ export function NewEntityForm({
             </Row>
             <Row>
               <Field label="EIN" name="ein" mono placeholder="00-0000000" />
+              <Field
+                label="Registration #"
+                name="registrationNumber"
+                mono
+                placeholder="Corporate filing #"
+              />
+            </Row>
+            <Row>
               <SelectField label="Status" name="status" defaultValue="active">
                 <option value="active">Active</option>
                 <option value="pending">Pending</option>

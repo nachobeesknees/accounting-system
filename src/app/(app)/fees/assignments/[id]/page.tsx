@@ -3,18 +3,79 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
+import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getCustomers,
   getEntities,
   getEntityFeeById,
   getFeeSchedules,
+  getTimeEntries,
+  getUsers,
 } from "@/lib/data";
+import { formatUSD, parseAmount } from "@/lib/money";
+import type { FeeFrequency } from "@/lib/types";
 import {
   deleteAssignmentAction,
   updateAssignmentAction,
 } from "./actions";
+
+const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+function frequencyLabel(f: FeeFrequency | undefined | null): string {
+  switch (f) {
+    case "monthly":
+      return "Monthly";
+    case "quarterly":
+      return "Quarterly";
+    case "semiannual":
+      return "Semi-annual";
+    case "annual":
+      return "Annual";
+    case "one_time":
+      return "One time";
+    default:
+      return "Annual";
+  }
+}
+
+function periodCount(f: FeeFrequency | undefined | null): number {
+  switch (f) {
+    case "monthly":
+      return 12;
+    case "quarterly":
+      return 4;
+    case "semiannual":
+      return 2;
+    case "one_time":
+      return 1;
+    case "annual":
+    default:
+      return 1;
+  }
+}
+
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] ?? s[v] ?? s[0]!);
+}
 
 export default async function Page({
   params,
@@ -28,10 +89,12 @@ export default async function Page({
   const fee = await getEntityFeeById(id);
   if (!fee) notFound();
 
-  const [entities, customers, schedules] = await Promise.all([
+  const [entities, customers, schedules, timeEntries, users] = await Promise.all([
     getEntities(),
     getCustomers(),
     getFeeSchedules(),
+    getTimeEntries(),
+    getUsers(),
   ]);
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
   const entity = entities.find((e) => e.id === fee.entityId);
@@ -39,6 +102,43 @@ export default async function Page({
   const matchingSchedules = entity
     ? schedules.filter((s) => s.entityKind === entity.kind)
     : schedules;
+
+  const userById = new Map(users.map((u) => [u.id, u] as const));
+  const linkedTime = timeEntries.filter((t) => t.entityFeeId === fee.id);
+  const totalHoursLogged = linkedTime.reduce(
+    (s, t) => s + parseAmount(t.durationHours),
+    0,
+  );
+  const includedHoursNum = parseAmount(fee.includedHours);
+
+  const freq = (fee.frequency ?? "annual") as FeeFrequency;
+  const periods = periodCount(freq);
+  const annualFeeNum = parseAmount(fee.annualFee);
+  const derivedPerPeriod = periods > 0 ? annualFeeNum / periods : annualFeeNum;
+  const perPeriod =
+    fee.perPeriodAmount != null && fee.perPeriodAmount !== ""
+      ? parseAmount(fee.perPeriodAmount)
+      : derivedPerPeriod;
+
+  const monthName =
+    fee.billingMonth != null && fee.billingMonth >= 1 && fee.billingMonth <= 12
+      ? MONTH_NAMES[fee.billingMonth - 1]
+      : null;
+  const billingDay = fee.billingDay ?? null;
+  const billingMonthDay =
+    monthName && billingDay
+      ? `Every ${monthName} ${billingDay}`
+      : monthName
+        ? `Every ${monthName}`
+        : billingDay
+          ? `Every ${ordinal(billingDay)} of period`
+          : "—";
+
+  const servicePeriod = fee.startDate
+    ? `${fee.startDate} – ${fee.endDate ?? "ongoing"}`
+    : fee.endDate
+      ? `— – ${fee.endDate}`
+      : "ongoing";
 
   return (
     <>
@@ -49,6 +149,12 @@ export default async function Page({
           <>
             <ButtonLink href="/fees" variant="secondary">
               ← All fees
+            </ButtonLink>
+            <ButtonLink
+              href={`/fees/assignments/${fee.id}/edit`}
+              variant="secondary"
+            >
+              Edit billing schedule
             </ButtonLink>
             <Pill variant={statusVariant(fee.status)}>
               {statusLabel(fee.status)}
@@ -152,6 +258,93 @@ export default async function Page({
             </div>
           </Card>
         </form>
+
+        <Card
+          title="Billing schedule"
+          actions={
+            <ButtonLink
+              href={`/fees/assignments/${fee.id}/edit`}
+              variant="secondary"
+            >
+              Edit
+            </ButtonLink>
+          }
+        >
+          <KVGrid>
+            <KV
+              k="Frequency"
+              v={
+                <Pill variant="neutral">{frequencyLabel(freq)}</Pill>
+              }
+            />
+            <KV k="Service period" v={servicePeriod} mono />
+            <KV k="Billing month/day" v={billingMonthDay} />
+            <KV
+              k="Next billing date"
+              v={fee.nextBillingDate ?? "—"}
+              mono
+            />
+            <KV
+              k="Per-period amount"
+              v={formatUSD(perPeriod)}
+              sub={
+                fee.perPeriodAmount != null && fee.perPeriodAmount !== ""
+                  ? "Override"
+                  : `Derived: ${formatUSD(annualFeeNum)} ÷ ${periods}`
+              }
+              mono
+            />
+            <KV
+              k="Last billed"
+              v={fee.lastBilledDate ?? "—"}
+              mono
+            />
+          </KVGrid>
+        </Card>
+
+        <Card title="Time logged against this service">
+          {linkedTime.length === 0 ? (
+            <Empty
+              title="No time logged yet"
+              body="Time entries can be linked to this service when logging."
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Date</TH>
+                  <TH>User</TH>
+                  <TH>Description</TH>
+                  <TH num>Hours</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {linkedTime.map((t) => {
+                  const u = userById.get(t.userId);
+                  return (
+                    <TR key={t.id} href={`/time/${t.id}`}>
+                      <TD mono>{t.entryDate}</TD>
+                      <TD>{u?.fullName ?? t.userId}</TD>
+                      <TD>{t.description}</TD>
+                      <TD num>{parseAmount(t.durationHours).toFixed(2)}</TD>
+                    </TR>
+                  );
+                })}
+                <TR total hover={false}>
+                  <TD />
+                  <TD />
+                  <TD>
+                    Total
+                    {includedHoursNum > 0
+                      ? ` (of ${includedHoursNum.toFixed(2)} included)`
+                      : ""}
+                  </TD>
+                  <TD num>{totalHoursLogged.toFixed(2)}</TD>
+                </TR>
+              </TBody>
+            </Table>
+          )}
+        </Card>
 
         {entity && (
           <Link

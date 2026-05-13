@@ -580,6 +580,7 @@ export type CreateEntityInput = {
   formationDate?: string | null;
   status?: "active" | "pending" | "dormant" | "dissolved";
   ein?: string | null;
+  registrationNumber?: string | null;
   notes?: string | null;
   currencyCode?: string;
 };
@@ -607,6 +608,7 @@ export async function createEntity(_user: SessionUser, input: CreateEntityInput)
       formationDate: input.formationDate ?? null,
       status: input.status ?? "active",
       ein: input.ein ?? null,
+      registrationNumber: input.registrationNumber ?? null,
       notes: input.notes ?? null,
       currencyCode: input.currencyCode ?? "USD",
     })
@@ -646,6 +648,7 @@ export async function updateEntity(
       ...(input.formationDate !== undefined && { formationDate: input.formationDate }),
       ...(input.status !== undefined && { status: input.status }),
       ...(input.ein !== undefined && { ein: input.ein }),
+      ...(input.registrationNumber !== undefined && { registrationNumber: input.registrationNumber }),
       ...(input.notes !== undefined && { notes: input.notes }),
       ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
       updatedAt: new Date(),
@@ -1551,6 +1554,98 @@ export async function setCustomerAssignedUser(
     .update(schema.customers)
     .set({ assignedUserId, updatedAt: new Date() })
     .where(eq(schema.customers.id, customerId));
+  // Mirror to customer_assignments: clear all then re-insert one row marked primary.
+  await db.delete(schema.customerAssignments).where(eq(schema.customerAssignments.customerId, customerId));
+  if (assignedUserId) {
+    await db.insert(schema.customerAssignments).values({
+      id: uid("ca"),
+      customerId,
+      userId: assignedUserId,
+      isPrimary: true,
+      canApprove: true,
+      role: null,
+    });
+  }
+}
+
+export async function addCustomerAssignment(
+  _user: SessionUser,
+  input: { customerId: string; userId: string; isPrimary?: boolean; canApprove?: boolean; role?: string | null },
+) {
+  const db = getDb();
+  // Unique (customerId, userId) — bail if it already exists.
+  const existing = await db
+    .select({ id: schema.customerAssignments.id })
+    .from(schema.customerAssignments)
+    .where(
+      and(
+        eq(schema.customerAssignments.customerId, input.customerId),
+        eq(schema.customerAssignments.userId, input.userId),
+      ),
+    );
+  if (existing.length > 0) {
+    throw new Error("That employee is already assigned to this client.");
+  }
+  const id = uid("ca");
+  // If this is being marked as primary, clear other primaries.
+  if (input.isPrimary) {
+    await db
+      .update(schema.customerAssignments)
+      .set({ isPrimary: false })
+      .where(eq(schema.customerAssignments.customerId, input.customerId));
+  }
+  await db.insert(schema.customerAssignments).values({
+    id,
+    customerId: input.customerId,
+    userId: input.userId,
+    isPrimary: input.isPrimary ?? false,
+    canApprove: input.canApprove ?? true,
+    role: input.role ?? null,
+  });
+  // Keep the legacy customers.assigned_user_id in sync with whoever is primary.
+  const [primary] = await db
+    .select()
+    .from(schema.customerAssignments)
+    .where(
+      and(
+        eq(schema.customerAssignments.customerId, input.customerId),
+        eq(schema.customerAssignments.isPrimary, true),
+      ),
+    )
+    .limit(1);
+  await db
+    .update(schema.customers)
+    .set({ assignedUserId: primary?.userId ?? null, updatedAt: new Date() })
+    .where(eq(schema.customers.id, input.customerId));
+}
+
+export async function removeCustomerAssignment(
+  _user: SessionUser,
+  assignmentId: string,
+) {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.customerAssignments)
+    .where(eq(schema.customerAssignments.id, assignmentId))
+    .limit(1);
+  if (!row) return;
+  await db.delete(schema.customerAssignments).where(eq(schema.customerAssignments.id, assignmentId));
+  // Re-sync the legacy single-assign column.
+  const [primary] = await db
+    .select()
+    .from(schema.customerAssignments)
+    .where(
+      and(
+        eq(schema.customerAssignments.customerId, row.customerId),
+        eq(schema.customerAssignments.isPrimary, true),
+      ),
+    )
+    .limit(1);
+  await db
+    .update(schema.customers)
+    .set({ assignedUserId: primary?.userId ?? null, updatedAt: new Date() })
+    .where(eq(schema.customers.id, row.customerId));
 }
 
 // --------- Invoices (with auto-JE on post + payment) ---------
@@ -1853,14 +1948,22 @@ export async function cfoApproveInvoice(user: SessionUser, invoiceId: string) {
   if (inv.status !== "pending_cfo") {
     throw new Error(`Invoice is not pending CFO approval (status: ${inv.status}).`);
   }
+  // Accept either a row in customer_assignments OR the legacy single
+  // assigned_user_id column. Either way the client needs at least one
+  // assigned employee before CFO approval can proceed (so there's
+  // someone to do the final step).
+  const assignmentRows = await db
+    .select({ userId: schema.customerAssignments.userId })
+    .from(schema.customerAssignments)
+    .where(eq(schema.customerAssignments.customerId, inv.customerId));
   const [cust] = await db
     .select({ assignedUserId: schema.customers.assignedUserId })
     .from(schema.customers)
     .where(eq(schema.customers.id, inv.customerId))
     .limit(1);
-  if (!cust || !cust.assignedUserId) {
+  if (assignmentRows.length === 0 && !cust?.assignedUserId) {
     throw new Error(
-      "Customer has no assigned employee. Assign one on the customer detail page before approving.",
+      "Client has no assigned employee. Assign one on the client detail page before approving.",
     );
   }
   await db
@@ -1885,17 +1988,33 @@ export async function assignedApproveInvoice(user: SessionUser, invoiceId: strin
   if (inv.status !== "pending_assigned") {
     throw new Error(`Invoice is not pending assigned approval (status: ${inv.status}).`);
   }
+  // Check the assignments table first (multi-assign), fall back to the
+  // legacy single column. Anyone marked can_approve OR the legacy assignee
+  // (OR an Admin) can grant the final approval.
+  const assignments = await db
+    .select({
+      userId: schema.customerAssignments.userId,
+      canApprove: schema.customerAssignments.canApprove,
+    })
+    .from(schema.customerAssignments)
+    .where(eq(schema.customerAssignments.customerId, inv.customerId));
   const [cust] = await db
     .select({ assignedUserId: schema.customers.assignedUserId })
     .from(schema.customers)
     .where(eq(schema.customers.id, inv.customerId))
     .limit(1);
-  if (!cust || !cust.assignedUserId) {
-    throw new Error("Customer has no assigned employee.");
+
+  const approverIds = new Set<string>(
+    assignments.filter((a) => a.canApprove).map((a) => a.userId),
+  );
+  if (cust?.assignedUserId) approverIds.add(cust.assignedUserId);
+
+  if (approverIds.size === 0) {
+    throw new Error("Client has no assigned employee.");
   }
-  if (cust.assignedUserId !== user.userId && !user.isSuperuser) {
+  if (!approverIds.has(user.userId) && !user.isSuperuser) {
     throw new Error(
-      "Only the assigned employee (or an Admin) can grant the final approval.",
+      "Only an assigned employee (or an Admin) can grant the final approval.",
     );
   }
   // Mark approved AND flip back to draft so postInvoice's "must be draft"
@@ -2394,6 +2513,131 @@ export async function reconcileTransaction(
     })
     .where(eq(schema.bankTransactions.id, txId));
   return { ...tx, isReconciled: newReconciled };
+}
+
+// --------- Entity fee billing schedule + recurring payments + invoice expected pay date ---------
+
+export type UpdateEntityFeeBillingInput = {
+  frequency?: "monthly" | "quarterly" | "semiannual" | "annual" | "one_time";
+  startDate?: string | null;
+  endDate?: string | null;
+  billingMonth?: number | null;
+  billingDay?: number | null;
+  nextBillingDate?: string | null;
+  perPeriodAmount?: number | null;
+  annualFee?: number;
+  includedHours?: number;
+  status?: "draft" | "active" | "billed" | "paid" | "void";
+  notes?: string | null;
+};
+
+export async function updateEntityFeeBilling(
+  _user: SessionUser,
+  id: string,
+  input: UpdateEntityFeeBillingInput,
+) {
+  const db = getDb();
+  const patch: Record<string, unknown> = { updatedAt: new Date() };
+  if (input.frequency != null) patch.frequency = input.frequency;
+  if (input.startDate !== undefined) patch.startDate = input.startDate;
+  if (input.endDate !== undefined) patch.endDate = input.endDate;
+  if (input.billingMonth !== undefined) patch.billingMonth = input.billingMonth;
+  if (input.billingDay !== undefined) patch.billingDay = input.billingDay;
+  if (input.nextBillingDate !== undefined) patch.nextBillingDate = input.nextBillingDate;
+  if (input.perPeriodAmount !== undefined)
+    patch.perPeriodAmount =
+      input.perPeriodAmount == null ? null : toDecimalString(input.perPeriodAmount);
+  if (input.annualFee != null) patch.annualFee = toDecimalString(input.annualFee);
+  if (input.includedHours != null) patch.includedHours = input.includedHours.toString();
+  if (input.status != null) patch.status = input.status;
+  if (input.notes !== undefined) patch.notes = input.notes;
+
+  await db
+    .update(schema.entityFees)
+    .set(patch)
+    .where(eq(schema.entityFees.id, id));
+}
+
+export type CreateRecurringPaymentInput = {
+  name: string;
+  amount: number;
+  frequency: "weekly" | "biweekly" | "monthly" | "quarterly" | "semiannual" | "annual";
+  nextPaymentDate: string;
+  expenseAccountId: string;
+  vendorId?: string | null;
+  bankAccountId?: string | null;
+  notes?: string | null;
+};
+
+export async function createRecurringPayment(
+  _user: SessionUser,
+  input: CreateRecurringPaymentInput,
+) {
+  if (input.amount <= 0) throw new Error("Amount must be > 0.");
+  if (!input.name.trim()) throw new Error("Name is required.");
+  if (!input.expenseAccountId) throw new Error("Expense account is required.");
+  const db = getDb();
+  const id = uid("rp");
+  const now = new Date();
+  await db.insert(schema.recurringPayments).values({
+    id,
+    name: input.name,
+    amount: toDecimalString(input.amount),
+    frequency: input.frequency,
+    nextPaymentDate: input.nextPaymentDate,
+    expenseAccountId: input.expenseAccountId,
+    vendorId: input.vendorId ?? null,
+    bankAccountId: input.bankAccountId ?? null,
+    isActive: true,
+    notes: input.notes ?? null,
+    createdAt: now,
+    updatedAt: now,
+  });
+  return { id };
+}
+
+export type UpdateRecurringPaymentInput = Partial<CreateRecurringPaymentInput> & {
+  isActive?: boolean;
+};
+
+export async function updateRecurringPayment(
+  _user: SessionUser,
+  id: string,
+  input: UpdateRecurringPaymentInput,
+) {
+  const db = getDb();
+  const patch: Record<string, unknown> = { updatedAt: new Date() };
+  if (input.name != null) patch.name = input.name;
+  if (input.amount != null) patch.amount = toDecimalString(input.amount);
+  if (input.frequency != null) patch.frequency = input.frequency;
+  if (input.nextPaymentDate != null) patch.nextPaymentDate = input.nextPaymentDate;
+  if (input.expenseAccountId != null) patch.expenseAccountId = input.expenseAccountId;
+  if (input.vendorId !== undefined) patch.vendorId = input.vendorId;
+  if (input.bankAccountId !== undefined) patch.bankAccountId = input.bankAccountId;
+  if (input.notes !== undefined) patch.notes = input.notes;
+  if (input.isActive !== undefined) patch.isActive = input.isActive;
+
+  await db
+    .update(schema.recurringPayments)
+    .set(patch)
+    .where(eq(schema.recurringPayments.id, id));
+}
+
+export async function deleteRecurringPayment(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.recurringPayments).where(eq(schema.recurringPayments.id, id));
+}
+
+export async function setInvoiceExpectedPaymentDate(
+  _user: SessionUser,
+  invoiceId: string,
+  expectedPaymentDate: string | null,
+) {
+  const db = getDb();
+  await db
+    .update(schema.invoices)
+    .set({ expectedPaymentDate, updatedAt: new Date() })
+    .where(eq(schema.invoices.id, invoiceId));
 }
 
 // --------- Periods ---------

@@ -22,7 +22,7 @@ const SECTIONS: Section[] = [
     heading: "Receivables",
     items: [
       { href: "/invoices", label: "Invoices" },
-      { href: "/customers", label: "Customers" },
+      { href: "/customers", label: "Clients" },
       { href: "/entities", label: "Entities" },
       { href: "/aua", label: "Assets / AUA" },
       { href: "/fees", label: "Fees" },
@@ -54,6 +54,7 @@ const SECTIONS: Section[] = [
     heading: "Reporting",
     items: [
       { href: "/reports", label: "Financial Statements" },
+      { href: "/cash-forecast", label: "Cash Forecast" },
       { href: "/consolidation", label: "Consolidation" },
     ],
   },

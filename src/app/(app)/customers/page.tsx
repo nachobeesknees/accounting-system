@@ -46,11 +46,11 @@ export default async function Page({
   return (
     <>
       <PageHeader
-        title="Customers"
+        title="Clients"
         meta={`${rows.length} active`}
         actions={
           <ButtonLink variant="primary" href="/customers/new">
-            + New customer
+            + New client
           </ButtonLink>
         }
       />
@@ -79,14 +79,14 @@ export default async function Page({
       </div>
 
       <div className="px-6 py-3.5 pb-8">
-        <Card title="Customers">
+        <Card title="Clients">
           {rows.length === 0 ? (
             <Empty
               title="No customers match your search"
               body="Try a different query or add a new customer."
               cta={
                 <ButtonLink variant="primary" href="/customers/new">
-                  + New customer
+                  + New client
                 </ButtonLink>
               }
             />

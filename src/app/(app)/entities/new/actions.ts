@@ -35,6 +35,7 @@ export async function createEntityAction(
   const jurisdiction = String(formData.get("jurisdiction") ?? "").trim();
   const formationDate = String(formData.get("formationDate") ?? "").trim();
   const ein = String(formData.get("ein") ?? "").trim();
+  const registrationNumber = String(formData.get("registrationNumber") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const currencyCode = String(formData.get("currencyCode") ?? "USD").trim().toUpperCase();
 
@@ -58,6 +59,7 @@ export async function createEntityAction(
       jurisdiction: jurisdiction || null,
       formationDate: formationDate || null,
       ein: ein || null,
+      registrationNumber: registrationNumber || null,
       notes: notes || null,
       currencyCode: currencyCode || "USD",
     });

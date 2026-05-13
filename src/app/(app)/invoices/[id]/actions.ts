@@ -9,6 +9,7 @@ import {
   postInvoice,
   recordInvoicePayment,
   rejectInvoice,
+  setInvoiceExpectedPaymentDate,
   submitInvoiceForApproval,
   voidInvoice,
 } from "@/lib/mutations";
@@ -193,6 +194,37 @@ export async function assignedApproveInvoiceAction(
 
   revalidateAfterMutation(invoiceId);
   redirect(`/invoices/${invoiceId}?approved=assigned`);
+}
+
+export async function setExpectedPaymentDateAction(
+  formData: FormData,
+): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  if (!invoiceId) {
+    redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
+  }
+
+  const raw = String(formData.get("expectedPaymentDate") ?? "").trim();
+  const expectedPaymentDate = raw === "" ? null : raw;
+
+  try {
+    await setInvoiceExpectedPaymentDate(user, invoiceId, expectedPaymentDate);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Failed to update expected payment date.";
+    redirect(`/invoices/${invoiceId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath(`/invoices/${invoiceId}`);
+  revalidatePath("/invoices");
+  revalidatePath("/cash-forecast");
+  redirect(`/invoices/${invoiceId}`);
 }
 
 export async function rejectInvoiceAction(formData: FormData): Promise<void> {

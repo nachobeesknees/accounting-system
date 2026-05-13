@@ -115,6 +115,7 @@ function mapEntity(r: typeof schema.entities.$inferSelect): Entity {
     formationDate: r.formationDate,
     status: r.status as EntityStatus,
     ein: r.ein,
+    registrationNumber: r.registrationNumber,
     notes: r.notes,
     currencyCode: r.currencyCode,
   };
@@ -207,6 +208,7 @@ function mapTimeEntry(r: typeof schema.timeEntries.$inferSelect): TimeEntry {
     description: r.description,
     clientId: r.clientId,
     entityId: r.entityId,
+    entityFeeId: r.entityFeeId,
     taskType: r.taskType,
     isBillable: r.isBillable,
     rateAtLog: r.rateAtLog,
@@ -225,6 +227,42 @@ function mapEntityFee(r: typeof schema.entityFees.$inferSelect): EntityFee {
     includedHours: r.includedHours,
     status: r.status as EntityFeeStatus,
     invoiceId: r.invoiceId,
+    notes: r.notes,
+    frequency: (r.frequency ?? "annual") as EntityFee["frequency"],
+    startDate: r.startDate,
+    endDate: r.endDate,
+    billingMonth: r.billingMonth,
+    billingDay: r.billingDay,
+    nextBillingDate: r.nextBillingDate,
+    lastBilledDate: r.lastBilledDate,
+    perPeriodAmount: r.perPeriodAmount,
+  };
+}
+
+function mapRecurringPayment(
+  r: typeof schema.recurringPayments.$inferSelect,
+): import("./types").RecurringPayment {
+  return {
+    id: r.id,
+    name: r.name,
+    amount: r.amount,
+    frequency: r.frequency as import("./types").RecurringPaymentFrequency,
+    nextPaymentDate: r.nextPaymentDate,
+    expenseAccountId: r.expenseAccountId,
+    vendorId: r.vendorId,
+    bankAccountId: r.bankAccountId,
+    isActive: r.isActive,
+    notes: r.notes,
+  };
+}
+
+function mapBudget(r: typeof schema.budgets.$inferSelect): import("./types").Budget {
+  return {
+    id: r.id,
+    accountId: r.accountId,
+    fiscalYear: r.fiscalYear,
+    month: r.month,
+    amount: r.amount,
     notes: r.notes,
   };
 }
@@ -521,6 +559,7 @@ function mapInvoice(
     amountPaid: r.amountPaid,
     balanceDue: r.balanceDue,
     currencyCode: r.currencyCode,
+    expectedPaymentDate: r.expectedPaymentDate,
     notes: r.notes,
     journalEntryId: r.journalEntryId,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
@@ -926,6 +965,49 @@ export async function getEntityFees(): Promise<EntityFee[]> {
     .from(schema.entityFees)
     .orderBy(desc(schema.entityFees.billingYear));
   return rows.map(mapEntityFee);
+}
+
+export async function getCustomerAssignments(
+  customerId: string,
+): Promise<import("./types").CustomerAssignment[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.customerAssignments)
+    .where(eq(schema.customerAssignments.customerId, customerId))
+    .orderBy(desc(schema.customerAssignments.isPrimary));
+  return rows.map((r) => ({
+    id: r.id,
+    customerId: r.customerId,
+    userId: r.userId,
+    isPrimary: r.isPrimary,
+    canApprove: r.canApprove,
+    role: r.role,
+  }));
+}
+
+export async function getRecurringPayments(): Promise<import("./types").RecurringPayment[]> {
+  const db = getDb();
+  const rows = await db.select().from(schema.recurringPayments).orderBy(asc(schema.recurringPayments.nextPaymentDate));
+  return rows.map(mapRecurringPayment);
+}
+
+export async function getRecurringPaymentById(id: string) {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.recurringPayments)
+    .where(eq(schema.recurringPayments.id, id))
+    .limit(1);
+  return row ? mapRecurringPayment(row) : undefined;
+}
+
+export async function getBudgets(fiscalYear?: number) {
+  const db = getDb();
+  const rows = fiscalYear
+    ? await db.select().from(schema.budgets).where(eq(schema.budgets.fiscalYear, fiscalYear))
+    : await db.select().from(schema.budgets);
+  return rows.map(mapBudget);
 }
 
 export async function getEntityFeesByEntityId(entityId: string): Promise<EntityFee[]> {

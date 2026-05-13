@@ -146,6 +146,15 @@ export default async function Page({
               </Row>
               <Row>
                 <Field label="EIN" name="ein" mono defaultValue={entity.ein ?? ""} />
+                <Field
+                  label="Registration #"
+                  name="registrationNumber"
+                  mono
+                  defaultValue={entity.registrationNumber ?? ""}
+                  placeholder="e.g. corp filing #"
+                />
+              </Row>
+              <Row>
                 <SelectField label="Status" name="status" defaultValue={entity.status}>
                   <option value="active">Active</option>
                   <option value="pending">Pending</option>

@@ -331,6 +331,8 @@ export const entities = pgTable("entities", {
   formationDate: date("formation_date"),
   status: entityStatusEnum("status").notNull().default("active"),
   ein: text("ein"),
+  /** Corporate registration / filing number (state SOS, jurisdiction-specific). */
+  registrationNumber: text("registration_number"),
   notes: text("notes"),
   currencyCode: text("currency_code").notNull().default("USD"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -357,6 +359,8 @@ export const timeEntries = pgTable("time_entries", {
   description: text("description").notNull(),
   clientId: text("client_id"),
   entityId: text("entity_id"),
+  /** Optional link to the entity service this time was performed against. */
+  entityFeeId: text("entity_fee_id"),
   taskType: text("task_type"),
   isBillable: boolean("is_billable").notNull().default(true),
   rateAtLog: numeric("rate_at_log", { precision: 10, scale: 2 }),
@@ -387,6 +391,11 @@ export const entityFeeStatusEnum = pgEnum("entity_fee_status", [
   "void",
 ]);
 
+/**
+ * Recurring entity service. The annual fee is the ANNUAL commitment;
+ * billing frequency controls how often we invoice for it. Per-period
+ * amount can override the derived annual_fee / period_count.
+ */
 export const entityFees = pgTable("entity_fees", {
   id: text("id").primaryKey(),
   entityId: text("entity_id").notNull(),
@@ -396,6 +405,69 @@ export const entityFees = pgTable("entity_fees", {
   includedHours: numeric("included_hours", { precision: 8, scale: 2 }).notNull(),
   status: entityFeeStatusEnum("status").notNull().default("draft"),
   invoiceId: text("invoice_id"),
+  notes: text("notes"),
+  /** monthly | quarterly | semiannual | annual | one_time */
+  frequency: text("frequency").notNull().default("annual"),
+  /** Service coverage window. startDate defaults to entity.formation_date. */
+  startDate: date("start_date"),
+  endDate: date("end_date"),
+  /** Billing schedule: e.g. "bill every March" → billingMonth=3. */
+  billingMonth: integer("billing_month"),
+  billingDay: integer("billing_day"),
+  nextBillingDate: date("next_billing_date"),
+  lastBilledDate: date("last_billed_date"),
+  /** Amount per billing period. NULL → derived from annualFee / frequency. */
+  perPeriodAmount: numeric("per_period_amount", { precision: 15, scale: 2 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Scheduled recurring payments (rent, payroll, taxes, etc.) — used by the
+ * cash forecast to project outflows.
+ */
+export const recurringPayments = pgTable("recurring_payments", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+  /** weekly | biweekly | monthly | quarterly | semiannual | annual */
+  frequency: text("frequency").notNull(),
+  nextPaymentDate: date("next_payment_date").notNull(),
+  expenseAccountId: text("expense_account_id").notNull(),
+  vendorId: text("vendor_id"),
+  bankAccountId: text("bank_account_id"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Many-to-many: which users (employees) are assigned to which client.
+ * Replaces customers.assigned_user_id with first-class multi-assign.
+ * Anyone with can_approve=true can grant the "assigned approval" on
+ * invoices for this customer.
+ */
+export const customerAssignments = pgTable("customer_assignments", {
+  id: text("id").primaryKey(),
+  customerId: text("customer_id").notNull(),
+  userId: text("user_id").notNull(),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  canApprove: boolean("can_approve").notNull().default(true),
+  role: text("role"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Account-level budget rows. month=NULL means annual budget; otherwise the
+ * row applies to that specific month within fiscalYear.
+ */
+export const budgets = pgTable("budgets", {
+  id: text("id").primaryKey(),
+  accountId: text("account_id").notNull(),
+  fiscalYear: integer("fiscal_year").notNull(),
+  month: integer("month"),
+  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -459,6 +531,9 @@ export const invoices = pgTable("invoices", {
   amountPaid: numeric("amount_paid", { precision: 15, scale: 2 }).notNull().default("0"),
   balanceDue: numeric("balance_due", { precision: 15, scale: 2 }).notNull().default("0"),
   currencyCode: text("currency_code").notNull().default("USD"),
+  /** Employee-updatable estimate of when this invoice will actually be paid.
+   *  Drives the cash forecast page. NULL → forecast falls back to dueDate. */
+  expectedPaymentDate: date("expected_payment_date"),
   notes: text("notes"),
   journalEntryId: text("journal_entry_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

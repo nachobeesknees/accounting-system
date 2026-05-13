@@ -25,6 +25,7 @@ import {
   postInvoiceAction,
   recordPaymentAction,
   rejectInvoiceAction,
+  setExpectedPaymentDateAction,
   submitInvoiceForApprovalAction,
   voidInvoiceAction,
 } from "./actions";
@@ -357,6 +358,38 @@ export default async function Page({
               mono
             />
             <KV k="Currency" v={invoice.currencyCode} mono />
+            <KV
+              k="Expected payment"
+              v={
+                <form
+                  action={setExpectedPaymentDateAction}
+                  className="flex items-center gap-2"
+                >
+                  <input type="hidden" name="invoiceId" value={invoice.id} />
+                  <input
+                    type="date"
+                    name="expectedPaymentDate"
+                    defaultValue={invoice.expectedPaymentDate ?? ""}
+                    className="px-2 py-0.5 text-[12.5px] rounded-md outline-none"
+                    style={{
+                      background: "var(--paper)",
+                      border: "1px solid var(--line-2)",
+                      color: "var(--ink)",
+                      fontFamily: "var(--font-mono)",
+                      fontVariantNumeric: "tabular-nums",
+                    }}
+                  />
+                  <Button variant="secondary" type="submit">
+                    Save
+                  </Button>
+                </form>
+              }
+              sub={
+                invoice.expectedPaymentDate
+                  ? `Currently ${formatDate(invoice.expectedPaymentDate)}`
+                  : "Forecast falls back to due date"
+              }
+            />
             <KV k="Notes" v={invoice.notes ?? "—"} />
             {journalEntry && (
               <KV

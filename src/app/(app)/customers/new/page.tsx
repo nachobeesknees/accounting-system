@@ -66,8 +66,8 @@ export default async function Page({
   return (
     <>
       <PageHeader
-        title="New customer"
-        meta="Customers / New"
+        title="New client"
+        meta="Clients / New"
         actions={
           <Link
             href="/customers"
@@ -97,7 +97,7 @@ export default async function Page({
             </div>
           )}
 
-          <Card title="Customer details">
+          <Card title="Client details">
             <div className="p-3.5 flex flex-col gap-3">
               <Row>
                 <Field
@@ -155,7 +155,7 @@ export default async function Page({
               Cancel
             </Link>
             <Button variant="primary" type="submit">
-              Create customer
+              Create client
             </Button>
           </div>
         </div>

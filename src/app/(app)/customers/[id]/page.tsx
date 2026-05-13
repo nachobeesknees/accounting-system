@@ -10,6 +10,7 @@ import { SelectField } from "@/components/ui/Field";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAssetsByClientId,
+  getCustomerAssignments,
   getCustomerById,
   getEntitiesByClientId,
   getInvoices,
@@ -19,7 +20,11 @@ import {
 import type { Customer } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
-import { setAssignedUserAction } from "./actions";
+import {
+  addAssignmentAction,
+  removeAssignmentAction,
+  setAssignedUserAction,
+} from "./actions";
 
 // Local accessor: surface the `assignedUserId` column even if the shared
 // `Customer` type and `data.ts` mapper haven't yet been extended with the
@@ -44,14 +49,17 @@ export default async function Page({
 
   const assignedUserId = readAssignedUserId(customer);
 
-  const [allInvoices, entities, directAssets, users, assignedUser] =
+  const [allInvoices, entities, directAssets, users, assignedUser, assignments] =
     await Promise.all([
       getInvoices(),
       getEntitiesByClientId(customer.id),
       getAssetsByClientId(customer.id),
       getUsers(),
       assignedUserId ? getUserById(assignedUserId) : Promise.resolve(undefined),
+      getCustomerAssignments(customer.id),
     ]);
+  const userById = new Map(users.map((u) => [u.id, u] as const));
+  const assignedUserIds = new Set(assignments.map((a) => a.userId));
   const customerInvoices = allInvoices
     .filter((inv) => inv.customerId === customer.id)
     .slice()
@@ -80,7 +88,7 @@ export default async function Page({
         meta={customer.code}
         actions={
           <ButtonLink variant="secondary" href="/customers">
-            ← All customers
+            ← All clients
           </ButtonLink>
         }
       />
@@ -162,52 +170,100 @@ export default async function Page({
       </div>
 
       <div className="px-6 mb-3.5">
-        <Card title="Assignment">
+        <Card title="Assigned employees">
           <div className="p-3.5 flex flex-col gap-3">
-            <div className="text-[12.5px]" style={{ color: "var(--ink)" }}>
-              <span
-                className="text-[11.5px] mr-2"
+            {assignments.length === 0 && !assignedUser ? (
+              <div
+                className="text-[12.5px]"
                 style={{ color: "var(--ink-3)" }}
               >
-                Assigned employee:
-              </span>
-              {assignedUser ? (
-                <span>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono)",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
-                    {assignedUser.fullName}
-                  </span>
-                  <span className="ml-2">
-                    <Pill variant="neutral">{assignedUser.role}</Pill>
-                  </span>
-                </span>
-              ) : (
-                <span style={{ color: "var(--ink-3)" }}>—</span>
-              )}
-            </div>
+                No employees assigned yet.
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {assignments.map((a) => {
+                  const u = userById.get(a.userId);
+                  return (
+                    <div
+                      key={a.id}
+                      className="inline-flex items-center gap-2 rounded-md pl-3 pr-1 py-1"
+                      style={{
+                        background: a.isPrimary
+                          ? "var(--p-formation-bg)"
+                          : "var(--rail)",
+                        border: "1px solid var(--line)",
+                        fontSize: 12.5,
+                      }}
+                    >
+                      <span style={{ color: "var(--ink)" }}>
+                        {u?.fullName ?? a.userId}
+                      </span>
+                      <Pill variant="neutral">{u?.role ?? "—"}</Pill>
+                      {a.isPrimary && <Pill variant="formation">primary</Pill>}
+                      {!a.canApprove && (
+                        <Pill variant="review">view only</Pill>
+                      )}
+                      <form action={removeAssignmentAction}>
+                        <input type="hidden" name="customerId" value={customer.id} />
+                        <input type="hidden" name="assignmentId" value={a.id} />
+                        <button
+                          type="submit"
+                          aria-label="Remove"
+                          className="rounded-md px-2 py-0.5 cursor-pointer"
+                          style={{
+                            color: "var(--ink-3)",
+                            background: "transparent",
+                            fontSize: 14,
+                            lineHeight: 1,
+                            border: "none",
+                          }}
+                          title="Remove this assignment"
+                        >
+                          ×
+                        </button>
+                      </form>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
 
-            <form action={setAssignedUserAction} className="flex items-end gap-3">
+            <form action={addAssignmentAction} className="flex items-end gap-3 flex-wrap">
               <input type="hidden" name="customerId" value={customer.id} />
-              <div className="flex-1 max-w-md">
+              <div className="flex-1 min-w-[240px] max-w-md">
                 <SelectField
-                  label="Change assignment"
-                  name="assignedUserId"
-                  defaultValue={assignedUserId ?? ""}
+                  label="Assign another employee"
+                  name="userId"
+                  defaultValue=""
                 >
-                  <option value="">— Unassigned —</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.fullName} · {u.role}
-                    </option>
-                  ))}
+                  <option value="" disabled>
+                    Pick a user…
+                  </option>
+                  {users
+                    .filter((u) => !assignedUserIds.has(u.id))
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.fullName} · {u.role}
+                      </option>
+                    ))}
                 </SelectField>
               </div>
-              <Button type="submit" variant="secondary">
-                Save
+              <label
+                className="flex items-center gap-1.5 text-[12.5px] cursor-pointer mb-1"
+                style={{ color: "var(--ink-2)" }}
+              >
+                <input type="checkbox" name="canApprove" value="1" defaultChecked />
+                Can approve invoices
+              </label>
+              <label
+                className="flex items-center gap-1.5 text-[12.5px] cursor-pointer mb-1"
+                style={{ color: "var(--ink-2)" }}
+              >
+                <input type="checkbox" name="isPrimary" value="1" />
+                Mark as primary
+              </label>
+              <Button type="submit" variant="primary">
+                + Add
               </Button>
             </form>
           </div>

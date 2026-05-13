@@ -76,6 +76,8 @@ export type Entity = {
   formationDate: string | null;
   status: EntityStatus;
   ein: string | null;
+  /** Corporate registration / filing number (state secretary of state, etc.) */
+  registrationNumber?: string | null;
   notes: string | null;
   currencyCode: string;
 };
@@ -154,6 +156,13 @@ export type FeeSchedule = {
 
 export type EntityFeeStatus = "draft" | "active" | "billed" | "paid" | "void";
 
+export type FeeFrequency =
+  | "monthly"
+  | "quarterly"
+  | "semiannual"
+  | "annual"
+  | "one_time";
+
 export type EntityFee = {
   id: string;
   entityId: string;
@@ -163,6 +172,47 @@ export type EntityFee = {
   includedHours: string;
   status: EntityFeeStatus;
   invoiceId: string | null;
+  notes: string | null;
+  /** Billing cadence. annualFee / period-count = derived per-period amount. */
+  frequency?: FeeFrequency;
+  startDate?: string | null;
+  endDate?: string | null;
+  billingMonth?: number | null;
+  billingDay?: number | null;
+  nextBillingDate?: string | null;
+  lastBilledDate?: string | null;
+  /** Override the derived per-period amount. */
+  perPeriodAmount?: string | null;
+};
+
+export type RecurringPaymentFrequency =
+  | "weekly"
+  | "biweekly"
+  | "monthly"
+  | "quarterly"
+  | "semiannual"
+  | "annual";
+
+export type RecurringPayment = {
+  id: string;
+  name: string;
+  amount: string;
+  frequency: RecurringPaymentFrequency;
+  nextPaymentDate: string;
+  expenseAccountId: string;
+  vendorId: string | null;
+  bankAccountId: string | null;
+  isActive: boolean;
+  notes: string | null;
+};
+
+export type Budget = {
+  id: string;
+  accountId: string;
+  fiscalYear: number;
+  /** NULL → annual budget; 1–12 → month-specific. */
+  month: number | null;
+  amount: string;
   notes: string | null;
 };
 
@@ -185,6 +235,8 @@ export type TimeEntry = {
   description: string;
   clientId: string | null;
   entityId: string | null;
+  /** Optional link to a specific entity service (entity_fee). */
+  entityFeeId?: string | null;
   taskType: string | null;
   isBillable: boolean;
   rateAtLog: string | null;
@@ -312,10 +364,27 @@ export type Customer = {
   phone: string | null;
   billingAddress: string | null;
   paymentTerms: number;
-  /** User (employee) assigned as primary contact + final invoice approver. */
+  /**
+   * Legacy single-assignee column. Kept for backwards compat with reads
+   * that haven't migrated to customer_assignments yet. Reflects whoever
+   * is_primary in the customer_assignments table after the migration.
+   */
   assignedUserId: string | null;
   isActive: boolean;
   notes: string | null;
+};
+
+/**
+ * Many-to-many join: which employees (users) are assigned to which client.
+ * Replaces customers.assigned_user_id with proper multi-assign support.
+ */
+export type CustomerAssignment = {
+  id: string;
+  customerId: string;
+  userId: string;
+  isPrimary: boolean;
+  canApprove: boolean;
+  role: string | null;
 };
 
 export type InvoiceStatus =
@@ -361,6 +430,7 @@ export type Invoice = {
   amountPaid: string;
   balanceDue: string;
   currencyCode: string;
+  expectedPaymentDate?: string | null;
   notes: string | null;
   journalEntryId: string | null;
   lines: InvoiceLine[];

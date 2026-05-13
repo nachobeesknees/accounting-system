@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
-import { setCustomerAssignedUser } from "@/lib/mutations";
+import {
+  addCustomerAssignment,
+  removeCustomerAssignment,
+  setCustomerAssignedUser,
+} from "@/lib/mutations";
 
 function isRedirectError(err: unknown): boolean {
   return (
@@ -36,6 +40,46 @@ export async function setAssignedUserAction(formData: FormData): Promise<void> {
     );
   }
 
+  revalidatePath(`/customers/${customerId}`);
+  revalidatePath("/customers");
+  redirect(`/customers/${customerId}?saved=1`);
+}
+
+export async function addAssignmentAction(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  const customerId = String(formData.get("customerId") ?? "");
+  const userId = String(formData.get("userId") ?? "");
+  const canApprove = formData.get("canApprove") === "1";
+  const isPrimary = formData.get("isPrimary") === "1";
+
+  if (!customerId || !userId) {
+    redirect(`/customers/${customerId}?error=${encodeURIComponent("Pick a user first.")}`);
+  }
+  try {
+    await addCustomerAssignment(user, { customerId, userId, isPrimary, canApprove });
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const msg = err instanceof Error ? err.message : "Add failed.";
+    redirect(`/customers/${customerId}?error=${encodeURIComponent(msg)}`);
+  }
+  revalidatePath(`/customers/${customerId}`);
+  revalidatePath("/customers");
+  redirect(`/customers/${customerId}?saved=1`);
+}
+
+export async function removeAssignmentAction(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  const customerId = String(formData.get("customerId") ?? "");
+  const assignmentId = String(formData.get("assignmentId") ?? "");
+  try {
+    await removeCustomerAssignment(user, assignmentId);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const msg = err instanceof Error ? err.message : "Remove failed.";
+    redirect(`/customers/${customerId}?error=${encodeURIComponent(msg)}`);
+  }
   revalidatePath(`/customers/${customerId}`);
   revalidatePath("/customers");
   redirect(`/customers/${customerId}?saved=1`);

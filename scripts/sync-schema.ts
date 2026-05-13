@@ -43,6 +43,31 @@ const COLUMNS: ColumnSpec[] = [
 
   // customers: assigned employee (user) for the approval workflow
   { table: "customers", column: "assigned_user_id", type: "text" },
+
+  // ---- Recurring entity services (turn annual fees into a billing schedule) ----
+  // Frequency: 'monthly' | 'quarterly' | 'semiannual' | 'annual' | 'one_time'
+  { table: "entity_fees", column: "frequency", type: "text", notNull: true, default: "'annual'" },
+  // Coverage window. Default startDate falls back to entity.formation_date.
+  { table: "entity_fees", column: "start_date", type: "date" },
+  { table: "entity_fees", column: "end_date", type: "date" },
+  // Billing schedule: which month/day to bill (e.g. bill every March → 3, day 1).
+  { table: "entity_fees", column: "billing_month", type: "integer" },
+  { table: "entity_fees", column: "billing_day", type: "integer" },
+  // Forward-looking cursor for the next billable run.
+  { table: "entity_fees", column: "next_billing_date", type: "date" },
+  { table: "entity_fees", column: "last_billed_date", type: "date" },
+  // Per-period amount (e.g. $5,000/month). NULL → derived from annual_fee.
+  { table: "entity_fees", column: "per_period_amount", type: "numeric(15,2)" },
+
+  // Time entries can be attributed to a specific entity service so we can
+  // see hours-billed vs hours-included.
+  { table: "time_entries", column: "entity_fee_id", type: "text" },
+
+  // Invoice expected payment date (employee-updatable; drives cash forecast).
+  { table: "invoices", column: "expected_payment_date", type: "date" },
+
+  // Entity registration number (corporate filing # / EIN-equivalent).
+  { table: "entities", column: "registration_number", type: "text" },
 ];
 
 const TABLES = [
@@ -182,6 +207,52 @@ const TABLES = [
       role text,
       notes text,
       created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    name: "recurring_payments",
+    ddl: `CREATE TABLE IF NOT EXISTS recurring_payments (
+      id text PRIMARY KEY,
+      name text NOT NULL,
+      amount numeric(15,2) NOT NULL,
+      frequency text NOT NULL,
+      next_payment_date date NOT NULL,
+      expense_account_id text NOT NULL,
+      vendor_id text,
+      bank_account_id text,
+      is_active boolean DEFAULT true NOT NULL,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    name: "budgets",
+    ddl: `CREATE TABLE IF NOT EXISTS budgets (
+      id text PRIMARY KEY,
+      account_id text NOT NULL,
+      fiscal_year integer NOT NULL,
+      month integer,
+      amount numeric(15,2) NOT NULL,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Many-to-many: which users (employees) are assigned to which client.
+    // is_primary marks one as the lead; can_approve flags whether they can
+    // grant the "assigned employee" approval on invoices for this client.
+    name: "customer_assignments",
+    ddl: `CREATE TABLE IF NOT EXISTS customer_assignments (
+      id text PRIMARY KEY,
+      customer_id text NOT NULL,
+      user_id text NOT NULL,
+      is_primary boolean DEFAULT false NOT NULL,
+      can_approve boolean DEFAULT true NOT NULL,
+      role text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      UNIQUE (customer_id, user_id)
     )`,
   },
 ];
