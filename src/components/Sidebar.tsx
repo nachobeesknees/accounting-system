@@ -78,7 +78,13 @@ function navItemStyle(active: boolean) {
   } as const;
 }
 
-export function Sidebar({ counts }: { counts?: Record<string, number> }) {
+export function Sidebar({
+  counts,
+  urgentItems,
+}: {
+  counts?: Record<string, number>;
+  urgentItems?: Record<string, boolean>;
+}) {
   const path = usePathname();
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
@@ -102,6 +108,7 @@ export function Sidebar({ counts }: { counts?: Record<string, number> }) {
           {sec.items.map((it) => {
             const active = isActive(it.href);
             const count = counts?.[it.href];
+            const urgent = !!urgentItems?.[it.href];
             return (
               <Link
                 key={it.href}
@@ -113,11 +120,23 @@ export function Sidebar({ counts }: { counts?: Record<string, number> }) {
                 {count != null && count > 0 && (
                   <span
                     className="text-[11px]"
-                    style={{
-                      color: "var(--ink-4)",
-                      fontFamily: "var(--font-mono)",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
+                    style={
+                      urgent
+                        ? {
+                            background: "var(--p-pending-bg)",
+                            color: "var(--p-pending-fg)",
+                            padding: "0 6px",
+                            borderRadius: "999px",
+                            fontWeight: 600,
+                            fontFamily: "var(--font-mono)",
+                            fontVariantNumeric: "tabular-nums",
+                          }
+                        : {
+                            color: "var(--ink-4)",
+                            fontFamily: "var(--font-mono)",
+                            fontVariantNumeric: "tabular-nums",
+                          }
+                    }
                   >
                     {count}
                   </span>

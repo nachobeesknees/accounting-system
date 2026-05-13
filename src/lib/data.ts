@@ -1092,6 +1092,65 @@ export async function getInvoices(): Promise<Invoice[]> {
   return heads.map((h) => mapInvoice(h, linesByInvoice.get(h.id) ?? []));
 }
 
+/**
+ * Returns invoices that need the given user's action right now:
+ * - status='pending_cfo' AND user role is 'CFO' or isSuperuser
+ * - status='pending_assigned' AND user is the customer's assignedUserId, OR isSuperuser
+ */
+export async function getInvoicesAwaitingApproval(
+  userId: string,
+  role: string,
+  isSuperuser: boolean,
+): Promise<Array<Invoice & { customerName: string }>> {
+  const db = getDb();
+  const isCfo = role === "CFO" || isSuperuser;
+
+  const allPending = await db
+    .select()
+    .from(schema.invoices)
+    .where(inArray(schema.invoices.status, ["pending_cfo", "pending_assigned"]));
+  if (allPending.length === 0) return [];
+
+  const customerIds = Array.from(new Set(allPending.map((i) => i.customerId)));
+  const customers = await db
+    .select()
+    .from(schema.customers)
+    .where(inArray(schema.customers.id, customerIds));
+  const customerMap = new Map(customers.map((c) => [c.id, c] as const));
+
+  const filtered = allPending.filter((inv) => {
+    if (inv.status === "pending_cfo") return isCfo;
+    if (inv.status === "pending_assigned") {
+      if (isSuperuser) return true;
+      const cust = customerMap.get(inv.customerId);
+      return !!cust && cust.assignedUserId === userId;
+    }
+    return false;
+  });
+
+  if (filtered.length === 0) return [];
+
+  // Pull lines so the mapper has them (kept light: we only need header data
+  // on the dashboard tile, but mapInvoice expects lines)
+  const ids = filtered.map((i) => i.id);
+  const lineRows = await db
+    .select()
+    .from(schema.invoiceLines)
+    .where(inArray(schema.invoiceLines.invoiceId, ids));
+  const linesByInvoice = new Map<string, InvoiceLine[]>();
+  for (const l of lineRows) {
+    const mapped = mapInvoiceLine(l);
+    const arr = linesByInvoice.get(mapped.invoiceId) ?? [];
+    arr.push(mapped);
+    linesByInvoice.set(mapped.invoiceId, arr);
+  }
+
+  return filtered.map((h) => ({
+    ...mapInvoice(h, linesByInvoice.get(h.id) ?? []),
+    customerName: customerMap.get(h.customerId)?.name ?? "—",
+  }));
+}
+
 export async function getInvoiceById(id: string): Promise<Invoice | undefined> {
   const db = getDb();
   const [head] = await db

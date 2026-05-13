@@ -15,6 +15,7 @@ import {
   getEntities,
   getEntityPlRollup,
   getInvoices,
+  getInvoicesAwaitingApproval,
   getJournalEntries,
   getKpis,
   getLatestFxRates,
@@ -130,6 +131,7 @@ export default async function Page() {
     plRollup,
     base,
     fxRates,
+    awaitingApproval,
   ] = await Promise.all([
     getKpis(),
     getArAging(DEMO_TODAY),
@@ -143,6 +145,9 @@ export default async function Page() {
     getEntityPlRollup(),
     getBaseCurrency(),
     getLatestFxRates(),
+    user
+      ? getInvoicesAwaitingApproval(user.userId, user.role, user.isSuperuser)
+      : Promise.resolve([]),
   ]);
   const entityById = new Map(entities.map((e) => [e.id, e] as const));
   const baseCode = base?.code ?? "USD";
@@ -201,6 +206,60 @@ export default async function Page() {
           </>
         }
       />
+
+      {awaitingApproval.length > 0 && (
+        <div className="px-6 my-3.5">
+          <Card
+            title={`Awaiting your approval — ${awaitingApproval.length}`}
+            actions={
+              <Pill variant="pending">
+                {awaitingApproval.length} invoice{awaitingApproval.length === 1 ? "" : "s"}
+              </Pill>
+            }
+          >
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Invoice #</TH>
+                  <TH>Customer</TH>
+                  <TH>Stage</TH>
+                  <TH num>Total</TH>
+                  <TH></TH>
+                </TR>
+              </THead>
+              <TBody>
+                {awaitingApproval.map((inv) => (
+                  <TR key={inv.id}>
+                    <TD mono>
+                      <Link
+                        href={`/invoices/${inv.id}`}
+                        style={{ color: "var(--ink)", textDecoration: "none" }}
+                      >
+                        {inv.invoiceNumber}
+                      </Link>
+                    </TD>
+                    <TD>{inv.customerName}</TD>
+                    <TD>
+                      <Pill variant={statusVariant(inv.status)}>
+                        {statusLabel(inv.status)}
+                      </Pill>
+                    </TD>
+                    <TD num>{formatUSD(inv.total)}</TD>
+                    <TD>
+                      <Link
+                        href={`/invoices/${inv.id}`}
+                        style={{ color: "var(--ink-3)", textDecoration: "none" }}
+                      >
+                        Review →
+                      </Link>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </Card>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 px-6 my-3.5">
         <Tile
