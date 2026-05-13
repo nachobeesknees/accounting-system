@@ -16,7 +16,7 @@ RUN pip install --upgrade pip && pip install -r requirements.txt
 COPY . .
 
 # Create entrypoint script with error handling
-RUN cat > /app/entrypoint.sh << 'EOF'
+RUN cat > /app/entrypoint.sh << EOF
 #!/bin/bash
 set -e
 
