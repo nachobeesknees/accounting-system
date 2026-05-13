@@ -38,12 +38,14 @@ import {
   BANK_TRANSACTIONS,
   BILLS,
   CUSTOMERS,
+  EMPLOYEE_RATES,
   ENTITIES,
   ENTITY_FEES,
   FEE_SCHEDULES,
   INVOICES,
   JOURNAL_ENTRIES,
   PERIODS,
+  TIME_ENTRIES,
   USERS,
   VENDORS,
 } from "../src/lib/seed";
@@ -138,6 +140,8 @@ async function main() {
       activity_log,
       asset_value_snapshots,
       assets,
+      time_entries,
+      employee_rates,
       entity_fees,
       fee_schedules,
       fiscal_periods,
@@ -232,6 +236,36 @@ async function main() {
       status: e.status,
       ein: e.ein,
       notes: e.notes,
+    })),
+  );
+
+  console.log("Inserting employee rates + time entries…");
+  await db.insert(schema.employeeRates).values(
+    EMPLOYEE_RATES.map((r) => ({
+      id: r.id,
+      userId: r.userId,
+      role: r.role,
+      billableRate: r.billableRate,
+      costRate: r.costRate,
+      effectiveDate: r.effectiveDate,
+      isDefault: r.isDefault,
+      notes: r.notes,
+    })),
+  );
+  await db.insert(schema.timeEntries).values(
+    TIME_ENTRIES.map((t) => ({
+      id: t.id,
+      userId: t.userId,
+      entryDate: t.entryDate,
+      durationHours: t.durationHours,
+      description: t.description,
+      clientId: t.clientId,
+      entityId: t.entityId,
+      taskType: t.taskType,
+      isBillable: t.isBillable,
+      rateAtLog: t.rateAtLog,
+      invoiceId: t.invoiceId,
+      notes: t.notes,
     })),
   );
 

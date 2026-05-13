@@ -7,12 +7,14 @@ import type {
   BankAccountSigner,
   BankTransaction,
   Customer,
+  EmployeeRate,
   Entity,
   EntityFee,
   FeeSchedule,
   FiscalPeriod,
   Invoice,
   JournalEntry,
+  TimeEntry,
   User,
   Vendor,
 } from "./types";
@@ -138,6 +140,40 @@ export const ASSET_VALUE_SNAPSHOTS: AssetValueSnapshot[] = [
   { id: id("av-016"),  assetId: "as-016", snapshotDate: D("2026-03-31"), value: "3200000.00", currencyCode: "USD", source: "Internal valuation", notes: "Royalty-stream model", createdBy: "u-aldous", createdAt: "2026-04-15T17:00:00Z" },
   { id: id("av-017"),  assetId: "as-017", snapshotDate: D("2026-05-09"), value: "41500000.00", currencyCode: "USD", source: "Lloyds statement", notes: null, createdBy: "u-aldous", createdAt: "2026-05-10T17:00:00Z" },
   { id: id("av-018"),  assetId: "as-018", snapshotDate: D("2026-04-30"), value: "28900000.00", currencyCode: "USD", source: "UK valuation report", notes: null, createdBy: "u-aldous", createdAt: "2026-05-01T17:00:00Z" },
+];
+
+export const EMPLOYEE_RATES: EmployeeRate[] = [
+  { id: id("er-001"), userId: "u-admin", role: "Admin", billableRate: "0.00", costRate: "0.00", effectiveDate: D("2026-01-01"), isDefault: true, notes: "Internal — never billed" },
+  { id: id("er-002"), userId: "u-margery", role: "Bookkeeper", billableRate: "125.00", costRate: "55.00", effectiveDate: D("2026-01-01"), isDefault: true, notes: null },
+  { id: id("er-003"), userId: "u-aldous", role: "Controller", billableRate: "250.00", costRate: "120.00", effectiveDate: D("2026-01-01"), isDefault: true, notes: null },
+  { id: id("er-004"), userId: "u-eustace", role: "CFO", billableRate: "400.00", costRate: "200.00", effectiveDate: D("2026-01-01"), isDefault: true, notes: "Senior advisory" },
+];
+
+export const TIME_ENTRIES: TimeEntry[] = [
+  // April activity
+  { id: id("te-001"), userId: "u-margery", entryDate: D("2026-04-02"), durationHours: "3.50", description: "Q1 close — Pumpernickel Holdings AP review", clientId: "c-001", entityId: "e-001", taskType: "Close support", isBillable: true, rateAtLog: "125.00", invoiceId: null, notes: null },
+  { id: id("te-002"), userId: "u-aldous", entryDate: D("2026-04-05"), durationHours: "2.00", description: "Trust accounting review — Pumpernickel Family Trust", clientId: "c-001", entityId: "e-002", taskType: "Trust review", isBillable: true, rateAtLog: "250.00", invoiceId: null, notes: null },
+  { id: id("te-003"), userId: "u-margery", entryDate: D("2026-04-08"), durationHours: "4.25", description: "Snickerthorpe RE — rent roll reconciliation", clientId: "c-002", entityId: "e-004", taskType: "Bookkeeping", isBillable: true, rateAtLog: "125.00", invoiceId: null, notes: null },
+  { id: id("te-004"), userId: "u-eustace", entryDate: D("2026-04-12"), durationHours: "1.50", description: "Snickerthorpe — strategic planning call", clientId: "c-002", entityId: "e-003", taskType: "Advisory", isBillable: true, rateAtLog: "400.00", invoiceId: null, notes: null },
+  { id: id("te-005"), userId: "u-aldous", entryDate: D("2026-04-15"), durationHours: "3.00", description: "Mumblethrottle Foundation — 990-PF prep", clientId: "c-003", entityId: "e-007", taskType: "Tax prep", isBillable: true, rateAtLog: "250.00", invoiceId: null, notes: null },
+  { id: id("te-006"), userId: "u-margery", entryDate: D("2026-04-18"), durationHours: "5.00", description: "Tsukimomo USA — payroll setup", clientId: "c-004", entityId: "e-008", taskType: "Payroll", isBillable: true, rateAtLog: "125.00", invoiceId: null, notes: null },
+  { id: id("te-007"), userId: "u-aldous", entryDate: D("2026-04-22"), durationHours: "4.50", description: "Frogsworth — UK GAAP / US GAAP reconciliation", clientId: "c-005", entityId: "e-009", taskType: "Reporting", isBillable: true, rateAtLog: "250.00", invoiceId: null, notes: null },
+  { id: id("te-008"), userId: "u-margery", entryDate: D("2026-04-25"), durationHours: "2.75", description: "Snickerthorpe Capital Partners — LP capital call processing", clientId: "c-002", entityId: "e-005", taskType: "Bookkeeping", isBillable: true, rateAtLog: "125.00", invoiceId: null, notes: null },
+  { id: id("te-009"), userId: "u-eustace", entryDate: D("2026-04-28"), durationHours: "0.75", description: "Pumpernickel — quarterly board call", clientId: "c-001", entityId: "e-001", taskType: "Advisory", isBillable: true, rateAtLog: "400.00", invoiceId: null, notes: null },
+  { id: id("te-010"), userId: "u-aldous", entryDate: D("2026-04-30"), durationHours: "2.00", description: "Internal — fee schedule rewrite for 2026", clientId: null, entityId: null, taskType: "Internal", isBillable: false, rateAtLog: null, invoiceId: null, notes: null },
+  // May activity
+  { id: id("te-011"), userId: "u-margery", entryDate: D("2026-05-01"), durationHours: "3.00", description: "Pumpernickel Holdings — May rent JE", clientId: "c-001", entityId: "e-001", taskType: "Journal entry", isBillable: true, rateAtLog: "125.00", invoiceId: null, notes: null },
+  { id: id("te-012"), userId: "u-margery", entryDate: D("2026-05-03"), durationHours: "1.50", description: "Snickerthorpe Master Trust — schedule K-1 questions", clientId: "c-002", entityId: "e-003", taskType: "Tax", isBillable: true, rateAtLog: "125.00", invoiceId: null, notes: null },
+  { id: id("te-013"), userId: "u-aldous", entryDate: D("2026-05-04"), durationHours: "2.50", description: "Snickerthorpe RE — depreciation schedule update", clientId: "c-002", entityId: "e-004", taskType: "Tax", isBillable: true, rateAtLog: "250.00", invoiceId: null, notes: null },
+  { id: id("te-014"), userId: "u-eustace", entryDate: D("2026-05-05"), durationHours: "1.00", description: "Mumblethrottle — exit modeling MeritsoftCo", clientId: "c-003", entityId: "e-006", taskType: "Advisory", isBillable: true, rateAtLog: "400.00", invoiceId: null, notes: null },
+  { id: id("te-015"), userId: "u-margery", entryDate: D("2026-05-06"), durationHours: "4.00", description: "Tsukimomo — May AR follow-ups", clientId: "c-004", entityId: "e-008", taskType: "AR", isBillable: true, rateAtLog: "125.00", invoiceId: null, notes: null },
+  { id: id("te-016"), userId: "u-aldous", entryDate: D("2026-05-07"), durationHours: "3.50", description: "Frogsworth Family Office — quarterly investor letter draft", clientId: "c-005", entityId: "e-009", taskType: "Reporting", isBillable: true, rateAtLog: "250.00", invoiceId: null, notes: null },
+  { id: id("te-017"), userId: "u-margery", entryDate: D("2026-05-08"), durationHours: "2.25", description: "Internal — onboarding new staff", clientId: null, entityId: null, taskType: "Internal", isBillable: false, rateAtLog: null, invoiceId: null, notes: null },
+  { id: id("te-018"), userId: "u-aldous", entryDate: D("2026-05-09"), durationHours: "1.75", description: "Mumblethrottle Foundation — grant approval review", clientId: "c-003", entityId: "e-007", taskType: "Advisory", isBillable: true, rateAtLog: "250.00", invoiceId: null, notes: null },
+  { id: id("te-019"), userId: "u-margery", entryDate: D("2026-05-10"), durationHours: "3.00", description: "Pumpernickel Family Trust — distribution memo prep", clientId: "c-001", entityId: "e-002", taskType: "Trust admin", isBillable: true, rateAtLog: "125.00", invoiceId: null, notes: null },
+  { id: id("te-020"), userId: "u-eustace", entryDate: D("2026-05-11"), durationHours: "2.00", description: "Snickerthorpe Holdings — annual planning call", clientId: "c-002", entityId: "e-003", taskType: "Advisory", isBillable: true, rateAtLog: "400.00", invoiceId: null, notes: null },
+  { id: id("te-021"), userId: "u-aldous", entryDate: D("2026-05-12"), durationHours: "3.00", description: "Frogsworth Heritage Trust — restructure follow-up", clientId: "c-005", entityId: "e-010", taskType: "Trust admin", isBillable: true, rateAtLog: "250.00", invoiceId: null, notes: null },
+  { id: id("te-022"), userId: "u-margery", entryDate: D("2026-05-12"), durationHours: "1.75", description: "Pumpernickel Holdings — quarterly review prep", clientId: "c-001", entityId: "e-001", taskType: "Reporting", isBillable: true, rateAtLog: "125.00", invoiceId: null, notes: null },
 ];
 
 export const FEE_SCHEDULES: FeeSchedule[] = [

@@ -26,6 +26,7 @@ import type {
   BankAccountSigner,
   BankTransaction,
   Customer,
+  EmployeeRate,
   Entity,
   EntityFee,
   EntityFeeStatus,
@@ -39,6 +40,7 @@ import type {
   JournalEntryStatus,
   JournalLine,
   SigningAuthority,
+  TimeEntry,
   User,
   Vendor,
 } from "./types";
@@ -137,6 +139,36 @@ function mapFeeSchedule(r: typeof schema.feeSchedules.$inferSelect): FeeSchedule
     includedHours: r.includedHours,
     applicableYear: r.applicableYear,
     isActive: r.isActive,
+    notes: r.notes,
+  };
+}
+
+function mapEmployeeRate(r: typeof schema.employeeRates.$inferSelect): EmployeeRate {
+  return {
+    id: r.id,
+    userId: r.userId,
+    role: r.role,
+    billableRate: r.billableRate,
+    costRate: r.costRate,
+    effectiveDate: r.effectiveDate,
+    isDefault: r.isDefault,
+    notes: r.notes,
+  };
+}
+
+function mapTimeEntry(r: typeof schema.timeEntries.$inferSelect): TimeEntry {
+  return {
+    id: r.id,
+    userId: r.userId,
+    entryDate: r.entryDate,
+    durationHours: r.durationHours,
+    description: r.description,
+    clientId: r.clientId,
+    entityId: r.entityId,
+    taskType: r.taskType,
+    isBillable: r.isBillable,
+    rateAtLog: r.rateAtLog,
+    invoiceId: r.invoiceId,
     notes: r.notes,
   };
 }
@@ -382,6 +414,44 @@ export async function getCustomerById(id: string): Promise<Customer | undefined>
     .where(eq(schema.customers.id, id))
     .limit(1);
   return row ? mapCustomer(row) : undefined;
+}
+
+export async function getEmployeeRates(): Promise<EmployeeRate[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.employeeRates)
+    .orderBy(desc(schema.employeeRates.effectiveDate));
+  return rows.map(mapEmployeeRate);
+}
+
+export async function getEmployeeRateById(id: string): Promise<EmployeeRate | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.employeeRates)
+    .where(eq(schema.employeeRates.id, id))
+    .limit(1);
+  return row ? mapEmployeeRate(row) : undefined;
+}
+
+export async function getTimeEntries(): Promise<TimeEntry[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.timeEntries)
+    .orderBy(desc(schema.timeEntries.entryDate));
+  return rows.map(mapTimeEntry);
+}
+
+export async function getTimeEntryById(id: string): Promise<TimeEntry | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.timeEntries)
+    .where(eq(schema.timeEntries.id, id))
+    .limit(1);
+  return row ? mapTimeEntry(row) : undefined;
 }
 
 export async function getFeeSchedules(): Promise<FeeSchedule[]> {

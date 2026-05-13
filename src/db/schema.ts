@@ -153,6 +153,35 @@ export const entities = pgTable("entities", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const employeeRates = pgTable("employee_rates", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  role: text("role").notNull(),
+  billableRate: numeric("billable_rate", { precision: 10, scale: 2 }).notNull(),
+  costRate: numeric("cost_rate", { precision: 10, scale: 2 }),
+  effectiveDate: date("effective_date").notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const timeEntries = pgTable("time_entries", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  entryDate: date("entry_date").notNull(),
+  durationHours: numeric("duration_hours", { precision: 6, scale: 2 }).notNull(),
+  description: text("description").notNull(),
+  clientId: text("client_id"),
+  entityId: text("entity_id"),
+  taskType: text("task_type"),
+  isBillable: boolean("is_billable").notNull().default(true),
+  rateAtLog: numeric("rate_at_log", { precision: 10, scale: 2 }),
+  invoiceId: text("invoice_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const feeSchedules = pgTable("fee_schedules", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -393,3 +422,5 @@ export type AssetValueSnapshot = typeof assetValueSnapshots.$inferSelect;
 export type BankAccountSigner = typeof bankAccountSigners.$inferSelect;
 export type FeeSchedule = typeof feeSchedules.$inferSelect;
 export type EntityFee = typeof entityFees.$inferSelect;
+export type EmployeeRate = typeof employeeRates.$inferSelect;
+export type TimeEntry = typeof timeEntries.$inferSelect;

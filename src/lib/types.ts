@@ -100,6 +100,32 @@ export type EntityFee = {
   notes: string | null;
 };
 
+export type EmployeeRate = {
+  id: string;
+  userId: string;
+  role: string;
+  billableRate: string;
+  costRate: string | null;
+  effectiveDate: string;
+  isDefault: boolean;
+  notes: string | null;
+};
+
+export type TimeEntry = {
+  id: string;
+  userId: string;
+  entryDate: string;
+  durationHours: string;
+  description: string;
+  clientId: string | null;
+  entityId: string | null;
+  taskType: string | null;
+  isBillable: boolean;
+  rateAtLog: string | null;
+  invoiceId: string | null;
+  notes: string | null;
+};
+
 export type AssetKind =
   | "real_estate"
   | "securities"

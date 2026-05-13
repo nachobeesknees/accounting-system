@@ -35,6 +35,14 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    heading: "Time",
+    items: [
+      { href: "/time", label: "Time Entries" },
+      { href: "/time/report", label: "Utilization" },
+      { href: "/time/rates", label: "Rates" },
+    ],
+  },
+  {
     heading: "Banking",
     items: [
       { href: "/bank", label: "Bank Accounts" },

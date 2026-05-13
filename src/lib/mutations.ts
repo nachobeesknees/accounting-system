@@ -621,6 +621,126 @@ export async function deleteEntityFee(_user: SessionUser, id: string) {
   await db.delete(schema.entityFees).where(eq(schema.entityFees.id, id));
 }
 
+// --------- Employee rates ---------
+
+export type CreateEmployeeRateInput = {
+  userId: string;
+  role: string;
+  billableRate: number;
+  costRate?: number | null;
+  effectiveDate: string;
+  isDefault?: boolean;
+  notes?: string | null;
+};
+
+export async function createEmployeeRate(
+  _user: SessionUser,
+  input: CreateEmployeeRateInput,
+) {
+  const db = getDb();
+  const id = uid("er");
+  const [created] = await db
+    .insert(schema.employeeRates)
+    .values({
+      id,
+      userId: input.userId,
+      role: input.role,
+      billableRate: toDecimalString(input.billableRate),
+      costRate: input.costRate == null ? null : toDecimalString(input.costRate),
+      effectiveDate: input.effectiveDate,
+      isDefault: input.isDefault ?? false,
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export async function deleteEmployeeRate(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.employeeRates).where(eq(schema.employeeRates.id, id));
+}
+
+// --------- Time entries ---------
+
+export type CreateTimeEntryInput = {
+  userId: string;
+  entryDate: string;
+  durationHours: number;
+  description: string;
+  clientId?: string | null;
+  entityId?: string | null;
+  taskType?: string | null;
+  isBillable?: boolean;
+  rateAtLog?: number | null;
+  notes?: string | null;
+};
+
+export async function createTimeEntry(
+  _user: SessionUser,
+  input: CreateTimeEntryInput,
+) {
+  if (input.durationHours <= 0) throw new Error("Duration must be > 0.");
+  if (!input.description.trim()) throw new Error("Description is required.");
+  const db = getDb();
+  const id = uid("te");
+  const [created] = await db
+    .insert(schema.timeEntries)
+    .values({
+      id,
+      userId: input.userId,
+      entryDate: input.entryDate,
+      durationHours: input.durationHours.toFixed(2),
+      description: input.description.trim(),
+      clientId: input.clientId ?? null,
+      entityId: input.entityId ?? null,
+      taskType: input.taskType ?? null,
+      isBillable: input.isBillable ?? true,
+      rateAtLog: input.rateAtLog == null ? null : toDecimalString(input.rateAtLog),
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export type UpdateTimeEntryInput = Partial<CreateTimeEntryInput>;
+
+export async function updateTimeEntry(
+  _user: SessionUser,
+  id: string,
+  input: UpdateTimeEntryInput,
+) {
+  const db = getDb();
+  const [updated] = await db
+    .update(schema.timeEntries)
+    .set({
+      ...(input.userId !== undefined && { userId: input.userId }),
+      ...(input.entryDate !== undefined && { entryDate: input.entryDate }),
+      ...(input.durationHours !== undefined && {
+        durationHours: input.durationHours.toFixed(2),
+      }),
+      ...(input.description !== undefined && { description: input.description.trim() }),
+      ...(input.clientId !== undefined && { clientId: input.clientId }),
+      ...(input.entityId !== undefined && { entityId: input.entityId }),
+      ...(input.taskType !== undefined && { taskType: input.taskType }),
+      ...(input.isBillable !== undefined && { isBillable: input.isBillable }),
+      ...(input.rateAtLog !== undefined && {
+        rateAtLog:
+          input.rateAtLog == null ? null : toDecimalString(input.rateAtLog),
+      }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.timeEntries.id, id))
+    .returning();
+  if (!updated) throw new Error("Time entry not found.");
+  return updated;
+}
+
+export async function deleteTimeEntry(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.timeEntries).where(eq(schema.timeEntries.id, id));
+}
+
 // --------- Customers / Vendors ---------
 
 export async function createCustomer(
