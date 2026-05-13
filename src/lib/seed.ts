@@ -4,6 +4,7 @@ import type {
   BankAccount,
   BankTransaction,
   Customer,
+  Entity,
   FiscalPeriod,
   Invoice,
   JournalEntry,
@@ -59,6 +60,24 @@ export const CUSTOMERS: Customer[] = [
   { id: id("c-003"), code: "CUST-003", name: "Mumblethrottle Capital", email: "ar@mumblethrottle.io", phone: "(617) 555-7188", billingAddress: "1 Federal St, Boston MA 02110", paymentTerms: 30, isActive: true, notes: null },
   { id: id("c-004"), code: "CUST-004", name: "Tsukimomo Ventures", email: "billing@tsukimomo.jp", phone: "+81 3 5555 4019", billingAddress: "1-1 Marunouchi, Chiyoda-ku, Tokyo", paymentTerms: 60, isActive: true, notes: null },
   { id: id("c-005"), code: "CUST-005", name: "Frogsworth & Partners", email: "invoices@frogsworth.co.uk", phone: "+44 20 5555 0144", billingAddress: "12 Lombard St, London EC3V 9BJ", paymentTerms: 30, isActive: true, notes: null },
+];
+
+export const ENTITIES: Entity[] = [
+  // Pumpernickel Industries — operating co + family trust
+  { id: id("e-001"), code: "ENT-001", name: "Pumpernickel Holdings LLC", clientId: "c-001", kind: "llc", jurisdiction: "Delaware, USA", formationDate: D("2012-06-04"), status: "active", ein: "47-1102841", notes: "Master holding company" },
+  { id: id("e-002"), code: "ENT-002", name: "Pumpernickel Family Trust", clientId: "c-001", kind: "trust", jurisdiction: "South Dakota, USA", formationDate: D("2014-11-19"), status: "active", ein: null, notes: "Irrevocable dynasty trust" },
+  // Snickerthorpe Holdings — three sub-entities
+  { id: id("e-003"), code: "ENT-003", name: "Snickerthorpe Master Trust", clientId: "c-002", kind: "trust", jurisdiction: "Nevada, USA", formationDate: D("2009-03-22"), status: "active", ein: null, notes: null },
+  { id: id("e-004"), code: "ENT-004", name: "Snickerthorpe Real Estate LLC", clientId: "c-002", kind: "llc", jurisdiction: "New York, USA", formationDate: D("2016-08-11"), status: "active", ein: "85-2901774", notes: "Manhattan commercial portfolio" },
+  { id: id("e-005"), code: "ENT-005", name: "Snickerthorpe Capital Partners", clientId: "c-002", kind: "partnership", jurisdiction: "Delaware, USA", formationDate: D("2018-02-01"), status: "active", ein: "82-4429110", notes: "PE fund vehicle" },
+  // Mumblethrottle Capital
+  { id: id("e-006"), code: "ENT-006", name: "Mumblethrottle Holdings Inc.", clientId: "c-003", kind: "ccorp", jurisdiction: "Massachusetts, USA", formationDate: D("2007-05-09"), status: "active", ein: "04-3712209", notes: null },
+  { id: id("e-007"), code: "ENT-007", name: "Mumblethrottle Charitable Foundation", clientId: "c-003", kind: "foundation", jurisdiction: "Massachusetts, USA", formationDate: D("2011-12-14"), status: "active", ein: "27-0044112", notes: "501(c)(3) private foundation" },
+  // Tsukimomo Ventures — single entity (foreign-facing)
+  { id: id("e-008"), code: "ENT-008", name: "Tsukimomo USA LLC", clientId: "c-004", kind: "llc", jurisdiction: "Delaware, USA", formationDate: D("2020-09-30"), status: "active", ein: "84-3119008", notes: "US-facing subsidiary of Tokyo parent" },
+  // Frogsworth & Partners — UK family
+  { id: id("e-009"), code: "ENT-009", name: "Frogsworth Family Office Ltd.", clientId: "c-005", kind: "ccorp", jurisdiction: "United Kingdom", formationDate: D("2005-04-18"), status: "active", ein: null, notes: "UK family investment company" },
+  { id: id("e-010"), code: "ENT-010", name: "Frogsworth Heritage Trust", clientId: "c-005", kind: "trust", jurisdiction: "Jersey", formationDate: D("2008-10-02"), status: "dormant", ein: null, notes: "Restructured 2024" },
 ];
 
 export const VENDORS: Vendor[] = [

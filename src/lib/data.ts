@@ -22,6 +22,9 @@ import type {
   BankAccount,
   BankTransaction,
   Customer,
+  Entity,
+  EntityKind,
+  EntityStatus,
   FiscalPeriod,
   Invoice,
   InvoiceLine,
@@ -70,6 +73,21 @@ function mapUser(r: typeof schema.users.$inferSelect): User {
     fullName: r.fullName,
     role: r.role,
     isSuperuser: r.isSuperuser,
+  };
+}
+
+function mapEntity(r: typeof schema.entities.$inferSelect): Entity {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    clientId: r.clientId,
+    kind: r.kind as EntityKind,
+    jurisdiction: r.jurisdiction,
+    formationDate: r.formationDate,
+    status: r.status as EntityStatus,
+    ein: r.ein,
+    notes: r.notes,
   };
 }
 
@@ -280,6 +298,35 @@ export async function getCustomerById(id: string): Promise<Customer | undefined>
     .where(eq(schema.customers.id, id))
     .limit(1);
   return row ? mapCustomer(row) : undefined;
+}
+
+export async function getEntities(): Promise<Entity[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.entities)
+    .orderBy(schema.entities.code);
+  return rows.map(mapEntity);
+}
+
+export async function getEntityById(id: string): Promise<Entity | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.entities)
+    .where(eq(schema.entities.id, id))
+    .limit(1);
+  return row ? mapEntity(row) : undefined;
+}
+
+export async function getEntitiesByClientId(clientId: string): Promise<Entity[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.entities)
+    .where(eq(schema.entities.clientId, clientId))
+    .orderBy(schema.entities.code);
+  return rows.map(mapEntity);
 }
 
 export async function getVendors(): Promise<Vendor[]> {

@@ -50,6 +50,31 @@ export type JournalEntry = {
   lines: JournalLine[];
 };
 
+export type EntityKind =
+  | "llc"
+  | "trust"
+  | "scorp"
+  | "ccorp"
+  | "partnership"
+  | "foundation"
+  | "individual"
+  | "other";
+
+export type EntityStatus = "active" | "pending" | "dormant" | "dissolved";
+
+export type Entity = {
+  id: string;
+  code: string;
+  name: string;
+  clientId: string;
+  kind: EntityKind;
+  jurisdiction: string | null;
+  formationDate: string | null;
+  status: EntityStatus;
+  ein: string | null;
+  notes: string | null;
+};
+
 export type Customer = {
   id: string;
   name: string;

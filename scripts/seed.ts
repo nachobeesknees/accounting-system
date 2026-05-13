@@ -35,6 +35,7 @@ import {
   BANK_TRANSACTIONS,
   BILLS,
   CUSTOMERS,
+  ENTITIES,
   INVOICES,
   JOURNAL_ENTRIES,
   PERIODS,
@@ -130,6 +131,7 @@ async function main() {
       journal_entries,
       activity_log,
       fiscal_periods,
+      entities,
       vendors,
       customers,
       accounts,
@@ -204,6 +206,22 @@ async function main() {
       defaultExpenseAccountId: v.defaultExpenseAccountId,
       isActive: v.isActive,
       notes: v.notes,
+    })),
+  );
+
+  console.log("Inserting entities…");
+  await db.insert(schema.entities).values(
+    ENTITIES.map((e) => ({
+      id: e.id,
+      code: e.code,
+      name: e.name,
+      clientId: e.clientId,
+      kind: e.kind,
+      jurisdiction: e.jurisdiction,
+      formationDate: e.formationDate,
+      status: e.status,
+      ein: e.ein,
+      notes: e.notes,
     })),
   );
 

@@ -272,6 +272,95 @@ export async function voidJournalEntry(
   return updated;
 }
 
+// --------- Entities ---------
+
+export type CreateEntityInput = {
+  code: string;
+  name: string;
+  clientId: string;
+  kind: "llc" | "trust" | "scorp" | "ccorp" | "partnership" | "foundation" | "individual" | "other";
+  jurisdiction?: string | null;
+  formationDate?: string | null;
+  status?: "active" | "pending" | "dormant" | "dissolved";
+  ein?: string | null;
+  notes?: string | null;
+};
+
+export async function createEntity(_user: SessionUser, input: CreateEntityInput) {
+  const db = getDb();
+  const [existing] = await db
+    .select({ id: schema.entities.id })
+    .from(schema.entities)
+    .where(eq(schema.entities.code, input.code))
+    .limit(1);
+  if (existing) {
+    throw new Error(`Entity code ${input.code} already exists.`);
+  }
+  const id = uid("e");
+  const [created] = await db
+    .insert(schema.entities)
+    .values({
+      id,
+      code: input.code,
+      name: input.name,
+      clientId: input.clientId,
+      kind: input.kind,
+      jurisdiction: input.jurisdiction ?? null,
+      formationDate: input.formationDate ?? null,
+      status: input.status ?? "active",
+      ein: input.ein ?? null,
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export type UpdateEntityInput = Partial<Omit<CreateEntityInput, "code">> & {
+  code?: string;
+};
+
+export async function updateEntity(
+  _user: SessionUser,
+  id: string,
+  input: UpdateEntityInput,
+) {
+  const db = getDb();
+  // Code change must remain unique
+  if (input.code) {
+    const [collision] = await db
+      .select({ id: schema.entities.id })
+      .from(schema.entities)
+      .where(eq(schema.entities.code, input.code))
+      .limit(1);
+    if (collision && collision.id !== id) {
+      throw new Error(`Entity code ${input.code} already exists.`);
+    }
+  }
+  const [updated] = await db
+    .update(schema.entities)
+    .set({
+      ...(input.code !== undefined && { code: input.code }),
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.clientId !== undefined && { clientId: input.clientId }),
+      ...(input.kind !== undefined && { kind: input.kind }),
+      ...(input.jurisdiction !== undefined && { jurisdiction: input.jurisdiction }),
+      ...(input.formationDate !== undefined && { formationDate: input.formationDate }),
+      ...(input.status !== undefined && { status: input.status }),
+      ...(input.ein !== undefined && { ein: input.ein }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.entities.id, id))
+    .returning();
+  if (!updated) throw new Error("Entity not found.");
+  return updated;
+}
+
+export async function deleteEntity(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.entities).where(eq(schema.entities.id, id));
+}
+
 // --------- Customers / Vendors ---------
 
 export async function createCustomer(

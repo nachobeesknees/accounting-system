@@ -20,6 +20,24 @@ export const accountTypeEnum = pgEnum("account_type", [
   "expense",
 ]);
 
+export const entityKindEnum = pgEnum("entity_kind", [
+  "llc",
+  "trust",
+  "scorp",
+  "ccorp",
+  "partnership",
+  "foundation",
+  "individual",
+  "other",
+]);
+
+export const entityStatusEnum = pgEnum("entity_status", [
+  "active",
+  "pending",
+  "dormant",
+  "dissolved",
+]);
+
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
@@ -103,6 +121,21 @@ export const customers = pgTable("customers", {
   billingAddress: text("billing_address"),
   paymentTerms: integer("payment_terms").notNull().default(30),
   isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const entities = pgTable("entities", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  clientId: text("client_id").notNull(),
+  kind: entityKindEnum("kind").notNull(),
+  jurisdiction: text("jurisdiction"),
+  formationDate: date("formation_date"),
+  status: entityStatusEnum("status").notNull().default("active"),
+  ein: text("ein"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -258,3 +291,4 @@ export type Bill = typeof bills.$inferSelect;
 export type BankAccount = typeof bankAccounts.$inferSelect;
 export type BankTransaction = typeof bankTransactions.$inferSelect;
 export type FiscalPeriod = typeof fiscalPeriods.$inferSelect;
+export type Entity = typeof entities.$inferSelect;
