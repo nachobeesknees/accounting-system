@@ -1,7 +1,14 @@
 import type { ReactNode } from "react";
 
+/**
+ * Stack KV rows vertically. Earlier this used a 2-column layout on md+,
+ * but that gave each value cell so little width that nowrap content
+ * (account codes, phone numbers, amounts) bled into the next column.
+ * Cards already sit side-by-side, so stacking inside each is plenty
+ * dense while letting each value claim the full card width.
+ */
 export function KVGrid({ children }: { children: ReactNode }) {
-  return <div className="grid grid-cols-1 md:grid-cols-2">{children}</div>;
+  return <div className="grid grid-cols-1">{children}</div>;
 }
 
 export function KV({
