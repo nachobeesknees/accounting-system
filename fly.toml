@@ -1,5 +1,6 @@
 app = "accounting-system"
 primary_region = "ord"
+console_command = "/app/manage.py shell"
 
 [build]
 dockerfile = "Dockerfile"
@@ -7,6 +8,8 @@ dockerfile = "Dockerfile"
 [env]
 DEBUG = "False"
 ENVIRONMENT = "production"
+ALLOWED_HOSTS = "accounting-system.fly.dev"
+LOAD_DEMO_DATA = "True"
 
 [[services]]
 internal_port = 8000
@@ -33,6 +36,12 @@ method = "GET"
 path = "/api/auth/health/"
 timeout = "5s"
 
+# PostgreSQL volume for persistent database
 [[mounts]]
 source = "pg_data"
 destination = "/var/lib/postgresql/data"
+
+# Redis volume for background jobs
+[[mounts]]
+source = "redis_data"
+destination = "/var/lib/redis"
