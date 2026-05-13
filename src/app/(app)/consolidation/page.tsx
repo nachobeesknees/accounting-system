@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Empty } from "@/components/ui/Empty";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
@@ -79,6 +81,17 @@ export default async function Page() {
 
       <div className="px-6 pb-8">
         <Card title="Per-book P&L (current year)">
+          {rows.length === 0 ? (
+            <Empty
+              title="No posted activity yet"
+              body="Post some journal entries to see entity and firm-level P&L roll up here."
+              cta={
+                <ButtonLink variant="primary" href="/journal/new">
+                  + New entry
+                </ButtonLink>
+              }
+            />
+          ) : (
           <Table>
             <THead>
               <TR hover={false}>
@@ -134,6 +147,7 @@ export default async function Page() {
               </TR>
             </TBody>
           </Table>
+          )}
         </Card>
       </div>
     </>

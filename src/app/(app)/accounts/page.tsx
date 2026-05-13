@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Empty } from "@/components/ui/Empty";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   accountTypeOrder,
@@ -85,6 +86,25 @@ export default async function Page({
       </div>
 
       <div className="flex flex-col gap-3.5 px-6 py-3.5 pb-8">
+        {orderedTypes.every((t) => (byType.get(t) ?? []).length === 0) && (
+          <Card title="Accounts">
+            <Empty
+              title="No accounts match this filter"
+              body={
+                activeFilter === "all"
+                  ? "Seed your chart of accounts to get started."
+                  : "Try a different account type or clear the filter."
+              }
+              cta={
+                activeFilter === "all" ? undefined : (
+                  <ButtonLink variant="secondary" href="/accounts">
+                    Clear filter
+                  </ButtonLink>
+                )
+              }
+            />
+          </Card>
+        )}
         {orderedTypes.map((t) => {
           const list = byType.get(t) ?? [];
           if (list.length === 0) return null;

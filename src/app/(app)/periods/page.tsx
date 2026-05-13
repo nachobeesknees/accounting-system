@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Empty } from "@/components/ui/Empty";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getPeriods } from "@/lib/data";
@@ -33,6 +34,12 @@ export default async function Page() {
 
       <div className="px-6 py-3.5">
         <Card title="Periods">
+          {rows.length === 0 ? (
+            <Empty
+              title="No fiscal periods configured"
+              body="A period defines the date range you can post journal entries against and lets you close the books once a month is finalized."
+            />
+          ) : (
           <Table>
             <THead>
               <TR hover={false}>
@@ -74,6 +81,7 @@ export default async function Page() {
               })}
             </TBody>
           </Table>
+          )}
         </Card>
       </div>
     </>
