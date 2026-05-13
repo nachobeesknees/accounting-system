@@ -2,12 +2,9 @@ Django==5.0.3
 psycopg[binary]==3.1.18
 python-decouple==3.8
 django-allauth==0.57.0
-django-q2==1.4.9
-django-tailwind==3.8.0
 celery==5.3.4
 redis==5.0.1
-openpyxl==3.9.2
-weasyprint==60.1
+openpyxl==3.1.5
 hypothesis==6.98.3
 pytest==7.4.4
 pytest-django==4.7.0
