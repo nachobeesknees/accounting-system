@@ -16,8 +16,8 @@ Usage:
 
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
-from apps.core.models import Entity, UserEntityPermission
-from apps.finance.models import Account, Period, JournalEntry, JournalLine
+from apps.core.models import UserEntityPermission
+from apps.finance.models import Entity, Account, Period, JournalEntry, JournalLine
 from decimal import Decimal
 from datetime import date, timedelta
 import json
