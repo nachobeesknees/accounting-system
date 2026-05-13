@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load humanize_money %}
+
+{% block title %}Invoices{% endblock %}
+{% block breadcrumb %}Invoices{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="header-baseline">
+            <h1>Invoices</h1>
+            <span class="meta">{{ rows|length }} invoices</span>
+        </div>
+        <div class="header-actions">
+            <a class="btn btn-primary" href="#">+ New invoice</a>
+        </div>
+    </div>
+</div>
+
+<div class="page-body">
+<section class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Invoice #</th>
+                <th>Customer</th>
+                <th>Date</th>
+                <th>Due</th>
+                <th class="num">Total</th>
+                <th class="num">Balance</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for inv in rows %}
+            <tr>
+                <td class="mono">{{ inv.number }}</td>
+                <td>{{ inv.customer_name }}</td>
+                <td>{{ inv.date|date:"M j, Y" }}</td>
+                <td>{{ inv.due|date:"M j, Y" }}</td>
+                <td class="num">USD {{ inv.total|money }}</td>
+                <td class="num {% if inv.balance and inv.status == 'overdue' %}neg{% endif %}">USD {{ inv.balance|money }}</td>
+                <td><span class="pill {{ inv.status|status_pill }}">{{ inv.status|status_label }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+</div>
+{% endblock %}

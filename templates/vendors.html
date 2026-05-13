@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load humanize_money %}
+
+{% block title %}Vendors{% endblock %}
+{% block breadcrumb %}Vendors{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="header-baseline">
+            <h1>Vendors</h1>
+            <span class="meta">{{ rows|length }} active</span>
+        </div>
+        <div class="header-actions">
+            <a class="btn btn-primary" href="#">+ New vendor</a>
+        </div>
+    </div>
+</div>
+
+<div class="page-body">
+<section class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Code</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Default expense acct</th>
+                <th class="num">Terms</th>
+                <th class="num">Balance</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for v in rows %}
+            <tr>
+                <td class="mono">{{ v.code }}</td>
+                <td>{{ v.name }}</td>
+                <td><span style="color: var(--ink-3);">{{ v.email }}</span></td>
+                <td class="mono"><span style="color: var(--ink-3);">{{ v.default_account }}</span></td>
+                <td class="num">Net {{ v.terms }}</td>
+                <td class="num">USD {{ v.balance|paren_neg }}</td>
+                <td><span class="pill {% if v.is_active %}active{% else %}neutral{% endif %}">{% if v.is_active %}Active{% else %}Inactive{% endif %}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+</div>
+{% endblock %}

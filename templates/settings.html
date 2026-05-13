@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Settings{% endblock %}
+{% block breadcrumb %}Settings{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="header-baseline">
+            <h1>Settings</h1>
+            <span class="meta">Company configuration</span>
+        </div>
+    </div>
+</div>
+
+<div class="page-body" style="display: flex; flex-direction: column; gap: 14px;">
+
+    <section class="section">
+        <div class="section-head"><h3>Company</h3></div>
+        <div class="kv-grid">
+            <div class="kv"><div class="k">Legal name</div><div class="v">{{ company_name }}</div></div>
+            <div class="kv"><div class="k">Functional currency</div><div class="v mono">{{ currency }}</div></div>
+            <div class="kv"><div class="k">Fiscal year start</div><div class="v">{{ fiscal_year_start }}</div></div>
+            <div class="kv"><div class="k">Country</div><div class="v">United States</div></div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-head"><h3>Number sequences</h3></div>
+        <div class="kv-grid">
+            <div class="kv"><div class="k">Next invoice</div><div class="v mono">{{ next_invoice }}</div></div>
+            <div class="kv"><div class="k">Next journal entry</div><div class="v mono">{{ next_je }}</div></div>
+        </div>
+    </section>
+
+    <section class="section">
+        <div class="section-head"><h3>Default accounts</h3></div>
+        <div class="kv-grid">
+            <div class="kv"><div class="k">Accounts Receivable</div><div class="v mono">1200 — Accounts Receivable</div></div>
+            <div class="kv"><div class="k">Accounts Payable</div><div class="v mono">2000 — Accounts Payable</div></div>
+            <div class="kv"><div class="k">Retained Earnings</div><div class="v mono">3100 — Retained Earnings</div></div>
+            <div class="kv"><div class="k">Operating cash</div><div class="v mono">1000 — Cash</div></div>
+        </div>
+    </section>
+
+</div>
+{% endblock %}

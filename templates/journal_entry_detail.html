@@ -1,65 +1,91 @@
 {% extends "base.html" %}
 {% load humanize_money %}
 
-{% block title %}{{ entry.id }} - Journal Entry{% endblock %}
+{% block title %}{{ entry.number }}{% endblock %}
+{% block breadcrumb %}Journal Entries · {{ entry.number }}{% endblock %}
 
 {% block content %}
-<div class="section">
-    <a class="btn-link" href="{% url 'core:journal_entries' %}">← Back to all entries</a>
-    <h1 style="margin-top: 10px;">{{ entry.id }}</h1>
-    <p class="subtitle">{{ entry.description }}</p>
-</div>
-
-<div class="grid cols-3" style="margin-bottom: 24px;">
-    <div class="card">
-        <h3>Date</h3>
-        <div class="value" style="font-size: 18px;">{{ entry.date|date:"l, F j, Y" }}</div>
-    </div>
-    <div class="card">
-        <h3>Status</h3>
-        <div style="margin-top: 6px;">
-            {% if entry.status == 'Posted' %}
-                <span class="badge posted">Posted</span>
-            {% else %}
-                <span class="badge pending">Pending Approval</span>
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="header-baseline">
+            <h1>{{ entry.number }}</h1>
+            <span class="meta">{{ entry.description }}</span>
+        </div>
+        <div class="header-actions">
+            <a class="btn" href="{% url 'core:journal_entries' %}">← All entries</a>
+            {% if entry.status == 'draft' %}
+                <button class="btn btn-primary" type="button">Post</button>
+                <button class="btn btn-danger" type="button">Void</button>
+            {% elif entry.status == 'posted' %}
+                <button class="btn btn-danger" type="button">Void</button>
             {% endif %}
         </div>
     </div>
-    <div class="card">
-        <h3>Balance check</h3>
-        {% if total_debit == total_credit %}
-            <div class="value positive" style="font-size: 18px;">✓ Balanced</div>
-            <div class="meta">Debits = Credits = ${{ total_debit|money }}</div>
-        {% else %}
-            <div class="value negative" style="font-size: 18px;">✗ Unbalanced</div>
-        {% endif %}
-    </div>
 </div>
 
-<div class="card">
-    <h2>Line items</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>Account</th>
-                <th class="num">Debit</th>
-                <th class="num">Credit</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for line in entry.lines %}
-            <tr>
-                <td>{{ line.account }}</td>
-                <td class="num">{% if line.debit %}${{ line.debit|money }}{% else %}&mdash;{% endif %}</td>
-                <td class="num">{% if line.credit %}${{ line.credit|money }}{% else %}&mdash;{% endif %}</td>
-            </tr>
-            {% endfor %}
-            <tr style="background: #fafbfc; font-weight: 700;">
-                <td>Totals</td>
-                <td class="num">${{ total_debit|money }}</td>
-                <td class="num">${{ total_credit|money }}</td>
-            </tr>
-        </tbody>
-    </table>
+<nav class="tabs">
+    <a href="#lines" class="active">Lines</a>
+    <a href="#activity">Activity</a>
+</nav>
+
+<div class="page-body" style="display: flex; flex-direction: column; gap: 14px;">
+
+    <section class="card">
+        <div class="card-head">
+            <h3>Header</h3>
+            <div class="card-actions">
+                <span class="pill {{ entry.status|status_pill }}">{{ entry.status|status_label }}</span>
+                {% if balanced %}<span class="pill active">Balanced</span>{% else %}<span class="pill review">Unbalanced</span>{% endif %}
+            </div>
+        </div>
+        <div class="kv-grid">
+            <div class="kv"><div class="k">Entry #</div><div class="v mono">{{ entry.number }}</div></div>
+            <div class="kv"><div class="k">Period</div><div class="v">{{ entry.period }}</div></div>
+            <div class="kv"><div class="k">Entry date</div><div class="v">{{ entry.date|date:"M j, Y" }}</div></div>
+            <div class="kv"><div class="k">Reference</div><div class="v mono">{{ entry.reference|default:"—" }}</div></div>
+            <div class="kv"><div class="k">Description</div><div class="v">{{ entry.description }}</div></div>
+            <div class="kv"><div class="k">Source</div><div class="v">{{ entry.source|title }}</div></div>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="card-head">
+            <h3>Line items <span style="color: var(--ink-4); font-weight: 400; font-size: 11.5px; margin-left: 6px;">{{ entry.lines|length }} lines</span></h3>
+            <div class="card-actions">
+                <span>Debit total: <span class="mono">USD {{ total_debit|money }}</span></span>
+                <span>Credit total: <span class="mono">USD {{ total_credit|money }}</span></span>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 50px;">#</th>
+                    <th style="width: 90px;">Account</th>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th class="num">Debit</th>
+                    <th class="num">Credit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for line in entry.lines %}
+                <tr>
+                    <td class="mono">{{ forloop.counter }}</td>
+                    <td class="mono">{{ line.account }}</td>
+                    <td>{% for code, a in account_by_code.items %}{% if code == line.account %}{{ a.name }}{% endif %}{% endfor %}</td>
+                    <td><span style="color: var(--ink-3);">{{ line.description|default:"—" }}</span></td>
+                    <td class="num">{% if line.debit %}{{ line.debit|money }}{% else %}—{% endif %}</td>
+                    <td class="num">{% if line.credit %}{{ line.credit|money }}{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+                <tr class="total">
+                    <td colspan="4">Totals</td>
+                    <td class="num">USD {{ total_debit|money }}</td>
+                    <td class="num">USD {{ total_credit|money }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
 </div>
 {% endblock %}

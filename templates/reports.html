@@ -1,59 +1,32 @@
 {% extends "base.html" %}
 {% load humanize_money %}
 
-{% block title %}Reports{% endblock %}
+{% block title %}Financial Statements{% endblock %}
+{% block breadcrumb %}Financial Statements{% endblock %}
 
 {% block content %}
-<div class="section">
-    <h1>Financial Reports</h1>
-    <p class="subtitle">As of {{ today|date:"F j, Y" }}</p>
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="header-baseline">
+            <h1>Financial Statements</h1>
+            <span class="meta">As of {{ today|date:"F j, Y" }}</span>
+        </div>
+        <div class="header-actions">
+            <a class="btn" href="#">Export CSV</a>
+        </div>
+    </div>
 </div>
 
-<div class="grid cols-2">
-    <div class="card">
-        <h2>Income Statement</h2>
-        <table>
-            <thead>
-                <tr><th colspan="2">Revenue</th><th class="num">Amount</th></tr>
-            </thead>
-            <tbody>
-                {% for code, name, amount in revenues %}
-                <tr>
-                    <td>{{ code }}</td>
-                    <td>{{ name }}</td>
-                    <td class="num">${{ amount|money }}</td>
-                </tr>
-                {% endfor %}
-                <tr style="background: #fafbfc; font-weight: 700;">
-                    <td colspan="2">Total Revenue</td>
-                    <td class="num positive">${{ kpis.revenue|money }}</td>
-                </tr>
-            </tbody>
-            <thead>
-                <tr><th colspan="2" style="padding-top: 22px;">Expenses</th><th class="num" style="padding-top: 22px;">Amount</th></tr>
-            </thead>
-            <tbody>
-                {% for code, name, amount in expenses %}
-                <tr>
-                    <td>{{ code }}</td>
-                    <td>{{ name }}</td>
-                    <td class="num">${{ amount|money }}</td>
-                </tr>
-                {% endfor %}
-                <tr style="background: #fafbfc; font-weight: 700;">
-                    <td colspan="2">Total Expenses</td>
-                    <td class="num">${{ kpis.expenses|money }}</td>
-                </tr>
-                <tr style="background: #ede9fe; font-weight: 800; font-size: 15px;">
-                    <td colspan="2">Net Income</td>
-                    <td class="num positive">${{ kpis.net_income|money }}</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
+<nav class="tabs">
+    <a href="#balance" class="active">Balance Sheet</a>
+    <a href="#income">Income Statement</a>
+    <a href="#trial">Trial Balance</a>
+</nav>
 
-    <div class="card">
-        <h2>Balance Sheet</h2>
+<div class="page-body" style="display: flex; flex-direction: column; gap: 14px;">
+
+    <section class="card" id="balance">
+        <div class="card-head"><h3>Balance Sheet</h3></div>
         <table>
             <thead>
                 <tr><th colspan="2">Assets</th><th class="num">Amount</th></tr>
@@ -61,49 +34,116 @@
             <tbody>
                 {% for code, name, amount in assets %}
                 <tr>
-                    <td>{{ code }}</td>
+                    <td class="mono">{{ code }}</td>
                     <td>{{ name }}</td>
-                    <td class="num">${{ amount|money }}</td>
+                    <td class="num {% if amount < 0 %}neg{% endif %}">{{ amount|paren_neg }}</td>
                 </tr>
                 {% endfor %}
-                <tr style="background: #fafbfc; font-weight: 700;">
-                    <td colspan="2">Total Assets</td>
-                    <td class="num">${{ kpis.assets|money }}</td>
-                </tr>
+                <tr class="total"><td colspan="2">Total Assets</td><td class="num">USD {{ kpis.assets|money }}</td></tr>
             </tbody>
             <thead>
-                <tr><th colspan="2" style="padding-top: 22px;">Liabilities</th><th class="num" style="padding-top: 22px;">Amount</th></tr>
+                <tr><th colspan="2" style="padding-top: 18px;">Liabilities</th><th class="num" style="padding-top: 18px;">Amount</th></tr>
             </thead>
             <tbody>
                 {% for code, name, amount in liabilities %}
                 <tr>
-                    <td>{{ code }}</td>
+                    <td class="mono">{{ code }}</td>
                     <td>{{ name }}</td>
-                    <td class="num">${{ amount|money }}</td>
+                    <td class="num">{{ amount|money }}</td>
                 </tr>
                 {% endfor %}
-                <tr style="background: #fafbfc; font-weight: 700;">
-                    <td colspan="2">Total Liabilities</td>
-                    <td class="num">${{ kpis.liabilities|money }}</td>
-                </tr>
+                <tr class="total"><td colspan="2">Total Liabilities</td><td class="num">USD {{ kpis.liabilities|money }}</td></tr>
             </tbody>
             <thead>
-                <tr><th colspan="2" style="padding-top: 22px;">Equity</th><th class="num" style="padding-top: 22px;">Amount</th></tr>
+                <tr><th colspan="2" style="padding-top: 18px;">Equity</th><th class="num" style="padding-top: 18px;">Amount</th></tr>
             </thead>
             <tbody>
                 {% for code, name, amount in equity_accts %}
                 <tr>
-                    <td>{{ code }}</td>
+                    <td class="mono">{{ code }}</td>
                     <td>{{ name }}</td>
-                    <td class="num">${{ amount|money }}</td>
+                    <td class="num">{{ amount|money }}</td>
                 </tr>
                 {% endfor %}
-                <tr style="background: #fafbfc; font-weight: 700;">
-                    <td colspan="2">Total Equity</td>
-                    <td class="num">${{ kpis.equity|money }}</td>
+                <tr class="total"><td colspan="2">Total Equity</td><td class="num">USD {{ kpis.equity|money }}</td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="card" id="income">
+        <div class="card-head"><h3>Income Statement</h3></div>
+        <table>
+            <thead>
+                <tr><th colspan="2">Revenue</th><th class="num">Amount</th></tr>
+            </thead>
+            <tbody>
+                {% for code, name, amount in revenues %}
+                <tr>
+                    <td class="mono">{{ code }}</td>
+                    <td>{{ name }}</td>
+                    <td class="num">{{ amount|money }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="total"><td colspan="2">Total Revenue</td><td class="num">USD {{ kpis.revenue|money }}</td></tr>
+            </tbody>
+            <thead>
+                <tr><th colspan="2" style="padding-top: 18px;">Expenses</th><th class="num" style="padding-top: 18px;">Amount</th></tr>
+            </thead>
+            <tbody>
+                {% for code, name, amount in expenses %}
+                <tr>
+                    <td class="mono">{{ code }}</td>
+                    <td>{{ name }}</td>
+                    <td class="num">{{ amount|money }}</td>
+                </tr>
+                {% endfor %}
+                <tr class="total"><td colspan="2">Total Expenses</td><td class="num">USD {{ kpis.expenses|money }}</td></tr>
+            </tbody>
+            <tbody>
+                <tr class="total" style="background: var(--p-formation-bg);">
+                    <td colspan="2" style="color: var(--p-formation-fg);">Net Income</td>
+                    <td class="num" style="color: var(--p-formation-fg);">USD {{ kpis.net_income|money }}</td>
                 </tr>
             </tbody>
         </table>
-    </div>
+    </section>
+
+    <section class="card" id="trial">
+        <div class="card-head"><h3>Trial Balance</h3>
+            <div class="card-actions">
+                {% if trial_total_debit == trial_total_credit %}
+                    <span class="pill active">Balanced</span>
+                {% else %}
+                    <span class="pill review">Unbalanced</span>
+                {% endif %}
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Code</th>
+                    <th>Account</th>
+                    <th class="num">Debit</th>
+                    <th class="num">Credit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in trial %}
+                <tr>
+                    <td class="mono">{{ t.code }}</td>
+                    <td>{{ t.name }}</td>
+                    <td class="num">{% if t.debit %}{{ t.debit|money }}{% else %}—{% endif %}</td>
+                    <td class="num">{% if t.credit %}{{ t.credit|money }}{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+                <tr class="total">
+                    <td colspan="2">Totals</td>
+                    <td class="num">USD {{ trial_total_debit|money }}</td>
+                    <td class="num">USD {{ trial_total_credit|money }}</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
 </div>
 {% endblock %}

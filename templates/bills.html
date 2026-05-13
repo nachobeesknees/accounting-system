@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% load humanize_money %}
+
+{% block title %}Bills{% endblock %}
+{% block breadcrumb %}Bills{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="header-baseline">
+            <h1>Bills</h1>
+            <span class="meta">{{ rows|length }} bills</span>
+        </div>
+        <div class="header-actions">
+            <a class="btn btn-primary" href="#">+ New bill</a>
+        </div>
+    </div>
+</div>
+
+<div class="page-body">
+<section class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Bill #</th>
+                <th>Vendor</th>
+                <th>Date</th>
+                <th>Due</th>
+                <th class="num">Total</th>
+                <th class="num">Balance</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for b in rows %}
+            <tr>
+                <td class="mono">{{ b.number }}</td>
+                <td>{{ b.vendor_name }}</td>
+                <td>{{ b.date|date:"M j, Y" }}</td>
+                <td>{{ b.due|date:"M j, Y" }}</td>
+                <td class="num">USD {{ b.total|money }}</td>
+                <td class="num {% if b.balance and b.status == 'overdue' %}neg{% endif %}">USD {{ b.balance|money }}</td>
+                <td><span class="pill {{ b.status|status_pill }}">{{ b.status|status_label }}</span></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+</div>
+{% endblock %}

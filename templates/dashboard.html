@@ -1,102 +1,178 @@
 {% extends "base.html" %}
 {% load humanize_money %}
 
-{% block title %}Dashboard - Accounting System{% endblock %}
+{% block title %}Dashboard — {{ company_name }}{% endblock %}
+{% block breadcrumb %}Dashboard{% endblock %}
 
 {% block content %}
-<div class="section">
-    <h1>Welcome back, {{ user.full_name }}</h1>
-    <p class="subtitle">{{ today|date:"l, F j, Y" }} · Viewing as <strong>{{ user.role }}</strong></p>
-</div>
-
-<div class="section">
-    <div class="grid cols-4">
-        <div class="card">
-            <h3>Revenue (YTD)</h3>
-            <div class="value positive">${{ kpis.revenue|money }}</div>
-            <div class="meta">+12.4% vs last year</div>
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="header-baseline">
+            <h1>Dashboard</h1>
+            <span class="meta">{{ today|date:"l, F j, Y" }} · {{ user.role }} view</span>
         </div>
-        <div class="card">
-            <h3>Expenses (YTD)</h3>
-            <div class="value">${{ kpis.expenses|money }}</div>
-            <div class="meta">63.5% of revenue</div>
-        </div>
-        <div class="card">
-            <h3>Net Income</h3>
-            <div class="value positive">${{ kpis.net_income|money }}</div>
-            <div class="meta">36.5% margin</div>
-        </div>
-        <div class="card">
-            <h3>Cash on Hand</h3>
-            <div class="value">${{ kpis.cash|money }}</div>
-            <div class="meta">Across {{ entities|length }} entities</div>
+        <div class="header-actions">
+            <a class="btn" href="{% url 'core:reports' %}">Reports</a>
+            <a class="btn btn-primary" href="{% url 'core:journal_entries' %}">+ New entry</a>
         </div>
     </div>
 </div>
 
-<div class="grid cols-2">
-    <div class="card">
-        <div class="section-header">
-            <h2>Recent Journal Entries</h2>
-            <a class="btn-link" href="{% url 'core:journal_entries' %}">View all →</a>
+<div class="page-body">
+
+    <div class="grid cols-4" style="margin-bottom: 14px;">
+        <div class="kpi">
+            <div class="label">Total Assets</div>
+            <div class="value">USD {{ kpis.assets|money }}</div>
+            <div class="sub">Across the GL · debit normal</div>
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Date</th>
-                    <th>Description</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for entry in recent_entries %}
-                <tr>
-                    <td><a class="btn-link" href="{% url 'core:journal_entry_detail' entry.id %}">{{ entry.id }}</a></td>
-                    <td>{{ entry.date|date:"M j" }}</td>
-                    <td>{{ entry.description }}</td>
-                    <td>
-                        {% if entry.status == 'Posted' %}
-                            <span class="badge posted">Posted</span>
-                        {% else %}
-                            <span class="badge pending">Pending</span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <div class="kpi">
+            <div class="label">Total Liabilities</div>
+            <div class="value">USD {{ kpis.liabilities|money }}</div>
+            <div class="sub">AP &amp; accrued</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Net Income (YTD)</div>
+            <div class="value">USD {{ kpis.net_income|money }}</div>
+            <div class="sub">Revenue minus expenses</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Cash Balance</div>
+            <div class="value">USD {{ kpis.cash|money }}</div>
+            <div class="sub">Account 1000</div>
+        </div>
     </div>
 
-    <div class="card">
-        <div class="section-header">
-            <h2>Entities</h2>
-            <a class="btn-link" href="{% url 'core:entities' %}">Manage →</a>
+    <div class="grid cols-2" style="margin-bottom: 14px;">
+        <section class="card">
+            <div class="card-head">
+                <h3>Accounts Receivable aging</h3>
+                <div class="card-actions"><a href="{% url 'core:invoices' %}">View invoices →</a></div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Bucket</th>
+                        <th class="num">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Current</td><td class="num">USD {{ ar.current|money }}</td></tr>
+                    <tr><td>1 – 30 days</td><td class="num">USD {{ ar.d30|money }}</td></tr>
+                    <tr><td>31 – 60 days</td><td class="num">USD {{ ar.d60|money }}</td></tr>
+                    <tr><td>60+ days</td><td class="num neg">USD {{ ar.d90|money }}</td></tr>
+                </tbody>
+            </table>
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h3>Accounts Payable aging</h3>
+                <div class="card-actions"><a href="{% url 'core:bills' %}">View bills →</a></div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Bucket</th>
+                        <th class="num">Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>Current</td><td class="num">USD {{ ap.current|money }}</td></tr>
+                    <tr><td>1 – 30 days</td><td class="num">USD {{ ap.d30|money }}</td></tr>
+                    <tr><td>31 – 60 days</td><td class="num">USD {{ ap.d60|money }}</td></tr>
+                    <tr><td>60+ days</td><td class="num neg">USD {{ ap.d90|money }}</td></tr>
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    <div class="grid cols-2" style="margin-bottom: 14px;">
+        <section class="card">
+            <div class="card-head">
+                <h3>Recent journal entries</h3>
+                <div class="card-actions"><a href="{% url 'core:journal_entries' %}">All entries →</a></div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Entry #</th>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in recent %}
+                    <tr>
+                        <td class="mono"><a href="{% url 'core:journal_entry_detail' entry.number %}">{{ entry.number }}</a></td>
+                        <td>{{ entry.date|date:"M j" }}</td>
+                        <td>{{ entry.description }}</td>
+                        <td><span class="pill {{ entry.status|status_pill }}">{{ entry.status|status_label }}</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h3>Upcoming bills due</h3>
+                <div class="card-actions"><a href="{% url 'core:bills' %}">All bills →</a></div>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Bill #</th>
+                        <th>Vendor</th>
+                        <th>Due</th>
+                        <th class="num">Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for b in upcoming_bills %}
+                    <tr>
+                        <td class="mono">{{ b.number }}</td>
+                        <td>{{ b.vendor }}</td>
+                        <td>{{ b.due|date:"M j" }}</td>
+                        <td class="num">USD {{ b.balance|money }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="empty">No bills due.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    </div>
+
+    {% if overdue_invoices %}
+    <section class="card">
+        <div class="card-head">
+            <h3>Overdue invoices</h3>
+            <div class="card-actions"><span class="pill review">{{ overdue_invoices|length }} overdue</span></div>
         </div>
         <table>
             <thead>
                 <tr>
-                    <th>Code</th>
-                    <th>Name</th>
-                    <th>Currency</th>
+                    <th>Invoice #</th>
+                    <th>Customer</th>
+                    <th>Due</th>
+                    <th class="num">Balance</th>
                 </tr>
             </thead>
             <tbody>
-                {% for entity in entities %}
+                {% for i in overdue_invoices %}
                 <tr>
-                    <td><strong>{{ entity.code }}</strong></td>
-                    <td>{{ entity.name }}</td>
-                    <td>{{ entity.currency }}</td>
+                    <td class="mono">{{ i.number }}</td>
+                    <td>{{ i.customer }}</td>
+                    <td>{{ i.due|date:"M j, Y" }}</td>
+                    <td class="num neg">USD {{ i.balance|money }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-        {% if pending_entries %}
-        <div style="margin-top: 22px; padding: 14px; background: #fef3c7; border-radius: 6px; font-size: 13px; color: #92400e;">
-            <strong>⏳ {{ pending_entries|length }} journal entr{{ pending_entries|length|pluralize:"y,ies" }} pending approval.</strong>
-            <a class="btn-link" style="color: #92400e;" href="{% url 'core:journal_entries' %}">Review now →</a>
-        </div>
-        {% endif %}
-    </div>
+    </section>
+    {% endif %}
+
 </div>
 {% endblock %}

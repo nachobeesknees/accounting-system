@@ -2,51 +2,60 @@
 {% load humanize_money %}
 
 {% block title %}Chart of Accounts{% endblock %}
+{% block breadcrumb %}Chart of Accounts{% endblock %}
 
 {% block content %}
-<div class="section">
-    <h1>Chart of Accounts</h1>
-    <p class="subtitle">{{ account_groups|length }} account categories &middot; balances as of period close</p>
-</div>
-
-{% for type, accounts in account_groups %}
-<div class="card" style="margin-bottom: 22px;">
-    <div class="section-header">
-        <h2>
-            {% if type == 'Asset' %}<span class="badge asset">{{ type }}</span>
-            {% elif type == 'Liability' %}<span class="badge liability">{{ type }}</span>
-            {% elif type == 'Equity' %}<span class="badge equity">{{ type }}</span>
-            {% elif type == 'Revenue' %}<span class="badge revenue">{{ type }}</span>
-            {% elif type == 'Expense' %}<span class="badge expense">{{ type }}</span>
-            {% else %}{{ type }}{% endif %}
-            <span style="margin-left: 8px; color: var(--muted); font-size: 14px;">({{ accounts|length }} accounts)</span>
-        </h2>
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="header-baseline">
+            <h1>Chart of Accounts</h1>
+            <span class="meta">{{ all_count }} accounts in the GL</span>
+        </div>
     </div>
-
-    <table>
-        <thead>
-            <tr>
-                <th style="width: 100px;">Code</th>
-                <th>Account</th>
-                <th class="num">Balance</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for account in accounts %}
-            <tr>
-                <td><strong>{{ account.code }}</strong></td>
-                <td>{{ account.name }}</td>
-                <td class="num">
-                    {% if account.balance < 0 %}
-                        <span style="color: var(--danger);">$({{ account.balance|abs_money }})</span>
-                    {% else %}
-                        ${{ account.balance|money }}
-                    {% endif %}
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
 </div>
-{% endfor %}
+
+<div class="toolbar">
+    <label>Filter:</label>
+    <a class="btn {% if not type_filter %}btn-primary{% endif %}" href="{% url 'core:chart_of_accounts' %}">All</a>
+    <a class="btn {% if type_filter == 'asset' %}btn-primary{% endif %}" href="?type=asset">Assets</a>
+    <a class="btn {% if type_filter == 'liability' %}btn-primary{% endif %}" href="?type=liability">Liabilities</a>
+    <a class="btn {% if type_filter == 'equity' %}btn-primary{% endif %}" href="?type=equity">Equity</a>
+    <a class="btn {% if type_filter == 'revenue' %}btn-primary{% endif %}" href="?type=revenue">Revenue</a>
+    <a class="btn {% if type_filter == 'expense' %}btn-primary{% endif %}" href="?type=expense">Expense</a>
+</div>
+
+<div class="page-body" style="display: flex; flex-direction: column; gap: 14px;">
+    {% for type, accounts in account_groups %}
+    <section class="card">
+        <div class="card-head">
+            <h3 style="display: inline-flex; align-items: center; gap: 10px;">
+                {{ type|title }}
+                <span class="meta" style="font-weight: 400; color: var(--ink-4); font-size: 11.5px;">{{ accounts|length }} accounts</span>
+            </h3>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 90px;">Code</th>
+                    <th>Name</th>
+                    <th>Sub-type</th>
+                    <th>Normal</th>
+                    <th class="num">Balance (USD)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for a in accounts %}
+                <tr>
+                    <td class="mono">{{ a.code }}</td>
+                    <td>{{ a.name }}</td>
+                    <td><span style="color: var(--ink-3); font-size: 11.5px;">{{ a.sub_type|status_label }}</span></td>
+                    <td><span style="color: var(--ink-3); font-size: 11.5px;">{{ a.normal|title }}</span></td>
+                    <td class="num {% if a.balance < 0 %}neg{% endif %}">{{ a.balance|paren_neg }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    {% endfor %}
+</div>
 {% endblock %}

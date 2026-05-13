@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% load humanize_money %}
+
+{% block title %}Fiscal Periods{% endblock %}
+{% block breadcrumb %}Fiscal Periods{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="header-baseline">
+            <h1>Fiscal Periods</h1>
+            <span class="meta">{{ rows|length }} configured</span>
+        </div>
+        <div class="header-actions">
+            <a class="btn btn-primary" href="#">+ New period</a>
+        </div>
+    </div>
+</div>
+
+<div class="page-body">
+<section class="card">
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in rows %}
+            <tr>
+                <td class="mono">{{ p.name }}</td>
+                <td>{{ p.start|date:"M j, Y" }}</td>
+                <td>{{ p.end|date:"M j, Y" }}</td>
+                <td><span class="pill {{ p.status|status_pill }}">{{ p.status|status_label }}</span></td>
+                <td>
+                    {% if p.status == 'open' %}
+                        <a class="btn btn-ghost" href="#">Close period</a>
+                    {% elif p.status == 'closed' %}
+                        <a class="btn btn-ghost" href="#">Re-open</a>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</section>
+</div>
+{% endblock %}

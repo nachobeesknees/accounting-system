@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% load humanize_money %}
+
+{% block title %}Reconciliation{% endblock %}
+{% block breadcrumb %}Reconciliation{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="page-header-row">
+        <div class="header-baseline">
+            <h1>Bank Reconciliation</h1>
+            <span class="meta">{{ account.name }} · {{ account.institution }} ····{{ account.last_four }}</span>
+        </div>
+    </div>
+</div>
+
+<div class="page-body" style="display: flex; flex-direction: column; gap: 14px;">
+
+    <div class="grid cols-3">
+        <div class="kpi">
+            <div class="label">Book balance</div>
+            <div class="value">USD {{ book_balance|money }}</div>
+            <div class="sub">GL account {{ account.account }}</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Cleared</div>
+            <div class="value">USD {{ cleared|money }}</div>
+            <div class="sub">{{ reconciled|length }} matched transactions</div>
+        </div>
+        <div class="kpi">
+            <div class="label">Outstanding</div>
+            <div class="value {% if outstanding < 0 %}neg{% endif %}">USD {{ outstanding|money }}</div>
+            <div class="sub">{{ unreconciled|length }} unmatched</div>
+        </div>
+    </div>
+
+    <section class="card">
+        <div class="card-head">
+            <h3>Unreconciled bank transactions</h3>
+            <div class="card-actions"><span class="pill pending">{{ unreconciled|length }} items</span></div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Reference</th>
+                    <th class="num">Amount</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in unreconciled %}
+                <tr>
+                    <td>{{ t.date|date:"M j, Y" }}</td>
+                    <td>{{ t.description }}</td>
+                    <td class="mono"><span style="color: var(--ink-3);">{{ t.reference }}</span></td>
+                    <td class="num {% if t.amount < 0 %}neg{% endif %}">{{ t.amount|paren_neg }}</td>
+                    <td><a class="btn btn-ghost" href="#">Match →</a></td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="empty">Everything is reconciled. 🎉</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="card">
+        <div class="card-head"><h3>Reconciled transactions</h3></div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Matched JE</th>
+                    <th class="num">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in reconciled %}
+                <tr>
+                    <td>{{ t.date|date:"M j, Y" }}</td>
+                    <td>{{ t.description }}</td>
+                    <td class="mono">{% if t.match %}<a href="{% url 'core:journal_entry_detail' t.match %}">{{ t.match }}</a>{% else %}—{% endif %}</td>
+                    <td class="num {% if t.amount < 0 %}neg{% endif %}">{{ t.amount|paren_neg }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+</div>
+{% endblock %}
