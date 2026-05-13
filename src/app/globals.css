@@ -109,6 +109,31 @@ body {
   color: var(--ink);
 }
 
+/* --------------------------- Skeleton shimmer -------------------------- */
+
+@keyframes tw-skeleton-shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+.tw-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--rail) 0%,
+    var(--hover) 50%,
+    var(--rail) 100%
+  );
+  background-size: 200px 100%;
+  background-repeat: no-repeat;
+  animation: tw-skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tw-skeleton {
+    animation: none;
+  }
+}
+
 /* ------------------------------ App shell ------------------------------- */
 
 .app-shell {
