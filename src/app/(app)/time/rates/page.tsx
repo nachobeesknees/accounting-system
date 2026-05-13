@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -95,9 +96,14 @@ export default async function Page({
                       <TD>
                         <form action={deleteRateAction}>
                           <input type="hidden" name="id" value={r.id} />
-                          <Button variant="ghost" type="submit">
+                          <ConfirmButton
+                            variant="ghost"
+                            title="Remove rate?"
+                            body="Time entries that have already been priced keep their billed rate. New entries will fall back to the next-best matching rate."
+                            confirmLabel="Remove rate"
+                          >
                             Remove
-                          </Button>
+                          </ConfirmButton>
                         </form>
                       </TD>
                     </TR>

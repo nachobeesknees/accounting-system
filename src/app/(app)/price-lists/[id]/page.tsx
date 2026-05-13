@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -234,9 +235,14 @@ export default async function Page({
                       <form action={deleteEntryAction}>
                         <input type="hidden" name="id" value={e.id} />
                         <input type="hidden" name="priceListId" value={priceList.id} />
-                        <Button variant="ghost" type="submit">
+                        <ConfirmButton
+                          variant="ghost"
+                          title={`Remove ${e.label}?`}
+                          body="Removes this entry from the price list. Existing assignments that priced off this entry continue to use their captured rate."
+                          confirmLabel="Remove entry"
+                        >
                           Remove
-                        </Button>
+                        </ConfirmButton>
                       </form>
                     </TD>
                   </TR>
@@ -301,9 +307,14 @@ export default async function Page({
                 Deleting this price list removes its entries permanently. Prefer
                 marking inactive for compliance trails.
               </span>
-              <Button variant="danger" type="submit">
+              <ConfirmButton
+                variant="danger"
+                title={`Delete price list ${priceList.name}?`}
+                body="Permanently removes this price list and all of its entries. Customer assignments referencing it will fall back to default pricing."
+                confirmLabel="Delete price list"
+              >
                 Delete price list
-              </Button>
+              </ConfirmButton>
             </div>
           </Card>
         </form>

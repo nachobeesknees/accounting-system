@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { KV, KVGrid } from "@/components/ui/KV";
@@ -84,9 +85,14 @@ export default async function Page({
           <form action={voidEntry}>
             <input type="hidden" name="entryId" value={entry.id} />
             <input type="hidden" name="reason" value="Voided from detail" />
-            <Button variant="danger" type="submit">
+            <ConfirmButton
+              variant="danger"
+              title={`Void entry ${entry.entryNumber}?`}
+              body="The draft will be marked void. Posted balances are unaffected since the entry was never posted."
+              confirmLabel="Void entry"
+            >
               Void
-            </Button>
+            </ConfirmButton>
           </form>
         </>
       )}
@@ -94,9 +100,14 @@ export default async function Page({
         <form action={voidEntry}>
           <input type="hidden" name="entryId" value={entry.id} />
           <input type="hidden" name="reason" value="Voided from detail" />
-          <Button variant="danger" type="submit">
+          <ConfirmButton
+            variant="danger"
+            title={`Void entry ${entry.entryNumber}?`}
+            body="This reverses the posted entry. Account balances will be adjusted as of today. The original entry stays in the audit trail."
+            confirmLabel="Void entry"
+          >
             Void
-          </Button>
+          </ConfirmButton>
         </form>
       )}
     </>

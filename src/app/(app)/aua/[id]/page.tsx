@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -315,9 +316,14 @@ export default async function Page({
               <span style={{ color: "var(--ink-3)" }}>
                 Deleting this asset removes all its snapshots permanently.
               </span>
-              <Button variant="danger" type="submit">
+              <ConfirmButton
+                variant="danger"
+                title={`Delete ${asset.name}?`}
+                body="This permanently removes the asset and every historical snapshot. Past AUA roll-ups stay intact; future reports will exclude this asset."
+                confirmLabel="Delete asset"
+              >
                 Delete asset
-              </Button>
+              </ConfirmButton>
             </div>
           </Card>
         </form>

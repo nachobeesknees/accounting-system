@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -219,9 +220,14 @@ export default async function Page({
                       <form action={deleteLinkAction}>
                         <input type="hidden" name="id" value={link.id} />
                         <input type="hidden" name="contactId" value={contact.id} />
-                        <Button variant="ghost" type="submit">
+                        <ConfirmButton
+                          variant="ghost"
+                          title="Remove link?"
+                          body="Unlinks this contact from the related record. The contact and the record both stay."
+                          confirmLabel="Remove link"
+                        >
                           Remove
-                        </Button>
+                        </ConfirmButton>
                       </form>
                     </TD>
                   </TR>
@@ -278,9 +284,14 @@ export default async function Page({
                 Deleting a contact removes all its links. Prefer marking
                 inactive for compliance trails.
               </span>
-              <Button variant="danger" type="submit">
+              <ConfirmButton
+                variant="danger"
+                title={`Delete ${contact.name}?`}
+                body="Permanently removes this contact and every link to entities, accounts, invoices, bills, or assets. Prefer marking inactive for compliance trails."
+                confirmLabel="Delete contact"
+              >
                 Delete contact
-              </Button>
+              </ConfirmButton>
             </div>
           </Card>
         </form>

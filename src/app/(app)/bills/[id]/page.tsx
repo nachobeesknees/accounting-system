@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
+import { Banner } from "@/components/ui/Banner";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField } from "@/components/ui/Field";
 import { KV, KVGrid } from "@/components/ui/KV";
@@ -83,9 +85,14 @@ export default async function Page({
       {canVoid && (
         <form action={voidBillAction} style={{ display: "inline-flex" }}>
           <input type="hidden" name="billId" value={bill.id} />
-          <Button variant="danger" type="submit">
+          <ConfirmButton
+            variant="danger"
+            title={`Void bill ${bill.billNumber}?`}
+            body="This reverses the journal entry and marks the bill as void. Already-recorded payments stay attached, but no further payments can be applied."
+            confirmLabel="Void bill"
+          >
             Void
-          </Button>
+          </ConfirmButton>
         </form>
       )}
     </>

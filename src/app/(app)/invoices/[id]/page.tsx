@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { KV, KVGrid } from "@/components/ui/KV";
@@ -218,9 +219,14 @@ export default async function Page({
         <form action={voidInvoiceAction}>
           <input type="hidden" name="invoiceId" value={invoice.id} />
           <input type="hidden" name="reason" value="Voided from detail view" />
-          <Button variant="danger" type="submit">
+          <ConfirmButton
+            variant="danger"
+            title={`Void invoice ${invoice.invoiceNumber}?`}
+            body="This reverses the journal entry and marks the invoice as void. Already-recorded payments stay attached, but no further payments can be applied."
+            confirmLabel="Void invoice"
+          >
             Void
-          </Button>
+          </ConfirmButton>
         </form>
       )}
     </>
@@ -516,9 +522,14 @@ export default async function Page({
                   placeholder="Explain why you're rejecting this invoice…"
                 />
                 <div className="flex justify-end">
-                  <Button variant="danger" type="submit">
+                  <ConfirmButton
+                    variant="danger"
+                    title="Reject this invoice?"
+                    body="The invoice will be returned to draft and the requester will see your reason. They can revise and resubmit."
+                    confirmLabel="Reject invoice"
+                  >
                     Reject
-                  </Button>
+                  </ConfirmButton>
                 </div>
               </div>
             </form>

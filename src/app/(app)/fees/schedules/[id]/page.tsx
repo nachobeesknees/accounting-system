@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
@@ -152,9 +153,14 @@ export default async function Page({
                 Deleting a schedule leaves its existing entity assignments in
                 place (they retain their captured amount/hours).
               </span>
-              <Button variant="danger" type="submit">
+              <ConfirmButton
+                variant="danger"
+                title="Delete fee schedule?"
+                body="Existing entity assignments stay (they keep their captured amount and hours), but new assignments can no longer choose this schedule."
+                confirmLabel="Delete schedule"
+              >
                 Delete schedule
-              </Button>
+              </ConfirmButton>
             </div>
           </Card>
         </form>

@@ -3,6 +3,7 @@
 import { useFormState } from "react-dom";
 
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import {
   Field,
@@ -199,22 +200,16 @@ export function EditRecurringForm({
         </div>
       </form>
 
-      <form
-        action={deleteRecurringAction}
-        onSubmit={(e) => {
-          if (
-            !window.confirm(
-              "Delete this recurring payment? This cannot be undone.",
-            )
-          ) {
-            e.preventDefault();
-          }
-        }}
-      >
+      <form action={deleteRecurringAction}>
         <input type="hidden" name="id" value={payment.id} />
-        <Button variant="danger" type="submit">
+        <ConfirmButton
+          variant="danger"
+          title="Delete recurring payment?"
+          body="This permanently removes the recurring template. Past forecast runs that referenced it stay in history."
+          confirmLabel="Delete"
+        >
           Delete recurring payment
-        </Button>
+        </ConfirmButton>
       </form>
     </>
   );

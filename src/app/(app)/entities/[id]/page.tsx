@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -308,9 +309,14 @@ export default async function Page({
                 Deleting an entity is permanent. Prefer setting status to{" "}
                 <em>dissolved</em> for compliance trails.
               </span>
-              <Button variant="danger" type="submit">
+              <ConfirmButton
+                variant="danger"
+                title={`Delete entity ${entity.code}?`}
+                body={`Permanently removes ${entity.name}. Will fail if any journal entry, invoice, bill, or asset still references this entity. Prefer setting status to "dissolved" for compliance trails.`}
+                confirmLabel="Delete entity"
+              >
                 Delete entity
-              </Button>
+              </ConfirmButton>
             </div>
           </Card>
         </form>

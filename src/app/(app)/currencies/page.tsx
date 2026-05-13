@@ -1,5 +1,7 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
+import { Banner } from "@/components/ui/Banner";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField } from "@/components/ui/Field";
@@ -34,30 +36,8 @@ export default async function Page({
       />
 
       <div className="px-6 my-3.5 flex flex-col gap-3.5 pb-8">
-        {error && (
-          <div
-            className="rounded-md px-3 py-2 text-[12.5px]"
-            style={{
-              background: "var(--p-review-bg)",
-              color: "var(--p-review-fg)",
-              border: "1px solid var(--p-review-fg)",
-            }}
-          >
-            {error}
-          </div>
-        )}
-        {saved && (
-          <div
-            className="rounded-md px-3 py-2 text-[12.5px]"
-            style={{
-              background: "var(--p-active-bg)",
-              color: "var(--p-active-fg)",
-              border: "1px solid var(--p-active-fg)",
-            }}
-          >
-            Saved.
-          </div>
-        )}
+        {error && <Banner tone="error">{error}</Banner>}
+        {saved && <Banner tone="success">Saved.</Banner>}
 
         <Card title="Currencies">
           {currencies.length === 0 ? (
@@ -115,9 +95,14 @@ export default async function Page({
                         {!c.isBase && (
                           <form action={deleteCurrencyAction}>
                             <input type="hidden" name="code" value={c.code} />
-                            <Button variant="ghost" type="submit">
+                            <ConfirmButton
+                              variant="ghost"
+                              title={`Remove currency ${c.code}?`}
+                              body="This deletes the currency. It will fail if any account, customer, vendor, or transaction still references it."
+                              confirmLabel="Remove"
+                            >
                               Remove
-                            </Button>
+                            </ConfirmButton>
                           </form>
                         )}
                       </div>
@@ -184,9 +169,14 @@ export default async function Page({
                     <TD>
                       <form action={deleteFxRateAction}>
                         <input type="hidden" name="id" value={r.id} />
-                        <Button variant="ghost" type="submit">
+                        <ConfirmButton
+                          variant="ghost"
+                          title="Remove FX rate snapshot?"
+                          body={`Removes the ${r.currencyCode} rate dated ${formatDate(r.rateDate)}. Reports that referenced this snapshot will fall back to the next-latest rate.`}
+                          confirmLabel="Remove"
+                        >
                           Remove
-                        </Button>
+                        </ConfirmButton>
                       </form>
                     </TD>
                   </TR>

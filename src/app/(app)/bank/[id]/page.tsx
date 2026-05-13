@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -321,9 +322,14 @@ export default async function Page({
                       <form action={deleteSignerAction}>
                         <input type="hidden" name="id" value={s.id} />
                         <input type="hidden" name="bankAccountId" value={bank.id} />
-                        <Button variant="ghost" type="submit">
+                        <ConfirmButton
+                          variant="ghost"
+                          title={`Remove ${s.name}?`}
+                          body="Removes this signer from the bank account. They lose any authority recorded here."
+                          confirmLabel="Remove signer"
+                        >
                           Remove
-                        </Button>
+                        </ConfirmButton>
                       </form>
                     </TD>
                   </TR>
@@ -386,9 +392,14 @@ export default async function Page({
                 Deleting this bank account removes all signers and unlinks any
                 bank transactions referencing it.
               </span>
-              <Button variant="danger" type="submit">
+              <ConfirmButton
+                variant="danger"
+                title={`Delete ${bank.name}?`}
+                body="This removes the bank account, its signers, and unlinks any bank transactions referencing it. Reconciliation history attached to those transactions stays in the audit trail."
+                confirmLabel="Delete bank account"
+              >
                 Delete bank account
-              </Button>
+              </ConfirmButton>
             </div>
           </Card>
         </form>

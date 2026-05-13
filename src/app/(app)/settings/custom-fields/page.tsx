@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -187,9 +188,14 @@ export default async function Page({
                         <TD>
                           <form action={deleteDefinitionAction}>
                             <input type="hidden" name="id" value={d.id} />
-                            <Button variant="ghost" type="submit">
+                            <ConfirmButton
+                              variant="ghost"
+                              title={`Remove custom field "${d.label}"?`}
+                              body="Deletes the field definition and every value recorded against it on existing records. Cannot be undone."
+                              confirmLabel="Remove field"
+                            >
                               Remove
-                            </Button>
+                            </ConfirmButton>
                           </form>
                         </TD>
                       </TR>

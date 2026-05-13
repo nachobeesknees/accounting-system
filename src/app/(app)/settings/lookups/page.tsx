@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row } from "@/components/ui/Field";
@@ -129,9 +130,14 @@ export default async function Page({
                       {!t.isSystem && (
                         <form action={deleteTableAction}>
                           <input type="hidden" name="key" value={t.key} />
-                          <Button variant="ghost" type="submit">
+                          <ConfirmButton
+                            variant="ghost"
+                            title={`Remove lookup table "${t.label}"?`}
+                            body="Deletes the table and every value inside it. Records using these values will see them as raw codes."
+                            confirmLabel="Remove table"
+                          >
                             Remove
-                          </Button>
+                          </ConfirmButton>
                         </form>
                       )}
                     </TD>
@@ -236,9 +242,14 @@ export default async function Page({
                           <form action={deleteValueAction}>
                             <input type="hidden" name="id" value={v.id} />
                             <input type="hidden" name="tableKey" value={v.tableKey} />
-                            <Button variant="ghost" type="submit">
+                            <ConfirmButton
+                              variant="ghost"
+                              title={`Remove value "${v.label}"?`}
+                              body="Records currently set to this value will keep the code but lose the human label."
+                              confirmLabel="Remove value"
+                            >
                               Remove
-                            </Button>
+                            </ConfirmButton>
                           </form>
                         )}
                       </TD>
