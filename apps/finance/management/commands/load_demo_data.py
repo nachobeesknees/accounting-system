@@ -16,7 +16,6 @@ Usage:
 
 from django.core.management.base import BaseCommand
 from django.contrib.auth.models import User
-from apps.core.models import UserEntityPermission
 from apps.finance.models import Entity, Account, Period, JournalEntry, JournalLine
 from decimal import Decimal
 from datetime import date, timedelta
@@ -128,16 +127,8 @@ class Command(BaseCommand):
             self.stdout.write(f"  ✓ OpCo: {entity.code} - {entity.name} ({entity.functional_currency})")
 
         # Grant user permissions to all entities
-        self.stdout.write(self.style.WARNING("Assigning user permissions..."))
-        for user_role, user in users.items():
-            for entity in entities.values():
-                perm, created = UserEntityPermission.objects.get_or_create(
-                    user=user,
-                    entity=entity,
-                    defaults={"role": "admin" if user_role == "admin" else "editor"},
-                )
-                if created:
-                    self.stdout.write(f"  ✓ {user.username} → {entity.code}")
+        # Note: UserEntityPermission model not yet implemented, skipping for now
+        self.stdout.write(self.style.WARNING("Skipping user entity permissions (model not implemented)..."))
 
         # Create periods for all entities
         self.stdout.write(self.style.WARNING("Creating periods..."))
