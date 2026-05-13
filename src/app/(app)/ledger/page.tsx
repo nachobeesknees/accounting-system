@@ -1,0 +1,227 @@
+import Link from "next/link";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Empty } from "@/components/ui/Empty";
+import { SelectField } from "@/components/ui/Field";
+import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import {
+  getAccountByCode,
+  getAccounts,
+  getJournalEntries,
+} from "@/lib/data";
+import { formatUSD, parseAmount } from "@/lib/money";
+
+function formatRowDate(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ account?: string }>;
+}) {
+  const params = await searchParams;
+  const accounts = getAccounts();
+  const defaultCode = accounts[0]?.code ?? "";
+  const selectedCode = params.account ?? defaultCode;
+  const account = getAccountByCode(selectedCode) ?? accounts[0];
+
+  // Walk posted JE lines for this account in date-ascending order, accumulating
+  // a signed running balance using the account's normal balance.
+  type Row = {
+    key: string;
+    date: string;
+    entryNumber: string;
+    description: string;
+    debit: number;
+    credit: number;
+    running: number;
+  };
+
+  const rows: Row[] = [];
+  let running = 0;
+  if (account) {
+    const sign = account.normalBalance === "debit" ? 1 : -1;
+    const entries = getJournalEntries()
+      .filter((e) => e.status === "posted")
+      .slice()
+      .sort((a, b) => a.entryDate.localeCompare(b.entryDate));
+
+    for (const e of entries) {
+      for (const line of e.lines) {
+        if (line.accountId !== account.id) continue;
+        const debit = parseAmount(line.debit);
+        const credit = parseAmount(line.credit);
+        running += (debit - credit) * sign;
+        rows.push({
+          key: line.id,
+          date: e.entryDate,
+          entryNumber: e.entryNumber,
+          description: line.description ?? e.description ?? "",
+          debit,
+          credit,
+          running,
+        });
+      }
+    }
+  }
+
+  const closing = running;
+
+  return (
+    <>
+      <PageHeader
+        title="General Ledger"
+        meta="All posted activity for the selected account"
+      />
+
+      <div
+        className="px-6 py-2 flex items-end justify-between gap-4 flex-wrap"
+        style={{
+          background: "var(--rail)",
+          borderBottom: "1px solid var(--line)",
+        }}
+      >
+        <form method="GET" className="flex items-end gap-2">
+          <SelectField
+            label="Account"
+            name="account"
+            defaultValue={account?.code ?? ""}
+          >
+            {accounts.map((a) => (
+              <option key={a.id} value={a.code}>
+                {a.code} — {a.name}
+              </option>
+            ))}
+          </SelectField>
+          <Button variant="primary" type="submit">
+            Apply
+          </Button>
+        </form>
+
+        {account && (
+          <div
+            className="text-[12.5px] flex gap-3 items-center"
+            style={{ color: "var(--ink-3)" }}
+          >
+            <span>
+              Normal balance:{" "}
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  color: "var(--ink)",
+                }}
+              >
+                {account.normalBalance}
+              </span>
+            </span>
+            <span style={{ color: "var(--ink-4)" }}>·</span>
+            <span>
+              Closing:{" "}
+              <span
+                style={{
+                  fontFamily: "var(--font-mono)",
+                  fontVariantNumeric: "tabular-nums",
+                  color: closing < 0 ? "var(--p-review-fg)" : "var(--ink)",
+                }}
+              >
+                {formatUSD(closing, { paren: true })}
+              </span>
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="px-6 py-3.5 pb-8">
+        <Card
+          title={
+            account ? (
+              <span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    color: "var(--ink)",
+                  }}
+                >
+                  {account.code}
+                </span>{" "}
+                — {account.name}
+              </span>
+            ) : (
+              "Ledger"
+            )
+          }
+        >
+          {rows.length === 0 ? (
+            <Empty
+              title="No posted activity"
+              body="This account has no posted journal lines yet."
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Date</TH>
+                  <TH>Entry #</TH>
+                  <TH>Description</TH>
+                  <TH num>Debit</TH>
+                  <TH num>Credit</TH>
+                  <TH num>Running balance</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {rows.map((r) => (
+                  <TR key={r.key}>
+                    <TD>{formatRowDate(r.date)}</TD>
+                    <TD mono>
+                      <Link
+                        href={`/journal/${r.entryNumber}`}
+                        style={{
+                          color: "var(--ink)",
+                          textDecoration: "none",
+                        }}
+                      >
+                        {r.entryNumber}
+                      </Link>
+                    </TD>
+                    <TD>{r.description}</TD>
+                    <TD num>
+                      {r.debit === 0 ? "—" : formatUSD(r.debit)}
+                    </TD>
+                    <TD num>
+                      {r.credit === 0 ? "—" : formatUSD(r.credit)}
+                    </TD>
+                    <TD num neg={r.running < 0}>
+                      {formatUSD(r.running, { paren: true })}
+                    </TD>
+                  </TR>
+                ))}
+                <TR total hover={false}>
+                  <TD
+                    colSpan={5}
+                    style={{
+                      fontWeight: 600,
+                      color: "var(--ink)",
+                    }}
+                  >
+                    Closing balance
+                  </TD>
+                  <TD num neg={closing < 0}>
+                    {formatUSD(closing, { paren: true })}
+                  </TD>
+                </TR>
+              </TBody>
+            </Table>
+          )}
+        </Card>
+      </div>
+    </>
+  );
+}

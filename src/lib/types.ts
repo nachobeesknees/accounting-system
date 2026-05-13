@@ -1,0 +1,176 @@
+export type AccountType = "asset" | "liability" | "equity" | "revenue" | "expense";
+
+export type Account = {
+  id: string;
+  code: string;
+  name: string;
+  accountType: AccountType;
+  subType: string | null;
+  normalBalance: "debit" | "credit";
+  isActive: boolean;
+  currencyCode: string;
+};
+
+export type FiscalPeriod = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: "open" | "closing" | "closed";
+};
+
+export type JournalEntryStatus = "draft" | "posted" | "void";
+
+export type JournalLine = {
+  id: string;
+  journalEntryId: string;
+  lineNumber: number;
+  accountId: string;
+  description: string | null;
+  debit: string;
+  credit: string;
+};
+
+export type JournalEntry = {
+  id: string;
+  entryNumber: string;
+  entryDate: string;
+  fiscalPeriodId: string | null;
+  description: string | null;
+  reference: string | null;
+  source: "manual" | "invoice" | "bill" | "reconciliation";
+  status: JournalEntryStatus;
+  postedAt: string | null;
+  postedBy: string | null;
+  voidedAt: string | null;
+  voidReason: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lines: JournalLine[];
+};
+
+export type Customer = {
+  id: string;
+  name: string;
+  code: string;
+  email: string | null;
+  phone: string | null;
+  billingAddress: string | null;
+  paymentTerms: number;
+  isActive: boolean;
+  notes: string | null;
+};
+
+export type InvoiceStatus = "draft" | "sent" | "partial" | "paid" | "overdue" | "void";
+
+export type InvoiceLine = {
+  id: string;
+  invoiceId: string;
+  lineNumber: number;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  amount: string;
+  accountId: string;
+};
+
+export type Invoice = {
+  id: string;
+  invoiceNumber: string;
+  customerId: string;
+  invoiceDate: string;
+  dueDate: string;
+  status: InvoiceStatus;
+  subtotal: string;
+  taxAmount: string;
+  total: string;
+  amountPaid: string;
+  balanceDue: string;
+  currencyCode: string;
+  notes: string | null;
+  journalEntryId: string | null;
+  lines: InvoiceLine[];
+};
+
+export type Vendor = {
+  id: string;
+  name: string;
+  code: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  paymentTerms: number;
+  defaultExpenseAccountId: string | null;
+  isActive: boolean;
+  notes: string | null;
+};
+
+export type BillStatus = "draft" | "approved" | "partial" | "paid" | "overdue" | "void";
+
+export type BillLine = {
+  id: string;
+  billId: string;
+  lineNumber: number;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  amount: string;
+  accountId: string;
+};
+
+export type Bill = {
+  id: string;
+  billNumber: string;
+  vendorId: string;
+  billDate: string;
+  dueDate: string;
+  status: BillStatus;
+  subtotal: string;
+  taxAmount: string;
+  total: string;
+  amountPaid: string;
+  balanceDue: string;
+  currencyCode: string;
+  notes: string | null;
+  journalEntryId: string | null;
+  lines: BillLine[];
+};
+
+export type BankAccount = {
+  id: string;
+  name: string;
+  accountId: string;
+  institution: string | null;
+  lastFour: string | null;
+  currencyCode: string;
+  isActive: boolean;
+};
+
+export type BankTransaction = {
+  id: string;
+  bankAccountId: string;
+  transactionDate: string;
+  description: string;
+  amount: string;
+  reference: string | null;
+  isReconciled: boolean;
+  reconciledAt: string | null;
+  journalEntryId: string | null;
+};
+
+export type User = {
+  id: string;
+  email: string;
+  fullName: string;
+  role: string;
+  isSuperuser: boolean;
+};
+
+export type SessionUser = {
+  userId: string;
+  email: string;
+  fullName: string;
+  role: string;
+  isSuperuser: boolean;
+};
