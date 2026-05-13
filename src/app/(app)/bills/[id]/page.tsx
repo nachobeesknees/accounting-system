@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Banner } from "@/components/ui/Banner";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -260,14 +261,10 @@ export default async function Page({
               <input type="hidden" name="billId" value={bill.id} />
               <div className="flex flex-col gap-3">
                 <Row>
-                  <Field
+                  <MoneyInput
                     label="Amount"
                     name="amount"
-                    type="number"
-                    step="0.01"
-                    min="0.01"
                     required
-                    mono
                     defaultValue={balance.toFixed(2)}
                   />
                   <Field
