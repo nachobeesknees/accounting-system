@@ -51,8 +51,15 @@ export default async function Page({
     getEntities(),
     getCustomers(),
   ]);
-  const entity = entities.find((e) => e.id === asset.entityId);
-  const client = entity ? customers.find((c) => c.id === entity.clientId) : undefined;
+  const entity = asset.entityId
+    ? entities.find((e) => e.id === asset.entityId)
+    : undefined;
+  const client = entity
+    ? customers.find((c) => c.id === entity.clientId)
+    : asset.clientId
+      ? customers.find((c) => c.id === asset.clientId)
+      : undefined;
+  const directHold = !entity && !!asset.clientId;
 
   const today = new Date().toISOString().slice(0, 10);
   const latest = snapshots[0];
@@ -126,24 +133,30 @@ export default async function Page({
                   </Row>
                   <Row>
                     <SelectField
-                      label="Entity"
+                      label="Entity (preferred owner)"
                       name="entityId"
-                      required
-                      defaultValue={asset.entityId}
+                      defaultValue={asset.entityId ?? ""}
                     >
+                      <option value="">— Direct client hold (no entity) —</option>
                       {entities.map((e) => (
                         <option key={e.id} value={e.id}>
                           {e.code} — {e.name}
                         </option>
                       ))}
                     </SelectField>
-                    <Field
-                      label="Currency"
-                      name="currencyCode"
-                      mono
-                      defaultValue={asset.currencyCode}
-                      maxLength={3}
-                    />
+                    <SelectField
+                      label="Client (used when no entity)"
+                      name="clientId"
+                      defaultValue={asset.clientId ?? ""}
+                    >
+                      <option value="">— None —</option>
+                      {customers.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </SelectField>
+                    <div />
                   </Row>
                   <Row>
                     <Field

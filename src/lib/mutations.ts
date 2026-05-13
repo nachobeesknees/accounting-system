@@ -472,7 +472,8 @@ export type CreateAssetInput = {
     | "business_interest"
     | "intellectual_property"
     | "other";
-  entityId: string;
+  entityId?: string | null;
+  clientId?: string | null;
   currencyCode?: string;
   externalRef?: string | null;
   acquiredDate?: string | null;
@@ -480,6 +481,10 @@ export type CreateAssetInput = {
 };
 
 export async function createAsset(_user: SessionUser, input: CreateAssetInput) {
+  // Enforce ownership-chain invariant: must link to entity OR client.
+  if (!input.entityId && !input.clientId) {
+    throw new Error("Asset must belong to an entity or directly to a client.");
+  }
   const db = getDb();
   const id = uid("as");
   const [created] = await db
@@ -488,7 +493,8 @@ export async function createAsset(_user: SessionUser, input: CreateAssetInput) {
       id,
       name: input.name,
       kind: input.kind,
-      entityId: input.entityId,
+      entityId: input.entityId ?? null,
+      clientId: input.clientId ?? null,
       currencyCode: input.currencyCode ?? "USD",
       externalRef: input.externalRef ?? null,
       acquiredDate: input.acquiredDate ?? null,
@@ -512,6 +518,7 @@ export async function updateAsset(
       ...(input.name !== undefined && { name: input.name }),
       ...(input.kind !== undefined && { kind: input.kind }),
       ...(input.entityId !== undefined && { entityId: input.entityId }),
+      ...(input.clientId !== undefined && { clientId: input.clientId }),
       ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
       ...(input.externalRef !== undefined && { externalRef: input.externalRef }),
       ...(input.acquiredDate !== undefined && { acquiredDate: input.acquiredDate }),

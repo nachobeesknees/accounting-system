@@ -7,7 +7,12 @@ import { Empty } from "@/components/ui/Empty";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { getCustomerById, getEntitiesByClientId, getInvoices } from "@/lib/data";
+import {
+  getAssetsByClientId,
+  getCustomerById,
+  getEntitiesByClientId,
+  getInvoices,
+} from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
 
@@ -20,9 +25,10 @@ export default async function Page({
   const customer = await getCustomerById(id);
   if (!customer) notFound();
 
-  const [allInvoices, entities] = await Promise.all([
+  const [allInvoices, entities, directAssets] = await Promise.all([
     getInvoices(),
     getEntitiesByClientId(customer.id),
+    getAssetsByClientId(customer.id),
   ]);
   const customerInvoices = allInvoices
     .filter((inv) => inv.customerId === customer.id)
@@ -105,6 +111,50 @@ export default async function Page({
           </KVGrid>
         </Card>
       </div>
+
+      {directAssets.length > 0 && (
+        <div className="px-6 mb-3.5">
+          <Card
+            title="Direct holdings (no entity wrapper)"
+            actions={
+              <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                {directAssets.length} asset{directAssets.length === 1 ? "" : "s"} held
+                directly by client
+              </span>
+            }
+          >
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Asset</TH>
+                  <TH>Class</TH>
+                  <TH>External ref</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {directAssets.map((a) => (
+                  <TR key={a.id}>
+                    <TD>
+                      <Link
+                        href={`/aua/${a.id}`}
+                        style={{ color: "var(--ink)", textDecoration: "none" }}
+                      >
+                        {a.name}
+                      </Link>
+                    </TD>
+                    <TD style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                      {a.kind}
+                    </TD>
+                    <TD mono style={{ color: "var(--ink-3)" }}>
+                      {a.externalRef ?? "—"}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </Card>
+        </div>
+      )}
 
       <div className="px-6 mb-3.5">
         <Card

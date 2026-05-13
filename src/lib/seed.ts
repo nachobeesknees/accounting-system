@@ -124,32 +124,35 @@ export const ENTITIES: Entity[] = [
 
 export const ASSETS: Asset[] = [
   // Pumpernickel Holdings LLC
-  { id: id("as-001"), name: "401 Pine Tower (Seattle)", kind: "real_estate", entityId: "e-001", currencyCode: "USD", externalRef: "King County 401-PINE", acquiredDate: D("2015-09-12"), notes: "Class A office, 84% leased" },
-  { id: id("as-002"), name: "Fidelity Brokerage — Operating", kind: "securities", entityId: "e-001", currencyCode: "USD", externalRef: "FID-X19022", acquiredDate: D("2013-01-04"), notes: null },
-  { id: id("as-003"), name: "Operating Cash (Treasury MMF)", kind: "cash", entityId: "e-001", currencyCode: "USD", externalRef: "MMF-9921", acquiredDate: D("2020-04-01"), notes: null },
+  { id: id("as-001"), name: "401 Pine Tower (Seattle)", kind: "real_estate", entityId: "e-001", clientId: null, currencyCode: "USD", externalRef: "King County 401-PINE", acquiredDate: D("2015-09-12"), notes: "Class A office, 84% leased" },
+  { id: id("as-002"), name: "Fidelity Brokerage — Operating", kind: "securities", entityId: "e-001", clientId: null, currencyCode: "USD", externalRef: "FID-X19022", acquiredDate: D("2013-01-04"), notes: null },
+  { id: id("as-003"), name: "Operating Cash (Treasury MMF)", kind: "cash", entityId: "e-001", clientId: null, currencyCode: "USD", externalRef: "MMF-9921", acquiredDate: D("2020-04-01"), notes: null },
   // Pumpernickel Family Trust
-  { id: id("as-004"), name: "Vanguard Trust Portfolio", kind: "securities", entityId: "e-002", currencyCode: "USD", externalRef: "VGD-T2014", acquiredDate: D("2014-11-20"), notes: "Diversified equity + fixed income" },
-  { id: id("as-005"), name: "Coastal Vineyard Property (Sonoma)", kind: "real_estate", entityId: "e-002", currencyCode: "USD", externalRef: "Sonoma-PIN-441-0019", acquiredDate: D("2016-06-15"), notes: "40-acre estate" },
+  { id: id("as-004"), name: "Vanguard Trust Portfolio", kind: "securities", entityId: "e-002", clientId: null, currencyCode: "USD", externalRef: "VGD-T2014", acquiredDate: D("2014-11-20"), notes: "Diversified equity + fixed income" },
+  { id: id("as-005"), name: "Coastal Vineyard Property (Sonoma)", kind: "real_estate", entityId: "e-002", clientId: null, currencyCode: "USD", externalRef: "Sonoma-PIN-441-0019", acquiredDate: D("2016-06-15"), notes: "40-acre estate" },
   // Snickerthorpe Master Trust
-  { id: id("as-006"), name: "Goldman Sachs Trust Account", kind: "securities", entityId: "e-003", currencyCode: "USD", externalRef: "GS-89441", acquiredDate: D("2009-04-10"), notes: null },
-  { id: id("as-007"), name: "Picasso — 'Femme au Chapeau' (1962)", kind: "art", entityId: "e-003", currencyCode: "USD", externalRef: null, acquiredDate: D("2011-10-22"), notes: "Stored at Crozier Vault, Long Island City" },
+  { id: id("as-006"), name: "Goldman Sachs Trust Account", kind: "securities", entityId: "e-003", clientId: null, currencyCode: "USD", externalRef: "GS-89441", acquiredDate: D("2009-04-10"), notes: null },
+  { id: id("as-007"), name: "Picasso — 'Femme au Chapeau' (1962)", kind: "art", entityId: "e-003", clientId: null, currencyCode: "USD", externalRef: null, acquiredDate: D("2011-10-22"), notes: "Stored at Crozier Vault, Long Island City" },
   // Snickerthorpe Real Estate LLC
-  { id: id("as-008"), name: "350 W 42nd St (Manhattan)", kind: "real_estate", entityId: "e-004", currencyCode: "USD", externalRef: "NYC Block-1031 Lot-22", acquiredDate: D("2016-08-30"), notes: "Mixed-use, retail + office" },
-  { id: id("as-009"), name: "120 Hawthorne (San Francisco)", kind: "real_estate", entityId: "e-004", currencyCode: "USD", externalRef: "SF-APN-3736-101", acquiredDate: D("2019-03-04"), notes: null },
+  { id: id("as-008"), name: "350 W 42nd St (Manhattan)", kind: "real_estate", entityId: "e-004", clientId: null, currencyCode: "USD", externalRef: "NYC Block-1031 Lot-22", acquiredDate: D("2016-08-30"), notes: "Mixed-use, retail + office" },
+  { id: id("as-009"), name: "120 Hawthorne (San Francisco)", kind: "real_estate", entityId: "e-004", clientId: null, currencyCode: "USD", externalRef: "SF-APN-3736-101", acquiredDate: D("2019-03-04"), notes: null },
   // Snickerthorpe Capital Partners
-  { id: id("as-010"), name: "Sequoia Fund XII LP Interest", kind: "private_equity", entityId: "e-005", currencyCode: "USD", externalRef: "SEQ-XII-LP-119", acquiredDate: D("2018-02-12"), notes: "12% LP commitment" },
+  { id: id("as-010"), name: "Sequoia Fund XII LP Interest", kind: "private_equity", entityId: "e-005", clientId: null, currencyCode: "USD", externalRef: "SEQ-XII-LP-119", acquiredDate: D("2018-02-12"), notes: "12% LP commitment" },
   // Mumblethrottle Holdings Inc.
-  { id: id("as-011"), name: "Mumblethrottle Operating Cash", kind: "cash", entityId: "e-006", currencyCode: "USD", externalRef: "BOA-OPER-9012", acquiredDate: D("2007-05-15"), notes: null },
-  { id: id("as-012"), name: "Mumblethrottle Brokerage Account", kind: "securities", entityId: "e-006", currencyCode: "USD", externalRef: "SCH-77104", acquiredDate: D("2008-01-08"), notes: null },
-  { id: id("as-013"), name: "MeritsoftCo (private holding)", kind: "business_interest", entityId: "e-006", currencyCode: "USD", externalRef: null, acquiredDate: D("2014-07-01"), notes: "51% ownership of SaaS portfolio company" },
+  { id: id("as-011"), name: "Mumblethrottle Operating Cash", kind: "cash", entityId: "e-006", clientId: null, currencyCode: "USD", externalRef: "BOA-OPER-9012", acquiredDate: D("2007-05-15"), notes: null },
+  { id: id("as-012"), name: "Mumblethrottle Brokerage Account", kind: "securities", entityId: "e-006", clientId: null, currencyCode: "USD", externalRef: "SCH-77104", acquiredDate: D("2008-01-08"), notes: null },
+  { id: id("as-013"), name: "MeritsoftCo (private holding)", kind: "business_interest", entityId: "e-006", clientId: null, currencyCode: "USD", externalRef: null, acquiredDate: D("2014-07-01"), notes: "51% ownership of SaaS portfolio company" },
   // Mumblethrottle Charitable Foundation
-  { id: id("as-014"), name: "Foundation Endowment", kind: "securities", entityId: "e-007", currencyCode: "USD", externalRef: "JPM-FDN-44012", acquiredDate: D("2012-01-10"), notes: "5% spend-rate policy" },
+  { id: id("as-014"), name: "Foundation Endowment", kind: "securities", entityId: "e-007", clientId: null, currencyCode: "USD", externalRef: "JPM-FDN-44012", acquiredDate: D("2012-01-10"), notes: "5% spend-rate policy" },
   // Tsukimomo USA LLC
-  { id: id("as-015"), name: "Tsukimomo USD Sweep", kind: "cash", entityId: "e-008", currencyCode: "USD", externalRef: "MUFG-USA-3301", acquiredDate: D("2020-09-30"), notes: null },
-  { id: id("as-016"), name: "Tsukimomo Patent Portfolio", kind: "intellectual_property", entityId: "e-008", currencyCode: "USD", externalRef: "USPTO-X-22", acquiredDate: D("2021-06-15"), notes: "8 granted patents" },
+  { id: id("as-015"), name: "Tsukimomo USD Sweep", kind: "cash", entityId: "e-008", clientId: null, currencyCode: "USD", externalRef: "MUFG-USA-3301", acquiredDate: D("2020-09-30"), notes: null },
+  { id: id("as-016"), name: "Tsukimomo Patent Portfolio", kind: "intellectual_property", entityId: "e-008", clientId: null, currencyCode: "USD", externalRef: "USPTO-X-22", acquiredDate: D("2021-06-15"), notes: "8 granted patents" },
   // Frogsworth Family Office Ltd. (UK)
-  { id: id("as-017"), name: "Frogsworth Equities (UK)", kind: "securities", entityId: "e-009", currencyCode: "USD", externalRef: "LLOYDS-EQ-9921", acquiredDate: D("2006-02-01"), notes: "Reported in USD-equivalent" },
-  { id: id("as-018"), name: "12 Lombard St (London)", kind: "real_estate", entityId: "e-009", currencyCode: "USD", externalRef: "UK-LR-Title-NGL-882", acquiredDate: D("2010-11-18"), notes: "Head office building" },
+  { id: id("as-017"), name: "Frogsworth Equities (UK)", kind: "securities", entityId: "e-009", clientId: null, currencyCode: "USD", externalRef: "LLOYDS-EQ-9921", acquiredDate: D("2006-02-01"), notes: "Reported in USD-equivalent" },
+  { id: id("as-018"), name: "12 Lombard St (London)", kind: "real_estate", entityId: "e-009", clientId: null, currencyCode: "USD", externalRef: "UK-LR-Title-NGL-882", acquiredDate: D("2010-11-18"), notes: "Head office building" },
+  // Direct client holdings (no entity wrapper) — Beauregard's personal art collection.
+  { id: id("as-019"), name: "Personal art collection — Beauregard", kind: "art", entityId: null, clientId: "c-002", currencyCode: "USD", externalRef: null, acquiredDate: D("2015-09-12"), notes: "Held directly by client, not in an LLC" },
+  { id: id("as-020"), name: "Personal cash account — Cordelia", kind: "cash", entityId: null, clientId: "c-001", currencyCode: "USD", externalRef: "WF-PERS-77110", acquiredDate: D("2019-03-22"), notes: "Direct personal holding" },
 ];
 
 export const ASSET_VALUE_SNAPSHOTS: AssetValueSnapshot[] = [
@@ -175,6 +178,8 @@ export const ASSET_VALUE_SNAPSHOTS: AssetValueSnapshot[] = [
   { id: id("av-016"),  assetId: "as-016", snapshotDate: D("2026-03-31"), value: "3200000.00", currencyCode: "USD", source: "Internal valuation", notes: "Royalty-stream model", createdBy: "u-aldous", createdAt: "2026-04-15T17:00:00Z" },
   { id: id("av-017"),  assetId: "as-017", snapshotDate: D("2026-05-09"), value: "41500000.00", currencyCode: "USD", source: "Lloyds statement", notes: null, createdBy: "u-aldous", createdAt: "2026-05-10T17:00:00Z" },
   { id: id("av-018"),  assetId: "as-018", snapshotDate: D("2026-04-30"), value: "28900000.00", currencyCode: "USD", source: "UK valuation report", notes: null, createdBy: "u-aldous", createdAt: "2026-05-01T17:00:00Z" },
+  { id: id("av-019"),  assetId: "as-019", snapshotDate: D("2026-04-10"), value: "2400000.00", currencyCode: "USD", source: "Sotheby's appraisal", notes: "Personal collection (direct hold)", createdBy: "u-eustace", createdAt: "2026-04-10T17:00:00Z" },
+  { id: id("av-020"),  assetId: "as-020", snapshotDate: D("2026-05-10"), value: "850000.00", currencyCode: "USD", source: "Bank balance", notes: null, createdBy: "u-margery", createdAt: "2026-05-10T20:00:00Z" },
 ];
 
 export const OFFICES: Office[] = [

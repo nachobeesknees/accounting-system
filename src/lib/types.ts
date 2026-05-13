@@ -236,7 +236,13 @@ export type Asset = {
   id: string;
   name: string;
   kind: AssetKind;
-  entityId: string;
+  /**
+   * Ownership chain: client → entity → asset.
+   * - `entityId` set → asset is held inside that entity.
+   * - `entityId` null + `clientId` set → asset is directly held by client.
+   */
+  entityId: string | null;
+  clientId: string | null;
   currencyCode: string;
   externalRef: string | null;
   acquiredDate: string | null;

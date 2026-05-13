@@ -29,14 +29,17 @@ export async function createAssetAction(
 
   const name = String(formData.get("name") ?? "").trim();
   const kindRaw = String(formData.get("kind") ?? "");
-  const entityId = String(formData.get("entityId") ?? "");
+  const entityId = String(formData.get("entityId") ?? "").trim();
+  const clientId = String(formData.get("clientId") ?? "").trim();
   const currencyCode = String(formData.get("currencyCode") ?? "USD").trim();
   const externalRef = String(formData.get("externalRef") ?? "").trim();
   const acquiredDate = String(formData.get("acquiredDate") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
 
   if (!name) return { error: "Name is required." };
-  if (!entityId) return { error: "Entity is required." };
+  if (!entityId && !clientId) {
+    return { error: "Pick either an entity owner or a direct client." };
+  }
   if (!(VALID_KINDS as readonly string[]).includes(kindRaw)) {
     return { error: "Invalid asset kind." };
   }
@@ -45,7 +48,8 @@ export async function createAssetAction(
     const created = await createAsset(user, {
       name,
       kind: kindRaw as AssetKind,
-      entityId,
+      entityId: entityId || null,
+      clientId: clientId || null,
       currencyCode: currencyCode || "USD",
       externalRef: externalRef || null,
       acquiredDate: acquiredDate || null,

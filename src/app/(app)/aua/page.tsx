@@ -106,10 +106,15 @@ export default async function Page() {
       continue;
     }
     totalAua += converted;
-    byEntity.set(a.entityId, (byEntity.get(a.entityId) ?? 0) + converted);
-    const ent = entityById.get(a.entityId);
-    if (ent) {
-      byClient.set(ent.clientId, (byClient.get(ent.clientId) ?? 0) + converted);
+    // Ownership chain: prefer entity wrapper, else fall back to direct client hold.
+    if (a.entityId) {
+      byEntity.set(a.entityId, (byEntity.get(a.entityId) ?? 0) + converted);
+      const ent = entityById.get(a.entityId);
+      if (ent) {
+        byClient.set(ent.clientId, (byClient.get(ent.clientId) ?? 0) + converted);
+      }
+    } else if (a.clientId) {
+      byClient.set(a.clientId, (byClient.get(a.clientId) ?? 0) + converted);
     }
     byKind.set(a.kind, (byKind.get(a.kind) ?? 0) + converted);
   }
@@ -283,8 +288,15 @@ export default async function Page() {
               </THead>
               <TBody>
                 {sortedAssets.map(({ asset, nativeValue, baseValue, ccy, snap }) => {
-                  const entity = entityById.get(asset.entityId);
-                  const client = entity ? customerById.get(entity.clientId) : undefined;
+                  const entity = asset.entityId
+                    ? entityById.get(asset.entityId)
+                    : undefined;
+                  const client = entity
+                    ? customerById.get(entity.clientId)
+                    : asset.clientId
+                      ? customerById.get(asset.clientId)
+                      : undefined;
+                  const directHold = !entity && !!asset.clientId;
                   return (
                     <TR key={asset.id}>
                       <TD>
@@ -303,6 +315,18 @@ export default async function Page() {
                           >
                             {entity.code}
                           </Link>
+                        ) : directHold ? (
+                          <span
+                            style={{
+                              color: "var(--p-formation-fg)",
+                              fontSize: 10.5,
+                              padding: "1px 6px",
+                              borderRadius: 4,
+                              background: "var(--p-formation-bg)",
+                            }}
+                          >
+                            DIRECT
+                          </span>
                         ) : (
                           "—"
                         )}

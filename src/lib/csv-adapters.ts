@@ -355,7 +355,8 @@ export const ADAPTERS: Record<CsvTypeKey, CsvAdapter> = {
         description:
           "real_estate | securities | cash | private_equity | art | vehicle | business_interest | intellectual_property | other",
       },
-      { name: "entity_id", required: true, description: "Entity id (e.g. e-001)." },
+      { name: "entity_id", description: "Entity id when held inside a wrapper (e.g. e-001)." },
+      { name: "client_id", description: "Client id when held directly by the client (e.g. c-001). Required if entity_id is empty." },
       { name: "currency_code", description: "Default USD." },
       { name: "external_ref", description: "Optional external reference." },
       { name: "acquired_date", description: "YYYY-MM-DD" },
@@ -365,6 +366,7 @@ export const ADAPTERS: Record<CsvTypeKey, CsvAdapter> = {
       name: "Sample brokerage account",
       kind: "securities",
       entity_id: "e-001",
+      client_id: "",
       currency_code: "USD",
       external_ref: "ACCT-12345",
       acquired_date: "2026-01-15",
@@ -375,7 +377,8 @@ export const ADAPTERS: Record<CsvTypeKey, CsvAdapter> = {
       return rows.map((a) => ({
         name: a.name,
         kind: a.kind,
-        entity_id: a.entityId,
+        entity_id: a.entityId ?? "",
+        client_id: a.clientId ?? "",
         currency_code: a.currencyCode,
         external_ref: a.externalRef ?? "",
         acquired_date: a.acquiredDate ?? "",
@@ -395,7 +398,9 @@ export const ADAPTERS: Record<CsvTypeKey, CsvAdapter> = {
         "other",
       ];
       if (!row.name) return { ok: false, error: "name is required" };
-      if (!row.entity_id) return { ok: false, error: "entity_id is required" };
+      if (!row.entity_id && !row.client_id) {
+        return { ok: false, error: "Either entity_id or client_id is required" };
+      }
       const kind = (row.kind || "").toLowerCase();
       if (!validKinds.includes(kind)) {
         return { ok: false, error: `kind must be one of ${validKinds.join("/")} (got ${row.kind})` };
@@ -413,7 +418,8 @@ export const ADAPTERS: Record<CsvTypeKey, CsvAdapter> = {
             | "business_interest"
             | "intellectual_property"
             | "other",
-          entityId: row.entity_id,
+          entityId: row.entity_id || null,
+          clientId: row.client_id || null,
           currencyCode: row.currency_code || "USD",
           externalRef: row.external_ref || null,
           acquiredDate: row.acquired_date || null,

@@ -411,6 +411,7 @@ async function main() {
       name: a.name,
       kind: a.kind,
       entityId: a.entityId,
+      clientId: a.clientId,
       currencyCode: a.currencyCode,
       externalRef: a.externalRef,
       acquiredDate: a.acquiredDate,

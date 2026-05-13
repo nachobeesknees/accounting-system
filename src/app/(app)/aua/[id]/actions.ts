@@ -41,7 +41,8 @@ export async function updateAssetAction(formData: FormData) {
 
   const name = String(formData.get("name") ?? "").trim();
   const kindRaw = String(formData.get("kind") ?? "");
-  const entityId = String(formData.get("entityId") ?? "");
+  const entityId = String(formData.get("entityId") ?? "").trim();
+  const clientId = String(formData.get("clientId") ?? "").trim();
   const currencyCode = String(formData.get("currencyCode") ?? "").trim();
   const externalRef = String(formData.get("externalRef") ?? "").trim();
   const acquiredDate = String(formData.get("acquiredDate") ?? "").trim();
@@ -53,7 +54,8 @@ export async function updateAssetAction(formData: FormData) {
       kind: (VALID_KINDS as readonly string[]).includes(kindRaw)
         ? (kindRaw as AssetKind)
         : undefined,
-      entityId: entityId || undefined,
+      entityId: entityId || null,
+      clientId: clientId || null,
       currencyCode: currencyCode || undefined,
       externalRef: externalRef || null,
       acquiredDate: acquiredDate || null,

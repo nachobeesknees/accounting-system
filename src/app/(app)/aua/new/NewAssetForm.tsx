@@ -69,14 +69,11 @@ export function NewAssetForm({
             </Row>
             <Row>
               <SelectField
-                label="Entity"
+                label="Entity (preferred owner)"
                 name="entityId"
-                required
                 defaultValue={defaultEntityId ?? ""}
               >
-                <option value="" disabled>
-                  Select entity…
-                </option>
+                <option value="">— Direct client hold (no entity) —</option>
                 {entities.map((e) => {
                   const c = customerById.get(e.clientId);
                   return (
@@ -87,6 +84,20 @@ export function NewAssetForm({
                   );
                 })}
               </SelectField>
+              <SelectField
+                label="Client (used when no entity)"
+                name="clientId"
+                defaultValue=""
+              >
+                <option value="">— None —</option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </SelectField>
+            </Row>
+            <Row>
               <Field
                 label="Currency"
                 name="currencyCode"
@@ -94,6 +105,7 @@ export function NewAssetForm({
                 defaultValue="USD"
                 maxLength={3}
               />
+              <div />
             </Row>
             <Row>
               <Field

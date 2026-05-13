@@ -334,7 +334,14 @@ export const assets = pgTable("assets", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   kind: assetKindEnum("kind").notNull(),
-  entityId: text("entity_id").notNull(),
+  /**
+   * Ownership chain: client → entity → asset.
+   * - `entityId` set → asset is held inside that entity.
+   * - `entityId` null + `clientId` set → asset is directly held by client.
+   * - At least one of the two must be set in application logic.
+   */
+  entityId: text("entity_id"),
+  clientId: text("client_id"),
   currencyCode: text("currency_code").notNull().default("USD"),
   externalRef: text("external_ref"),
   acquiredDate: date("acquired_date"),

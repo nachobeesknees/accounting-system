@@ -141,6 +141,7 @@ function mapAsset(r: typeof schema.assets.$inferSelect): Asset {
     name: r.name,
     kind: r.kind as AssetKind,
     entityId: r.entityId,
+    clientId: r.clientId,
     currencyCode: r.currencyCode,
     externalRef: r.externalRef,
     acquiredDate: r.acquiredDate,
@@ -855,6 +856,25 @@ export async function getAssetsByEntityId(entityId: string): Promise<Asset[]> {
     .select()
     .from(schema.assets)
     .where(eq(schema.assets.entityId, entityId))
+    .orderBy(schema.assets.name);
+  return rows.map(mapAsset);
+}
+
+/**
+ * Assets directly owned by a client (no entity wrapper). Used to render
+ * the "direct holdings" section on customer detail pages.
+ */
+export async function getAssetsByClientId(clientId: string): Promise<Asset[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.assets)
+    .where(
+      and(
+        isNull(schema.assets.entityId),
+        eq(schema.assets.clientId, clientId),
+      ),
+    )
     .orderBy(schema.assets.name);
   return rows.map(mapAsset);
 }
