@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { getFeeScheduleById } from "@/lib/data";
 import {
@@ -97,12 +98,10 @@ export default async function Page({
                 </SelectField>
               </Row>
               <Row>
-                <Field
+                <MoneyInput
                   label="Annual fee"
                   name="annualFee"
                   required
-                  mono
-                  inputMode="decimal"
                   defaultValue={schedule.annualFee}
                 />
                 <Field

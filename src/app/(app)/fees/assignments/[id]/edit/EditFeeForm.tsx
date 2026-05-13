@@ -10,6 +10,7 @@ import {
   SelectField,
   TextareaField,
 } from "@/components/ui/Field";
+import { formatMoneyInput, parseAmount } from "@/lib/money";
 import type { Entity, EntityFee, FeeFrequency } from "@/lib/types";
 import { saveFeeAction } from "./actions";
 
@@ -90,7 +91,7 @@ export function EditFeeForm({
   );
 
   const periods = periodCount(frequency);
-  const annualNum = Number.parseFloat(annualFee);
+  const annualNum = parseAmount(annualFee);
   const derivedPerPeriod = useMemo(() => {
     if (!Number.isFinite(annualNum) || annualNum <= 0 || periods <= 0)
       return "";
@@ -165,7 +166,7 @@ export function EditFeeForm({
                 mono
                 inputMode="decimal"
                 value={annualFee}
-                onChange={(e) => setAnnualFee(e.target.value)}
+                onChange={(e) => setAnnualFee(formatMoneyInput(e.target.value))}
               />
               <Field
                 label="Per-period amount (override)"
@@ -178,7 +179,7 @@ export function EditFeeForm({
                     : "Auto from annual ÷ periods"
                 }
                 value={perPeriod}
-                onChange={(e) => setPerPeriod(e.target.value)}
+                onChange={(e) => setPerPeriod(formatMoneyInput(e.target.value))}
               />
             </Row>
             <Row>

@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAssetById,
@@ -251,12 +252,10 @@ export default async function Page({
                   required
                   defaultValue={today}
                 />
-                <Field
+                <MoneyInput
                   label="Value"
                   name="value"
                   required
-                  mono
-                  inputMode="decimal"
                   placeholder="0.00"
                 />
               </Row>

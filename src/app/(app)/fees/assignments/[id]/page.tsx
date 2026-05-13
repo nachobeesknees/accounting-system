@@ -6,6 +6,7 @@ import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -234,12 +235,10 @@ export default async function Page({
                 </SelectField>
               </Row>
               <Row>
-                <Field
+                <MoneyInput
                   label="Annual fee"
                   name="annualFee"
                   required
-                  mono
-                  inputMode="decimal"
                   defaultValue={fee.annualFee}
                 />
                 <Field

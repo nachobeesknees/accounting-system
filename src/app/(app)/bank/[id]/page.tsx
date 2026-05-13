@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
@@ -161,11 +162,9 @@ export default async function Page({
                       maxLength={3}
                       defaultValue={bank.currencyCode}
                     />
-                    <Field
+                    <MoneyInput
                       label="Current balance"
                       name="currentBalance"
-                      mono
-                      inputMode="decimal"
                       defaultValue={bank.currentBalance ?? ""}
                     />
                   </Row>

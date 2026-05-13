@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getEmployeeRates, getUsers } from "@/lib/data";
@@ -125,19 +126,15 @@ export default async function Page({
                 <Field label="Role label" name="role" required placeholder="Bookkeeper, Controller, CFO…" />
               </Row>
               <Row>
-                <Field
+                <MoneyInput
                   label="Billable rate"
                   name="billableRate"
                   required
-                  mono
-                  inputMode="decimal"
                   placeholder="0.00"
                 />
-                <Field
+                <MoneyInput
                   label="Cost rate (optional)"
                   name="costRate"
-                  mono
-                  inputMode="decimal"
                   placeholder="0.00"
                 />
               </Row>

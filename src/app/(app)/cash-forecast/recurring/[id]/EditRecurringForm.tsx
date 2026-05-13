@@ -11,6 +11,7 @@ import {
   SelectField,
   TextareaField,
 } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import { parseAmount } from "@/lib/money";
 import type {
   Account,
@@ -72,14 +73,10 @@ export function EditRecurringForm({
                 required
                 defaultValue={payment.name}
               />
-              <Field
+              <MoneyInput
                 label="Amount"
                 name="amount"
-                type="number"
-                step="0.01"
-                min="0"
                 required
-                mono
                 defaultValue={parseAmount(payment.amount).toFixed(2)}
               />
             </Row>

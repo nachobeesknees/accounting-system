@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoneyInput, formatUSD, parseAmount } from "@/lib/money";
 import type { Account, FiscalPeriod } from "@/lib/types";
 import { createEntry, type CreateEntryState } from "./actions";
 
@@ -219,12 +219,12 @@ export function NewEntryForm({
                 </TD>
                 <TD num>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
                     name={`lines[${i}][debit]`}
                     value={line.debit}
-                    onChange={(e) => setDebit(i, e.target.value)}
+                    onChange={(e) => setDebit(i, formatMoneyInput(e.target.value))}
                     placeholder="0.00"
                     className="px-2 py-1 text-[12.5px] rounded-md outline-none text-right w-28"
                     style={{
@@ -238,12 +238,12 @@ export function NewEntryForm({
                 </TD>
                 <TD num>
                   <input
-                    type="number"
-                    step="0.01"
-                    min="0"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
                     name={`lines[${i}][credit]`}
                     value={line.credit}
-                    onChange={(e) => setCredit(i, e.target.value)}
+                    onChange={(e) => setCredit(i, formatMoneyInput(e.target.value))}
                     placeholder="0.00"
                     className="px-2 py-1 text-[12.5px] rounded-md outline-none text-right w-28"
                     style={{

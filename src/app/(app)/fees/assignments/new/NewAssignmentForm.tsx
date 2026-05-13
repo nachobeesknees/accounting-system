@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import {
   createAssignmentAction,
   type CreateAssignmentState,
@@ -116,12 +117,10 @@ export function NewAssignmentForm({
               </SelectField>
             </Row>
             <Row>
-              <Field
+              <MoneyInput
                 label="Annual fee"
                 name="annualFee"
                 required
-                mono
-                inputMode="decimal"
                 key={`fee-${scheduleId}`}
                 defaultValue={selectedSchedule?.annualFee ?? ""}
               />

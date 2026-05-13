@@ -8,7 +8,9 @@
 export function parseAmount(value: string | number | null | undefined): number {
   if (value == null || value === "") return 0;
   if (typeof value === "number") return value;
-  const n = parseFloat(value);
+  // Strip thousands separators so values typed as "1,234.56" parse correctly.
+  const cleaned = value.replace(/,/g, "");
+  const n = parseFloat(cleaned);
   return Number.isFinite(n) ? n : 0;
 }
 
@@ -37,4 +39,27 @@ export function sumCredits(lines: Array<{ credit: string }>): number {
 
 export function toDecimalString(n: number): string {
   return n.toFixed(2);
+}
+
+/**
+ * Display helper for money <input> fields — formats a raw, possibly
+ * partial user-typed string ("1234.5", "-1000") into the same value with
+ * thousands separators ("1,234.5", "-1,000"). Preserves trailing dots and
+ * partial decimals so the user can keep typing.
+ */
+export function formatMoneyInput(value: string): string {
+  let cleaned = value.replace(/[^\d.-]/g, "");
+  const negative = cleaned.startsWith("-");
+  cleaned = cleaned.replace(/-/g, "");
+  const firstDot = cleaned.indexOf(".");
+  if (firstDot !== -1) {
+    cleaned =
+      cleaned.slice(0, firstDot + 1) +
+      cleaned.slice(firstDot + 1).replace(/\./g, "");
+  }
+  if (!cleaned) return negative ? "-" : "";
+  const [intPart, decPart] = cleaned.split(".");
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const out = decPart !== undefined ? `${grouped}.${decPart}` : grouped;
+  return negative ? `-${out}` : out;
 }

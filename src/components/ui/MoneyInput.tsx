@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { InputHTMLAttributes, ReactNode } from "react";
+import { formatMoneyInput } from "@/lib/money";
 
 const labelClasses = "text-[11.5px]";
 const inputClasses = "px-2.5 py-1.5 text-[13px] rounded-md outline-none";
@@ -14,25 +15,6 @@ const inputStyle: React.CSSProperties = {
   fontVariantNumeric: "tabular-nums",
   textAlign: "right",
 };
-
-function formatGrouped(value: string): string {
-  // Strip everything except digits, minus, and decimal point.
-  let cleaned = value.replace(/[^\d.-]/g, "");
-  // Only allow one leading minus and one decimal point.
-  const negative = cleaned.startsWith("-");
-  cleaned = cleaned.replace(/-/g, "");
-  const firstDot = cleaned.indexOf(".");
-  if (firstDot !== -1) {
-    cleaned =
-      cleaned.slice(0, firstDot + 1) +
-      cleaned.slice(firstDot + 1).replace(/\./g, "");
-  }
-  if (!cleaned) return negative ? "-" : "";
-  const [intPart, decPart] = cleaned.split(".");
-  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-  const out = decPart !== undefined ? `${grouped}.${decPart}` : grouped;
-  return negative ? `-${out}` : out;
-}
 
 function stripGrouping(value: string): string {
   return value.replace(/,/g, "");
@@ -67,7 +49,7 @@ export function MoneyInput({
   const init =
     defaultValue == null || defaultValue === ""
       ? ""
-      : formatGrouped(String(defaultValue));
+      : formatMoneyInput(String(defaultValue));
   const [display, setDisplay] = useState(init);
 
   useEffect(() => {
@@ -92,7 +74,7 @@ export function MoneyInput({
         inputMode="decimal"
         autoComplete="off"
         value={display}
-        onChange={(e) => setDisplay(formatGrouped(e.target.value))}
+        onChange={(e) => setDisplay(formatMoneyInput(e.target.value))}
         className={inputClasses}
         style={inputStyle}
         required={required}

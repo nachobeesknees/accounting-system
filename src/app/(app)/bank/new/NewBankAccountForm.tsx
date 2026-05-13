@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import {
   createBankAccountAction,
   type CreateBankState,
@@ -87,11 +88,9 @@ export function NewBankAccountForm({
                 defaultValue="USD"
                 maxLength={3}
               />
-              <Field
+              <MoneyInput
                 label="Current balance"
                 name="currentBalance"
-                mono
-                inputMode="decimal"
                 placeholder="0.00"
               />
             </Row>

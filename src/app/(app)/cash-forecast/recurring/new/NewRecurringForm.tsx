@@ -10,6 +10,7 @@ import {
   SelectField,
   TextareaField,
 } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import type { Account, BankAccount, Vendor } from "@/lib/types";
 
 import {
@@ -62,14 +63,10 @@ export function NewRecurringForm({
               required
               placeholder="e.g. Office rent"
             />
-            <Field
+            <MoneyInput
               label="Amount"
               name="amount"
-              type="number"
-              step="0.01"
-              min="0"
               required
-              mono
               placeholder="0.00"
             />
           </Row>

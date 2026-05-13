@@ -5,6 +5,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import {
   getCustomers,
   getEntities,
@@ -108,11 +109,9 @@ export default async function Page({
                     </option>
                   ))}
                 </SelectField>
-                <Field
+                <MoneyInput
                   label="Rate (per hr)"
                   name="rateAtLog"
-                  mono
-                  inputMode="decimal"
                   defaultValue={entry.rateAtLog ?? ""}
                 />
               </Row>

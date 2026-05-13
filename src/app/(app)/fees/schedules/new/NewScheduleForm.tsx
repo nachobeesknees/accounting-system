@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { MoneyInput } from "@/components/ui/MoneyInput";
 import { createScheduleAction, type CreateScheduleState } from "./actions";
 
 const initial: CreateScheduleState = { error: null };
@@ -63,12 +64,10 @@ export function NewScheduleForm() {
               </SelectField>
             </Row>
             <Row>
-              <Field
+              <MoneyInput
                 label="Annual fee"
                 name="annualFee"
                 required
-                mono
-                inputMode="decimal"
                 placeholder="0.00"
               />
               <Field

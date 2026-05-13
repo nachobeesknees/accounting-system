@@ -6,7 +6,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoneyInput, formatUSD, parseAmount } from "@/lib/money";
 import type { Account, Customer } from "@/lib/types";
 import {
   createInvoiceAction,
@@ -219,13 +219,15 @@ export function NewInvoiceForm({
                   </TD>
                   <TD num>
                     <input
-                      type="number"
-                      step="0.01"
-                      min="0"
+                      type="text"
+                      inputMode="decimal"
+                      autoComplete="off"
                       name={`lines[${i}][unitPrice]`}
                       value={line.unitPrice}
                       onChange={(e) =>
-                        updateLine(i, { unitPrice: e.target.value })
+                        updateLine(i, {
+                          unitPrice: formatMoneyInput(e.target.value),
+                        })
                       }
                       placeholder="0.00"
                       className="px-2 py-1 text-[12.5px] rounded-md outline-none text-right w-28"
