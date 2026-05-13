@@ -38,6 +38,18 @@ export const entityStatusEnum = pgEnum("entity_status", [
   "dissolved",
 ]);
 
+export const assetKindEnum = pgEnum("asset_kind", [
+  "real_estate",
+  "securities",
+  "cash",
+  "private_equity",
+  "art",
+  "vehicle",
+  "business_interest",
+  "intellectual_property",
+  "other",
+]);
+
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
@@ -139,6 +151,31 @@ export const entities = pgTable("entities", {
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const assets = pgTable("assets", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  kind: assetKindEnum("kind").notNull(),
+  entityId: text("entity_id").notNull(),
+  currencyCode: text("currency_code").notNull().default("USD"),
+  externalRef: text("external_ref"),
+  acquiredDate: date("acquired_date"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const assetValueSnapshots = pgTable("asset_value_snapshots", {
+  id: text("id").primaryKey(),
+  assetId: text("asset_id").notNull(),
+  snapshotDate: date("snapshot_date").notNull(),
+  value: numeric("value", { precision: 18, scale: 2 }).notNull(),
+  currencyCode: text("currency_code").notNull().default("USD"),
+  source: text("source"),
+  notes: text("notes"),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
 export const invoices = pgTable("invoices", {
@@ -292,3 +329,5 @@ export type BankAccount = typeof bankAccounts.$inferSelect;
 export type BankTransaction = typeof bankTransactions.$inferSelect;
 export type FiscalPeriod = typeof fiscalPeriods.$inferSelect;
 export type Entity = typeof entities.$inferSelect;
+export type Asset = typeof assets.$inferSelect;
+export type AssetValueSnapshot = typeof assetValueSnapshots.$inferSelect;

@@ -23,6 +23,7 @@ const SECTIONS: Section[] = [
       { href: "/invoices", label: "Invoices" },
       { href: "/customers", label: "Customers" },
       { href: "/entities", label: "Entities" },
+      { href: "/aua", label: "Assets / AUA" },
     ],
   },
   {

@@ -17,6 +17,9 @@ import { parseAmount, sumDebits, sumCredits } from "./money";
 import type {
   Account,
   AccountType,
+  Asset,
+  AssetKind,
+  AssetValueSnapshot,
   Bill,
   BillLine,
   BankAccount,
@@ -88,6 +91,35 @@ function mapEntity(r: typeof schema.entities.$inferSelect): Entity {
     status: r.status as EntityStatus,
     ein: r.ein,
     notes: r.notes,
+  };
+}
+
+function mapAsset(r: typeof schema.assets.$inferSelect): Asset {
+  return {
+    id: r.id,
+    name: r.name,
+    kind: r.kind as AssetKind,
+    entityId: r.entityId,
+    currencyCode: r.currencyCode,
+    externalRef: r.externalRef,
+    acquiredDate: r.acquiredDate,
+    notes: r.notes,
+  };
+}
+
+function mapSnapshot(
+  r: typeof schema.assetValueSnapshots.$inferSelect,
+): AssetValueSnapshot {
+  return {
+    id: r.id,
+    assetId: r.assetId,
+    snapshotDate: r.snapshotDate,
+    value: r.value,
+    currencyCode: r.currencyCode,
+    source: r.source,
+    notes: r.notes,
+    createdBy: r.createdBy,
+    createdAt: r.createdAt.toISOString(),
   };
 }
 
@@ -327,6 +359,65 @@ export async function getEntitiesByClientId(clientId: string): Promise<Entity[]>
     .where(eq(schema.entities.clientId, clientId))
     .orderBy(schema.entities.code);
   return rows.map(mapEntity);
+}
+
+export async function getAssets(): Promise<Asset[]> {
+  const db = getDb();
+  const rows = await db.select().from(schema.assets).orderBy(schema.assets.name);
+  return rows.map(mapAsset);
+}
+
+export async function getAssetById(id: string): Promise<Asset | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.assets)
+    .where(eq(schema.assets.id, id))
+    .limit(1);
+  return row ? mapAsset(row) : undefined;
+}
+
+export async function getAssetsByEntityId(entityId: string): Promise<Asset[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.assets)
+    .where(eq(schema.assets.entityId, entityId))
+    .orderBy(schema.assets.name);
+  return rows.map(mapAsset);
+}
+
+export async function getSnapshotsByAssetId(
+  assetId: string,
+): Promise<AssetValueSnapshot[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.assetValueSnapshots)
+    .where(eq(schema.assetValueSnapshots.assetId, assetId))
+    .orderBy(desc(schema.assetValueSnapshots.snapshotDate));
+  return rows.map(mapSnapshot);
+}
+
+/**
+ * For each asset, return its most recent snapshot (or undefined if none).
+ * One query, bucketed in JS — fine at demo scale; promote to a window
+ * function if the assets table grows large.
+ */
+export async function getLatestSnapshotByAsset(): Promise<
+  Map<string, AssetValueSnapshot>
+> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.assetValueSnapshots)
+    .orderBy(desc(schema.assetValueSnapshots.snapshotDate));
+  const latest = new Map<string, AssetValueSnapshot>();
+  for (const r of rows) {
+    if (latest.has(r.assetId)) continue;
+    latest.set(r.assetId, mapSnapshot(r));
+  }
+  return latest;
 }
 
 export async function getVendors(): Promise<Vendor[]> {

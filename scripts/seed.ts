@@ -31,6 +31,8 @@ import { sql } from "drizzle-orm";
 import * as schema from "../src/db/schema";
 import {
   ACCOUNTS,
+  ASSETS,
+  ASSET_VALUE_SNAPSHOTS,
   BANK_ACCOUNTS,
   BANK_TRANSACTIONS,
   BILLS,
@@ -130,6 +132,8 @@ async function main() {
       journal_lines,
       journal_entries,
       activity_log,
+      asset_value_snapshots,
+      assets,
       fiscal_periods,
       entities,
       vendors,
@@ -222,6 +226,33 @@ async function main() {
       status: e.status,
       ein: e.ein,
       notes: e.notes,
+    })),
+  );
+
+  console.log("Inserting assets + value snapshots…");
+  await db.insert(schema.assets).values(
+    ASSETS.map((a) => ({
+      id: a.id,
+      name: a.name,
+      kind: a.kind,
+      entityId: a.entityId,
+      currencyCode: a.currencyCode,
+      externalRef: a.externalRef,
+      acquiredDate: a.acquiredDate,
+      notes: a.notes,
+    })),
+  );
+  await db.insert(schema.assetValueSnapshots).values(
+    ASSET_VALUE_SNAPSHOTS.map((s) => ({
+      id: s.id,
+      assetId: s.assetId,
+      snapshotDate: s.snapshotDate,
+      value: s.value,
+      currencyCode: s.currencyCode,
+      source: s.source,
+      notes: s.notes,
+      createdBy: s.createdBy,
+      createdAt: new Date(s.createdAt),
     })),
   );
 

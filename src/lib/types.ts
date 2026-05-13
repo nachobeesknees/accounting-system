@@ -75,6 +75,40 @@ export type Entity = {
   notes: string | null;
 };
 
+export type AssetKind =
+  | "real_estate"
+  | "securities"
+  | "cash"
+  | "private_equity"
+  | "art"
+  | "vehicle"
+  | "business_interest"
+  | "intellectual_property"
+  | "other";
+
+export type Asset = {
+  id: string;
+  name: string;
+  kind: AssetKind;
+  entityId: string;
+  currencyCode: string;
+  externalRef: string | null;
+  acquiredDate: string | null;
+  notes: string | null;
+};
+
+export type AssetValueSnapshot = {
+  id: string;
+  assetId: string;
+  snapshotDate: string;
+  value: string;
+  currencyCode: string;
+  source: string | null;
+  notes: string | null;
+  createdBy: string | null;
+  createdAt: string;
+};
+
 export type Customer = {
   id: string;
   name: string;

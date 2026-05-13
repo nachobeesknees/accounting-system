@@ -361,6 +361,114 @@ export async function deleteEntity(_user: SessionUser, id: string) {
   await db.delete(schema.entities).where(eq(schema.entities.id, id));
 }
 
+// --------- Assets ---------
+
+export type CreateAssetInput = {
+  name: string;
+  kind:
+    | "real_estate"
+    | "securities"
+    | "cash"
+    | "private_equity"
+    | "art"
+    | "vehicle"
+    | "business_interest"
+    | "intellectual_property"
+    | "other";
+  entityId: string;
+  currencyCode?: string;
+  externalRef?: string | null;
+  acquiredDate?: string | null;
+  notes?: string | null;
+};
+
+export async function createAsset(_user: SessionUser, input: CreateAssetInput) {
+  const db = getDb();
+  const id = uid("as");
+  const [created] = await db
+    .insert(schema.assets)
+    .values({
+      id,
+      name: input.name,
+      kind: input.kind,
+      entityId: input.entityId,
+      currencyCode: input.currencyCode ?? "USD",
+      externalRef: input.externalRef ?? null,
+      acquiredDate: input.acquiredDate ?? null,
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export type UpdateAssetInput = Partial<CreateAssetInput>;
+
+export async function updateAsset(
+  _user: SessionUser,
+  id: string,
+  input: UpdateAssetInput,
+) {
+  const db = getDb();
+  const [updated] = await db
+    .update(schema.assets)
+    .set({
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.kind !== undefined && { kind: input.kind }),
+      ...(input.entityId !== undefined && { entityId: input.entityId }),
+      ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
+      ...(input.externalRef !== undefined && { externalRef: input.externalRef }),
+      ...(input.acquiredDate !== undefined && { acquiredDate: input.acquiredDate }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.assets.id, id))
+    .returning();
+  if (!updated) throw new Error("Asset not found.");
+  return updated;
+}
+
+export async function deleteAsset(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(schema.assetValueSnapshots)
+      .where(eq(schema.assetValueSnapshots.assetId, id));
+    await tx.delete(schema.assets).where(eq(schema.assets.id, id));
+  });
+}
+
+export type CreateAssetSnapshotInput = {
+  assetId: string;
+  snapshotDate: string;
+  value: number;
+  currencyCode?: string;
+  source?: string | null;
+  notes?: string | null;
+};
+
+export async function createAssetSnapshot(
+  user: SessionUser,
+  input: CreateAssetSnapshotInput,
+) {
+  if (input.value < 0) throw new Error("Snapshot value must be non-negative.");
+  const db = getDb();
+  const id = uid("av");
+  const [created] = await db
+    .insert(schema.assetValueSnapshots)
+    .values({
+      id,
+      assetId: input.assetId,
+      snapshotDate: input.snapshotDate,
+      value: toDecimalString(input.value),
+      currencyCode: input.currencyCode ?? "USD",
+      source: input.source ?? null,
+      notes: input.notes ?? null,
+      createdBy: user.userId,
+    })
+    .returning();
+  return created;
+}
+
 // --------- Customers / Vendors ---------
 
 export async function createCustomer(

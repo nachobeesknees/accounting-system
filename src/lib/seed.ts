@@ -1,5 +1,7 @@
 import type {
   Account,
+  Asset,
+  AssetValueSnapshot,
   Bill,
   BankAccount,
   BankTransaction,
@@ -78,6 +80,61 @@ export const ENTITIES: Entity[] = [
   // Frogsworth & Partners — UK family
   { id: id("e-009"), code: "ENT-009", name: "Frogsworth Family Office Ltd.", clientId: "c-005", kind: "ccorp", jurisdiction: "United Kingdom", formationDate: D("2005-04-18"), status: "active", ein: null, notes: "UK family investment company" },
   { id: id("e-010"), code: "ENT-010", name: "Frogsworth Heritage Trust", clientId: "c-005", kind: "trust", jurisdiction: "Jersey", formationDate: D("2008-10-02"), status: "dormant", ein: null, notes: "Restructured 2024" },
+];
+
+export const ASSETS: Asset[] = [
+  // Pumpernickel Holdings LLC
+  { id: id("as-001"), name: "401 Pine Tower (Seattle)", kind: "real_estate", entityId: "e-001", currencyCode: "USD", externalRef: "King County 401-PINE", acquiredDate: D("2015-09-12"), notes: "Class A office, 84% leased" },
+  { id: id("as-002"), name: "Fidelity Brokerage — Operating", kind: "securities", entityId: "e-001", currencyCode: "USD", externalRef: "FID-X19022", acquiredDate: D("2013-01-04"), notes: null },
+  { id: id("as-003"), name: "Operating Cash (Treasury MMF)", kind: "cash", entityId: "e-001", currencyCode: "USD", externalRef: "MMF-9921", acquiredDate: D("2020-04-01"), notes: null },
+  // Pumpernickel Family Trust
+  { id: id("as-004"), name: "Vanguard Trust Portfolio", kind: "securities", entityId: "e-002", currencyCode: "USD", externalRef: "VGD-T2014", acquiredDate: D("2014-11-20"), notes: "Diversified equity + fixed income" },
+  { id: id("as-005"), name: "Coastal Vineyard Property (Sonoma)", kind: "real_estate", entityId: "e-002", currencyCode: "USD", externalRef: "Sonoma-PIN-441-0019", acquiredDate: D("2016-06-15"), notes: "40-acre estate" },
+  // Snickerthorpe Master Trust
+  { id: id("as-006"), name: "Goldman Sachs Trust Account", kind: "securities", entityId: "e-003", currencyCode: "USD", externalRef: "GS-89441", acquiredDate: D("2009-04-10"), notes: null },
+  { id: id("as-007"), name: "Picasso — 'Femme au Chapeau' (1962)", kind: "art", entityId: "e-003", currencyCode: "USD", externalRef: null, acquiredDate: D("2011-10-22"), notes: "Stored at Crozier Vault, Long Island City" },
+  // Snickerthorpe Real Estate LLC
+  { id: id("as-008"), name: "350 W 42nd St (Manhattan)", kind: "real_estate", entityId: "e-004", currencyCode: "USD", externalRef: "NYC Block-1031 Lot-22", acquiredDate: D("2016-08-30"), notes: "Mixed-use, retail + office" },
+  { id: id("as-009"), name: "120 Hawthorne (San Francisco)", kind: "real_estate", entityId: "e-004", currencyCode: "USD", externalRef: "SF-APN-3736-101", acquiredDate: D("2019-03-04"), notes: null },
+  // Snickerthorpe Capital Partners
+  { id: id("as-010"), name: "Sequoia Fund XII LP Interest", kind: "private_equity", entityId: "e-005", currencyCode: "USD", externalRef: "SEQ-XII-LP-119", acquiredDate: D("2018-02-12"), notes: "12% LP commitment" },
+  // Mumblethrottle Holdings Inc.
+  { id: id("as-011"), name: "Mumblethrottle Operating Cash", kind: "cash", entityId: "e-006", currencyCode: "USD", externalRef: "BOA-OPER-9012", acquiredDate: D("2007-05-15"), notes: null },
+  { id: id("as-012"), name: "Mumblethrottle Brokerage Account", kind: "securities", entityId: "e-006", currencyCode: "USD", externalRef: "SCH-77104", acquiredDate: D("2008-01-08"), notes: null },
+  { id: id("as-013"), name: "MeritsoftCo (private holding)", kind: "business_interest", entityId: "e-006", currencyCode: "USD", externalRef: null, acquiredDate: D("2014-07-01"), notes: "51% ownership of SaaS portfolio company" },
+  // Mumblethrottle Charitable Foundation
+  { id: id("as-014"), name: "Foundation Endowment", kind: "securities", entityId: "e-007", currencyCode: "USD", externalRef: "JPM-FDN-44012", acquiredDate: D("2012-01-10"), notes: "5% spend-rate policy" },
+  // Tsukimomo USA LLC
+  { id: id("as-015"), name: "Tsukimomo USD Sweep", kind: "cash", entityId: "e-008", currencyCode: "USD", externalRef: "MUFG-USA-3301", acquiredDate: D("2020-09-30"), notes: null },
+  { id: id("as-016"), name: "Tsukimomo Patent Portfolio", kind: "intellectual_property", entityId: "e-008", currencyCode: "USD", externalRef: "USPTO-X-22", acquiredDate: D("2021-06-15"), notes: "8 granted patents" },
+  // Frogsworth Family Office Ltd. (UK)
+  { id: id("as-017"), name: "Frogsworth Equities (UK)", kind: "securities", entityId: "e-009", currencyCode: "USD", externalRef: "LLOYDS-EQ-9921", acquiredDate: D("2006-02-01"), notes: "Reported in USD-equivalent" },
+  { id: id("as-018"), name: "12 Lombard St (London)", kind: "real_estate", entityId: "e-009", currencyCode: "USD", externalRef: "UK-LR-Title-NGL-882", acquiredDate: D("2010-11-18"), notes: "Head office building" },
+];
+
+export const ASSET_VALUE_SNAPSHOTS: AssetValueSnapshot[] = [
+  // Two snapshots per asset — Q1 close + recent. Use ISO strings.
+  { id: id("av-001a"), assetId: "as-001", snapshotDate: D("2026-03-31"), value: "18400000.00", currencyCode: "USD", source: "Internal appraisal", notes: null, createdBy: "u-aldous", createdAt: "2026-04-02T15:00:00Z" },
+  { id: id("av-001b"), assetId: "as-001", snapshotDate: D("2026-05-01"), value: "18650000.00", currencyCode: "USD", source: "Q2 broker mark", notes: "Lease renewals priced in", createdBy: "u-aldous", createdAt: "2026-05-02T11:00:00Z" },
+  { id: id("av-002a"), assetId: "as-002", snapshotDate: D("2026-03-31"), value: "5240000.00", currencyCode: "USD", source: "Fidelity statement", notes: null, createdBy: "u-margery", createdAt: "2026-04-01T20:00:00Z" },
+  { id: id("av-002b"), assetId: "as-002", snapshotDate: D("2026-05-09"), value: "5480200.00", currencyCode: "USD", source: "Fidelity statement", notes: null, createdBy: "u-margery", createdAt: "2026-05-10T20:00:00Z" },
+  { id: id("av-003"),  assetId: "as-003", snapshotDate: D("2026-05-10"), value: "1240000.00", currencyCode: "USD", source: "Bank balance", notes: null, createdBy: "u-margery", createdAt: "2026-05-10T20:00:00Z" },
+  { id: id("av-004a"), assetId: "as-004", snapshotDate: D("2026-03-31"), value: "32750000.00", currencyCode: "USD", source: "Vanguard statement", notes: null, createdBy: "u-aldous", createdAt: "2026-04-02T16:00:00Z" },
+  { id: id("av-004b"), assetId: "as-004", snapshotDate: D("2026-05-09"), value: "33120000.00", currencyCode: "USD", source: "Vanguard statement", notes: null, createdBy: "u-aldous", createdAt: "2026-05-10T16:00:00Z" },
+  { id: id("av-005"),  assetId: "as-005", snapshotDate: D("2026-04-15"), value: "6800000.00", currencyCode: "USD", source: "Annual appraisal", notes: "Vineyard yield up YoY", createdBy: "u-aldous", createdAt: "2026-04-15T18:00:00Z" },
+  { id: id("av-006"),  assetId: "as-006", snapshotDate: D("2026-05-09"), value: "82400000.00", currencyCode: "USD", source: "GS statement", notes: null, createdBy: "u-aldous", createdAt: "2026-05-10T16:30:00Z" },
+  { id: id("av-007"),  assetId: "as-007", snapshotDate: D("2026-02-20"), value: "14500000.00", currencyCode: "USD", source: "Christie's appraisal", notes: null, createdBy: "u-eustace", createdAt: "2026-02-20T19:00:00Z" },
+  { id: id("av-008"),  assetId: "as-008", snapshotDate: D("2026-05-01"), value: "94000000.00", currencyCode: "USD", source: "Marcus & Millichap mark", notes: null, createdBy: "u-aldous", createdAt: "2026-05-01T17:00:00Z" },
+  { id: id("av-009"),  assetId: "as-009", snapshotDate: D("2026-05-01"), value: "21300000.00", currencyCode: "USD", source: "Comparable sale", notes: null, createdBy: "u-aldous", createdAt: "2026-05-01T17:00:00Z" },
+  { id: id("av-010"),  assetId: "as-010", snapshotDate: D("2026-03-31"), value: "12500000.00", currencyCode: "USD", source: "GP Q1 capital account", notes: null, createdBy: "u-eustace", createdAt: "2026-04-15T17:00:00Z" },
+  { id: id("av-011"),  assetId: "as-011", snapshotDate: D("2026-05-10"), value: "2400000.00", currencyCode: "USD", source: "Bank balance", notes: null, createdBy: "u-margery", createdAt: "2026-05-10T20:00:00Z" },
+  { id: id("av-012"),  assetId: "as-012", snapshotDate: D("2026-05-09"), value: "18900000.00", currencyCode: "USD", source: "Schwab statement", notes: null, createdBy: "u-margery", createdAt: "2026-05-10T16:30:00Z" },
+  { id: id("av-013"),  assetId: "as-013", snapshotDate: D("2026-03-31"), value: "47500000.00", currencyCode: "USD", source: "Internal DCF", notes: "Last raise priced at $93M post", createdBy: "u-eustace", createdAt: "2026-04-15T17:00:00Z" },
+  { id: id("av-014"),  assetId: "as-014", snapshotDate: D("2026-05-09"), value: "62400000.00", currencyCode: "USD", source: "JPM statement", notes: null, createdBy: "u-aldous", createdAt: "2026-05-10T17:00:00Z" },
+  { id: id("av-015"),  assetId: "as-015", snapshotDate: D("2026-05-10"), value: "8400000.00", currencyCode: "USD", source: "MUFG balance", notes: null, createdBy: "u-margery", createdAt: "2026-05-10T20:00:00Z" },
+  { id: id("av-016"),  assetId: "as-016", snapshotDate: D("2026-03-31"), value: "3200000.00", currencyCode: "USD", source: "Internal valuation", notes: "Royalty-stream model", createdBy: "u-aldous", createdAt: "2026-04-15T17:00:00Z" },
+  { id: id("av-017"),  assetId: "as-017", snapshotDate: D("2026-05-09"), value: "41500000.00", currencyCode: "USD", source: "Lloyds statement", notes: null, createdBy: "u-aldous", createdAt: "2026-05-10T17:00:00Z" },
+  { id: id("av-018"),  assetId: "as-018", snapshotDate: D("2026-04-30"), value: "28900000.00", currencyCode: "USD", source: "UK valuation report", notes: null, createdBy: "u-aldous", createdAt: "2026-05-01T17:00:00Z" },
 ];
 
 export const VENDORS: Vendor[] = [
