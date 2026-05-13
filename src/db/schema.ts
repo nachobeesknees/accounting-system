@@ -20,6 +20,26 @@ export const accountTypeEnum = pgEnum("account_type", [
   "expense",
 ]);
 
+export const currencies = pgTable("currencies", {
+  code: text("code").primaryKey(),
+  symbol: text("symbol").notNull(),
+  name: text("name").notNull(),
+  decimals: integer("decimals").notNull().default(2),
+  isBase: boolean("is_base").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const fxRates = pgTable("fx_rates", {
+  id: text("id").primaryKey(),
+  currencyCode: text("currency_code").notNull(),
+  rateDate: date("rate_date").notNull(),
+  ratePerBase: numeric("rate_per_base", { precision: 18, scale: 8 }).notNull(),
+  source: text("source"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const entityKindEnum = pgEnum("entity_kind", [
   "llc",
   "trust",
@@ -237,6 +257,7 @@ export const entities = pgTable("entities", {
   status: entityStatusEnum("status").notNull().default("active"),
   ein: text("ein"),
   notes: text("notes"),
+  currencyCode: text("currency_code").notNull().default("USD"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -517,3 +538,5 @@ export type ContactLink = typeof contactLinks.$inferSelect;
 export type Office = typeof offices.$inferSelect;
 export type PriceList = typeof priceLists.$inferSelect;
 export type PriceListEntry = typeof priceListEntries.$inferSelect;
+export type Currency = typeof currencies.$inferSelect;
+export type FxRate = typeof fxRates.$inferSelect;

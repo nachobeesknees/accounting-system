@@ -36,6 +36,7 @@ export async function createEntityAction(
   const formationDate = String(formData.get("formationDate") ?? "").trim();
   const ein = String(formData.get("ein") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
+  const currencyCode = String(formData.get("currencyCode") ?? "USD").trim().toUpperCase();
 
   if (!code) return { error: "Code is required." };
   if (!name) return { error: "Name is required." };
@@ -58,6 +59,7 @@ export async function createEntityAction(
       formationDate: formationDate || null,
       ein: ein || null,
       notes: notes || null,
+      currencyCode: currencyCode || "USD",
     });
     revalidatePath("/entities");
     redirect(`/entities/${created.id}`);

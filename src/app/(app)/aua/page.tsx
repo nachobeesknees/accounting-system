@@ -5,13 +5,16 @@ import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
+  convertToBase,
   getAssets,
+  getBaseCurrency,
   getCustomers,
   getEntities,
+  getLatestFxRates,
   getLatestSnapshotByAsset,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatAmount, parseAmount } from "@/lib/money";
 import type { AssetKind } from "@/lib/types";
 
 const KIND_LABEL: Record<AssetKind, string> = {
@@ -71,32 +74,47 @@ function Tile({
 }
 
 export default async function Page() {
-  const [assets, latestByAsset, entities, customers] = await Promise.all([
-    getAssets(),
-    getLatestSnapshotByAsset(),
-    getEntities(),
-    getCustomers(),
-  ]);
+  const [assets, latestByAsset, entities, customers, base, fxRates] =
+    await Promise.all([
+      getAssets(),
+      getLatestSnapshotByAsset(),
+      getEntities(),
+      getCustomers(),
+      getBaseCurrency(),
+      getLatestFxRates(),
+    ]);
+  const baseCode = base?.code ?? "USD";
+  const baseSymbol = base?.symbol ?? "$";
   const entityById = new Map(entities.map((e) => [e.id, e] as const));
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
 
-  // Rollups
+  // Rollups — all values normalised to base currency
   let totalAua = 0;
+  let unconverted = 0; // sum of values we couldn't FX-convert
   const byClient = new Map<string, number>();
   const byEntity = new Map<string, number>();
   const byKind = new Map<AssetKind, number>();
   for (const a of assets) {
     const snap = latestByAsset.get(a.id);
     if (!snap) continue;
-    const v = parseAmount(snap.value);
-    totalAua += v;
-    byEntity.set(a.entityId, (byEntity.get(a.entityId) ?? 0) + v);
+    const raw = parseAmount(snap.value);
+    const ccy = snap.currencyCode || a.currencyCode || baseCode;
+    const converted =
+      ccy === baseCode ? raw : convertToBase(raw, ccy, fxRates);
+    if (converted == null) {
+      unconverted += raw;
+      continue;
+    }
+    totalAua += converted;
+    byEntity.set(a.entityId, (byEntity.get(a.entityId) ?? 0) + converted);
     const ent = entityById.get(a.entityId);
     if (ent) {
-      byClient.set(ent.clientId, (byClient.get(ent.clientId) ?? 0) + v);
+      byClient.set(ent.clientId, (byClient.get(ent.clientId) ?? 0) + converted);
     }
-    byKind.set(a.kind, (byKind.get(a.kind) ?? 0) + v);
+    byKind.set(a.kind, (byKind.get(a.kind) ?? 0) + converted);
   }
+  const formatBase = (n: number) =>
+    `${baseSymbol}${formatAmount(n, { paren: true })}`;
 
   const sortedClients = customers
     .map((c) => ({ client: c, total: byClient.get(c.id) ?? 0 }))
@@ -104,9 +122,17 @@ export default async function Page() {
   const sortedAssets = assets
     .map((a) => {
       const snap = latestByAsset.get(a.id);
-      return { asset: a, value: snap ? parseAmount(snap.value) : 0, snap };
+      const nativeValue = snap ? parseAmount(snap.value) : 0;
+      const ccy = snap?.currencyCode || a.currencyCode || baseCode;
+      const baseValue =
+        snap == null
+          ? 0
+          : ccy === baseCode
+            ? nativeValue
+            : (convertToBase(nativeValue, ccy, fxRates) ?? 0);
+      return { asset: a, nativeValue, baseValue, ccy, snap };
     })
-    .sort((a, b) => b.value - a.value);
+    .sort((a, b) => b.baseValue - a.baseValue);
   const stalest = [...sortedAssets]
     .filter((row) => row.snap)
     .sort((a, b) =>
@@ -128,15 +154,19 @@ export default async function Page() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 px-6 my-3.5">
         <Tile
-          label="Total AUA"
-          value={formatUSD(totalAua, { paren: true })}
-          sub="Latest snapshot per asset"
+          label={`Total AUA (${baseCode})`}
+          value={formatBase(totalAua)}
+          sub={
+            unconverted > 0
+              ? `${formatBase(unconverted)} unconverted (missing FX rate)`
+              : "Latest snapshot per asset, converted to base"
+          }
         />
         <Tile
           label="Top client AUA"
           value={
             sortedClients[0]
-              ? formatUSD(sortedClients[0].total, { paren: true })
+              ? formatBase(sortedClients[0].total)
               : "—"
           }
           sub={sortedClients[0]?.client.name}
@@ -178,15 +208,15 @@ export default async function Page() {
                       {client.name}
                     </Link>
                   </TD>
-                  <TD num>{formatUSD(total, { paren: true })}</TD>
+                  <TD num>{formatBase(total)}</TD>
                   <TD num style={{ color: "var(--ink-3)" }}>
                     {totalAua > 0 ? `${((total / totalAua) * 100).toFixed(1)}%` : "—"}
                   </TD>
                 </TR>
               ))}
               <TR total hover={false}>
-                <TD>Total</TD>
-                <TD num>{formatUSD(totalAua, { paren: true })}</TD>
+                <TD>Total ({baseCode})</TD>
+                <TD num>{formatBase(totalAua)}</TD>
                 <TD num>100.0%</TD>
               </TR>
             </TBody>
@@ -208,7 +238,7 @@ export default async function Page() {
                 .map(([k, v]) => (
                   <TR key={k}>
                     <TD>{KIND_LABEL[k]}</TD>
-                    <TD num>{formatUSD(v, { paren: true })}</TD>
+                    <TD num>{formatBase(v)}</TD>
                     <TD num style={{ color: "var(--ink-3)" }}>
                       {totalAua > 0 ? `${((v / totalAua) * 100).toFixed(1)}%` : "—"}
                     </TD>
@@ -247,11 +277,12 @@ export default async function Page() {
                   <TH>Client</TH>
                   <TH>Class</TH>
                   <TH>Latest snapshot</TH>
-                  <TH num>Latest value</TH>
+                  <TH num>Native value</TH>
+                  <TH num>In {baseCode}</TH>
                 </TR>
               </THead>
               <TBody>
-                {sortedAssets.map(({ asset, value, snap }) => {
+                {sortedAssets.map(({ asset, nativeValue, baseValue, ccy, snap }) => {
                   const entity = entityById.get(asset.entityId);
                   const client = entity ? customerById.get(entity.clientId) : undefined;
                   return (
@@ -284,14 +315,16 @@ export default async function Page() {
                         {snap ? formatDate(snap.snapshotDate) : "No snapshot"}
                       </TD>
                       <TD num>
-                        {snap ? formatUSD(value, { paren: true }) : "—"}
+                        {snap ? `${ccy} ${formatAmount(nativeValue, { paren: true })}` : "—"}
                       </TD>
+                      <TD num>{snap ? formatBase(baseValue) : "—"}</TD>
                     </TR>
                   );
                 })}
                 <TR total hover={false}>
                   <TD colSpan={5}>Total AUA</TD>
-                  <TD num>{formatUSD(totalAua, { paren: true })}</TD>
+                  <TD num>{""}</TD>
+                  <TD num>{formatBase(totalAua)}</TD>
                 </TR>
               </TBody>
             </Table>

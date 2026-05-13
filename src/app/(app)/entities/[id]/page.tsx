@@ -5,7 +5,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
-import { getCustomers, getEntityById } from "@/lib/data";
+import { getCurrencies, getCustomers, getEntityById } from "@/lib/data";
 import type { EntityKind } from "@/lib/types";
 import { deleteEntityAction, updateEntityAction } from "./actions";
 
@@ -29,9 +29,10 @@ export default async function Page({
 }) {
   const { id } = await params;
   const { saved, error } = await searchParams;
-  const [entity, customers] = await Promise.all([
+  const [entity, customers, currencies] = await Promise.all([
     getEntityById(id),
     getCustomers(),
+    getCurrencies(),
   ]);
   if (!entity) notFound();
   const client = customers.find((c) => c.id === entity.clientId);
@@ -147,6 +148,22 @@ export default async function Page({
                   <option value="dormant">Dormant</option>
                   <option value="dissolved">Dissolved</option>
                 </SelectField>
+              </Row>
+              <Row>
+                <SelectField
+                  label="Functional currency"
+                  name="currencyCode"
+                  defaultValue={entity.currencyCode}
+                >
+                  {currencies
+                    .filter((c) => c.isActive || c.code === entity.currencyCode)
+                    .map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.code} — {c.name}
+                      </option>
+                    ))}
+                </SelectField>
+                <div />
               </Row>
               <TextareaField
                 label="Notes"

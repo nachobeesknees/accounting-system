@@ -1,5 +1,10 @@
 import { PageHeader } from "@/components/ui/PageHeader";
-import { getCustomers, getEntities } from "@/lib/data";
+import {
+  getBaseCurrency,
+  getCurrencies,
+  getCustomers,
+  getEntities,
+} from "@/lib/data";
 import { NewEntityForm } from "./NewEntityForm";
 
 function nextEntityCode(existing: string[]): string {
@@ -18,7 +23,12 @@ export default async function Page({
   searchParams: Promise<{ client?: string }>;
 }) {
   const params = await searchParams;
-  const [customers, entities] = await Promise.all([getCustomers(), getEntities()]);
+  const [customers, entities, currencies, base] = await Promise.all([
+    getCustomers(),
+    getEntities(),
+    getCurrencies(),
+    getBaseCurrency(),
+  ]);
   const nextCode = nextEntityCode(entities.map((e) => e.code));
 
   return (
@@ -26,8 +36,10 @@ export default async function Page({
       <PageHeader title="New entity" meta="Entities / New" />
       <NewEntityForm
         customers={customers}
+        currencies={currencies}
         nextCode={nextCode}
         defaultClientId={params.client}
+        defaultCurrency={base?.code ?? "USD"}
       />
     </>
   );

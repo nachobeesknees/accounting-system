@@ -43,6 +43,7 @@ export async function updateEntityAction(formData: FormData) {
   const formationDate = String(formData.get("formationDate") ?? "").trim();
   const ein = String(formData.get("ein") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
+  const currencyCode = String(formData.get("currencyCode") ?? "").trim().toUpperCase();
 
   try {
     await updateEntity(user, id, {
@@ -59,6 +60,7 @@ export async function updateEntityAction(formData: FormData) {
       formationDate: formationDate || null,
       ein: ein || null,
       notes: notes || null,
+      currencyCode: currencyCode || undefined,
     });
   } catch (err) {
     if (isRedirect(err)) throw err;

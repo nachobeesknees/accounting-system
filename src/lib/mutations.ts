@@ -272,6 +272,100 @@ export async function voidJournalEntry(
   return updated;
 }
 
+// --------- Currencies + FX rates ---------
+
+export type CreateCurrencyInput = {
+  code: string;
+  symbol: string;
+  name: string;
+  decimals?: number;
+  isBase?: boolean;
+};
+
+export async function createCurrency(_user: SessionUser, input: CreateCurrencyInput) {
+  const db = getDb();
+  return await db.transaction(async (tx) => {
+    if (input.isBase) {
+      await tx.update(schema.currencies).set({ isBase: false });
+    }
+    const [created] = await tx
+      .insert(schema.currencies)
+      .values({
+        code: input.code.toUpperCase(),
+        symbol: input.symbol,
+        name: input.name,
+        decimals: input.decimals ?? 2,
+        isBase: input.isBase ?? false,
+        isActive: true,
+      })
+      .returning();
+    return created;
+  });
+}
+
+export async function setBaseCurrency(_user: SessionUser, code: string) {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx.update(schema.currencies).set({ isBase: false });
+    const [updated] = await tx
+      .update(schema.currencies)
+      .set({ isBase: true, isActive: true })
+      .where(eq(schema.currencies.code, code.toUpperCase()))
+      .returning();
+    if (!updated) throw new Error("Currency not found.");
+  });
+}
+
+export async function setCurrencyActive(
+  _user: SessionUser,
+  code: string,
+  isActive: boolean,
+) {
+  const db = getDb();
+  await db
+    .update(schema.currencies)
+    .set({ isActive })
+    .where(eq(schema.currencies.code, code.toUpperCase()));
+}
+
+export async function deleteCurrency(_user: SessionUser, code: string) {
+  const db = getDb();
+  await db.delete(schema.currencies).where(eq(schema.currencies.code, code.toUpperCase()));
+}
+
+export type CreateFxRateInput = {
+  currencyCode: string;
+  rateDate: string;
+  ratePerBase: number;
+  source?: string | null;
+  notes?: string | null;
+};
+
+export async function createFxRate(_user: SessionUser, input: CreateFxRateInput) {
+  if (!Number.isFinite(input.ratePerBase) || input.ratePerBase <= 0) {
+    throw new Error("Rate must be > 0.");
+  }
+  const db = getDb();
+  const id = uid("fx");
+  const [created] = await db
+    .insert(schema.fxRates)
+    .values({
+      id,
+      currencyCode: input.currencyCode.toUpperCase(),
+      rateDate: input.rateDate,
+      ratePerBase: input.ratePerBase.toFixed(8),
+      source: input.source ?? null,
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export async function deleteFxRate(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.fxRates).where(eq(schema.fxRates.id, id));
+}
+
 // --------- Entities ---------
 
 export type CreateEntityInput = {
@@ -284,6 +378,7 @@ export type CreateEntityInput = {
   status?: "active" | "pending" | "dormant" | "dissolved";
   ein?: string | null;
   notes?: string | null;
+  currencyCode?: string;
 };
 
 export async function createEntity(_user: SessionUser, input: CreateEntityInput) {
@@ -310,6 +405,7 @@ export async function createEntity(_user: SessionUser, input: CreateEntityInput)
       status: input.status ?? "active",
       ein: input.ein ?? null,
       notes: input.notes ?? null,
+      currencyCode: input.currencyCode ?? "USD",
     })
     .returning();
   return created;
@@ -348,6 +444,7 @@ export async function updateEntity(
       ...(input.status !== undefined && { status: input.status }),
       ...(input.ein !== undefined && { ein: input.ein }),
       ...(input.notes !== undefined && { notes: input.notes }),
+      ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
       updatedAt: new Date(),
     })
     .where(eq(schema.entities.id, id))

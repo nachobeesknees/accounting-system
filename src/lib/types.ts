@@ -73,6 +73,25 @@ export type Entity = {
   status: EntityStatus;
   ein: string | null;
   notes: string | null;
+  currencyCode: string;
+};
+
+export type Currency = {
+  code: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  isBase: boolean;
+  isActive: boolean;
+};
+
+export type FxRate = {
+  id: string;
+  currencyCode: string;
+  rateDate: string;
+  ratePerBase: string;
+  source: string | null;
+  notes: string | null;
 };
 
 export type FeeSchedule = {

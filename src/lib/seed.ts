@@ -8,12 +8,14 @@ import type {
   BankTransaction,
   Contact,
   ContactLink,
+  Currency,
   Customer,
   EmployeeRate,
   Entity,
   EntityFee,
   FeeSchedule,
   FiscalPeriod,
+  FxRate,
   Invoice,
   JournalEntry,
   Office,
@@ -33,6 +35,29 @@ export const USERS: User[] = [
   { id: id("u-margery"), email: "margery@thistlewood.com", fullName: "Margery Crumplebottom", role: "Bookkeeper", isSuperuser: false },
   { id: id("u-aldous"), email: "aldous@thistlewood.com", fullName: "Aldous Pepperton", role: "Controller", isSuperuser: false },
   { id: id("u-eustace"), email: "eustace@thistlewood.com", fullName: "Eustace Brindleworth", role: "CFO", isSuperuser: false },
+];
+
+export const CURRENCIES: Currency[] = [
+  { code: "USD", symbol: "$", name: "US Dollar", decimals: 2, isBase: true, isActive: true },
+  { code: "EUR", symbol: "€", name: "Euro", decimals: 2, isBase: false, isActive: true },
+  { code: "GBP", symbol: "£", name: "British Pound", decimals: 2, isBase: false, isActive: true },
+  { code: "JPY", symbol: "¥", name: "Japanese Yen", decimals: 0, isBase: false, isActive: true },
+  { code: "CAD", symbol: "C$", name: "Canadian Dollar", decimals: 2, isBase: false, isActive: true },
+  { code: "CHF", symbol: "Fr", name: "Swiss Franc", decimals: 2, isBase: false, isActive: true },
+];
+
+// Rates expressed as "foreign per 1 USD" so AUA conversion is value / rate.
+export const FX_RATES: FxRate[] = [
+  // Recent close (2026-05-12)
+  { id: id("fx-001"), currencyCode: "EUR", rateDate: D("2026-05-12"), ratePerBase: "0.92500000", source: "ECB reference", notes: null },
+  { id: id("fx-002"), currencyCode: "GBP", rateDate: D("2026-05-12"), ratePerBase: "0.79100000", source: "BOE reference", notes: null },
+  { id: id("fx-003"), currencyCode: "JPY", rateDate: D("2026-05-12"), ratePerBase: "156.40000000", source: "BoJ reference", notes: null },
+  { id: id("fx-004"), currencyCode: "CAD", rateDate: D("2026-05-12"), ratePerBase: "1.37200000", source: "BoC reference", notes: null },
+  { id: id("fx-005"), currencyCode: "CHF", rateDate: D("2026-05-12"), ratePerBase: "0.90400000", source: "SNB reference", notes: null },
+  // Month-end April for comparison
+  { id: id("fx-006"), currencyCode: "EUR", rateDate: D("2026-04-30"), ratePerBase: "0.93100000", source: "ECB month-end", notes: null },
+  { id: id("fx-007"), currencyCode: "GBP", rateDate: D("2026-04-30"), ratePerBase: "0.79800000", source: "BOE month-end", notes: null },
+  { id: id("fx-008"), currencyCode: "JPY", rateDate: D("2026-04-30"), ratePerBase: "155.20000000", source: "BoJ month-end", notes: null },
 ];
 
 export const ACCOUNTS: Account[] = [
@@ -76,20 +101,20 @@ export const CUSTOMERS: Customer[] = [
 
 export const ENTITIES: Entity[] = [
   // Pumpernickel Industries — operating co + family trust
-  { id: id("e-001"), code: "ENT-001", name: "Pumpernickel Holdings LLC", clientId: "c-001", kind: "llc", jurisdiction: "Delaware, USA", formationDate: D("2012-06-04"), status: "active", ein: "47-1102841", notes: "Master holding company" },
-  { id: id("e-002"), code: "ENT-002", name: "Pumpernickel Family Trust", clientId: "c-001", kind: "trust", jurisdiction: "South Dakota, USA", formationDate: D("2014-11-19"), status: "active", ein: null, notes: "Irrevocable dynasty trust" },
+  { id: id("e-001"), code: "ENT-001", name: "Pumpernickel Holdings LLC", clientId: "c-001", kind: "llc", jurisdiction: "Delaware, USA", formationDate: D("2012-06-04"), status: "active", ein: "47-1102841", notes: "Master holding company", currencyCode: "USD" },
+  { id: id("e-002"), code: "ENT-002", name: "Pumpernickel Family Trust", clientId: "c-001", kind: "trust", jurisdiction: "South Dakota, USA", formationDate: D("2014-11-19"), status: "active", ein: null, notes: "Irrevocable dynasty trust", currencyCode: "USD" },
   // Snickerthorpe Holdings — three sub-entities
-  { id: id("e-003"), code: "ENT-003", name: "Snickerthorpe Master Trust", clientId: "c-002", kind: "trust", jurisdiction: "Nevada, USA", formationDate: D("2009-03-22"), status: "active", ein: null, notes: null },
-  { id: id("e-004"), code: "ENT-004", name: "Snickerthorpe Real Estate LLC", clientId: "c-002", kind: "llc", jurisdiction: "New York, USA", formationDate: D("2016-08-11"), status: "active", ein: "85-2901774", notes: "Manhattan commercial portfolio" },
-  { id: id("e-005"), code: "ENT-005", name: "Snickerthorpe Capital Partners", clientId: "c-002", kind: "partnership", jurisdiction: "Delaware, USA", formationDate: D("2018-02-01"), status: "active", ein: "82-4429110", notes: "PE fund vehicle" },
+  { id: id("e-003"), code: "ENT-003", name: "Snickerthorpe Master Trust", clientId: "c-002", kind: "trust", jurisdiction: "Nevada, USA", formationDate: D("2009-03-22"), status: "active", ein: null, notes: null, currencyCode: "USD" },
+  { id: id("e-004"), code: "ENT-004", name: "Snickerthorpe Real Estate LLC", clientId: "c-002", kind: "llc", jurisdiction: "New York, USA", formationDate: D("2016-08-11"), status: "active", ein: "85-2901774", notes: "Manhattan commercial portfolio", currencyCode: "USD" },
+  { id: id("e-005"), code: "ENT-005", name: "Snickerthorpe Capital Partners", clientId: "c-002", kind: "partnership", jurisdiction: "Delaware, USA", formationDate: D("2018-02-01"), status: "active", ein: "82-4429110", notes: "PE fund vehicle", currencyCode: "USD" },
   // Mumblethrottle Capital
-  { id: id("e-006"), code: "ENT-006", name: "Mumblethrottle Holdings Inc.", clientId: "c-003", kind: "ccorp", jurisdiction: "Massachusetts, USA", formationDate: D("2007-05-09"), status: "active", ein: "04-3712209", notes: null },
-  { id: id("e-007"), code: "ENT-007", name: "Mumblethrottle Charitable Foundation", clientId: "c-003", kind: "foundation", jurisdiction: "Massachusetts, USA", formationDate: D("2011-12-14"), status: "active", ein: "27-0044112", notes: "501(c)(3) private foundation" },
-  // Tsukimomo Ventures — single entity (foreign-facing)
-  { id: id("e-008"), code: "ENT-008", name: "Tsukimomo USA LLC", clientId: "c-004", kind: "llc", jurisdiction: "Delaware, USA", formationDate: D("2020-09-30"), status: "active", ein: "84-3119008", notes: "US-facing subsidiary of Tokyo parent" },
-  // Frogsworth & Partners — UK family
-  { id: id("e-009"), code: "ENT-009", name: "Frogsworth Family Office Ltd.", clientId: "c-005", kind: "ccorp", jurisdiction: "United Kingdom", formationDate: D("2005-04-18"), status: "active", ein: null, notes: "UK family investment company" },
-  { id: id("e-010"), code: "ENT-010", name: "Frogsworth Heritage Trust", clientId: "c-005", kind: "trust", jurisdiction: "Jersey", formationDate: D("2008-10-02"), status: "dormant", ein: null, notes: "Restructured 2024" },
+  { id: id("e-006"), code: "ENT-006", name: "Mumblethrottle Holdings Inc.", clientId: "c-003", kind: "ccorp", jurisdiction: "Massachusetts, USA", formationDate: D("2007-05-09"), status: "active", ein: "04-3712209", notes: null, currencyCode: "USD" },
+  { id: id("e-007"), code: "ENT-007", name: "Mumblethrottle Charitable Foundation", clientId: "c-003", kind: "foundation", jurisdiction: "Massachusetts, USA", formationDate: D("2011-12-14"), status: "active", ein: "27-0044112", notes: "501(c)(3) private foundation", currencyCode: "USD" },
+  // Tsukimomo Ventures — JPY-functional Tokyo parent
+  { id: id("e-008"), code: "ENT-008", name: "Tsukimomo USA LLC", clientId: "c-004", kind: "llc", jurisdiction: "Delaware, USA", formationDate: D("2020-09-30"), status: "active", ein: "84-3119008", notes: "US-facing subsidiary of Tokyo parent", currencyCode: "JPY" },
+  // Frogsworth & Partners — UK GBP-functional
+  { id: id("e-009"), code: "ENT-009", name: "Frogsworth Family Office Ltd.", clientId: "c-005", kind: "ccorp", jurisdiction: "United Kingdom", formationDate: D("2005-04-18"), status: "active", ein: null, notes: "UK family investment company", currencyCode: "GBP" },
+  { id: id("e-010"), code: "ENT-010", name: "Frogsworth Heritage Trust", clientId: "c-005", kind: "trust", jurisdiction: "Jersey", formationDate: D("2008-10-02"), status: "dormant", ein: null, notes: "Restructured 2024", currencyCode: "GBP" },
 ];
 
 export const ASSETS: Asset[] = [
@@ -583,6 +608,8 @@ export const BANK_ACCOUNTS: BankAccount[] = [
   { id: id("ba-002"), name: "Pumpernickel Holdings Treasury", accountId: "a-1000", institution: "JPMorgan Private Bank", lastFour: "8814", currencyCode: "USD", isActive: true, entityId: "e-001", clientId: "c-001", currentBalance: "1240000.00", balanceAsOf: D("2026-05-10") },
   { id: id("ba-003"), name: "Snickerthorpe Real Estate Operating", accountId: "a-1000", institution: "BNY Mellon", lastFour: "2207", currencyCode: "USD", isActive: true, entityId: "e-004", clientId: "c-002", currentBalance: "4200000.00", balanceAsOf: D("2026-05-09") },
   { id: id("ba-004"), name: "Tsukimomo USD Sweep", accountId: "a-1000", institution: "MUFG Union Bank", lastFour: "3301", currencyCode: "USD", isActive: true, entityId: "e-008", clientId: "c-004", currentBalance: "8400000.00", balanceAsOf: D("2026-05-10") },
+  { id: id("ba-005"), name: "Frogsworth Sterling Operating", accountId: "a-1000", institution: "Lloyds Banking Group", lastFour: "9921", currencyCode: "GBP", isActive: true, entityId: "e-009", clientId: "c-005", currentBalance: "2240000.00", balanceAsOf: D("2026-05-09") },
+  { id: id("ba-006"), name: "Tsukimomo Tokyo Yen", accountId: "a-1000", institution: "MUFG Bank, Ltd.", lastFour: "8870", currencyCode: "JPY", isActive: true, entityId: "e-008", clientId: "c-004", currentBalance: "182000000.00", balanceAsOf: D("2026-05-10") },
 ];
 
 export const BANK_ACCOUNT_SIGNERS: BankAccountSigner[] = [

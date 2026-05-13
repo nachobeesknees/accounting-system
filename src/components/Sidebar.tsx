@@ -61,6 +61,7 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/offices", label: "Offices" },
       { href: "/price-lists", label: "Price Lists" },
+      { href: "/currencies", label: "Currencies / FX" },
       { href: "/periods", label: "Fiscal Periods" },
       { href: "/settings", label: "Settings" },
     ],

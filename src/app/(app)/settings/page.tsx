@@ -2,7 +2,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Card";
 import { KV, KVGrid } from "@/components/ui/KV";
-import { getAccountByCode } from "@/lib/data";
+import { getAccountByCode, getBaseCurrency } from "@/lib/data";
 import {
   nextBillNumber,
   nextEntryNumber,
@@ -17,17 +17,27 @@ async function formatAccountRef(code: string): Promise<string> {
 }
 
 export default async function Page() {
-  const [user, nextInvoice, nextJournal, nextBill, arLabel, apLabel, reLabel, cashLabel] =
-    await Promise.all([
-      getSessionUser(),
-      nextInvoiceNumber(),
-      nextEntryNumber(),
-      nextBillNumber(),
-      formatAccountRef("1200"),
-      formatAccountRef("2000"),
-      formatAccountRef("3100"),
-      formatAccountRef("1000"),
-    ]);
+  const [
+    user,
+    nextInvoice,
+    nextJournal,
+    nextBill,
+    arLabel,
+    apLabel,
+    reLabel,
+    cashLabel,
+    baseCcy,
+  ] = await Promise.all([
+    getSessionUser(),
+    nextInvoiceNumber(),
+    nextEntryNumber(),
+    nextBillNumber(),
+    formatAccountRef("1200"),
+    formatAccountRef("2000"),
+    formatAccountRef("3100"),
+    formatAccountRef("1000"),
+    getBaseCurrency(),
+  ]);
 
   return (
     <>
@@ -37,7 +47,21 @@ export default async function Page() {
         <Section title="Company">
           <KVGrid>
             <KV k="Legal name" v="Thistlewood & Associates, LLC" />
-            <KV k="Functional currency" v="USD" mono />
+            <KV
+              k="Base currency"
+              v={
+                baseCcy ? (
+                  <Link href="/currencies" style={{ color: "var(--ink)" }}>
+                    {baseCcy.code} — {baseCcy.name}
+                  </Link>
+                ) : (
+                  <Link href="/currencies" style={{ color: "var(--ink)" }}>
+                    None set →
+                  </Link>
+                )
+              }
+              mono={!!baseCcy}
+            />
             <KV k="Fiscal year start" v="January" />
             <KV k="Country" v="United States" />
           </KVGrid>

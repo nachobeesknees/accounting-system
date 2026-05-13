@@ -6,32 +6,48 @@ import { Empty } from "@/components/ui/Empty";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
+  convertToBase,
   getBankAccounts,
+  getBaseCurrency,
   getCustomers,
   getEntities,
+  getLatestFxRates,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatAmount, parseAmount } from "@/lib/money";
 
 export default async function Page() {
-  const [bankAccounts, entities, customers] = await Promise.all([
+  const [bankAccounts, entities, customers, base, fxRates] = await Promise.all([
     getBankAccounts(),
     getEntities(),
     getCustomers(),
+    getBaseCurrency(),
+    getLatestFxRates(),
   ]);
   const entityById = new Map(entities.map((e) => [e.id, e] as const));
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
+  const baseCode = base?.code ?? "USD";
+  const baseSymbol = base?.symbol ?? "$";
 
-  const totalBalance = bankAccounts.reduce(
-    (s, b) => s + parseAmount(b.currentBalance),
-    0,
-  );
+  let totalBase = 0;
+  for (const b of bankAccounts) {
+    if (!b.currentBalance) continue;
+    const native = parseAmount(b.currentBalance);
+    if (b.currencyCode === baseCode) {
+      totalBase += native;
+    } else {
+      const c = convertToBase(native, b.currencyCode, fxRates);
+      if (c != null) totalBase += c;
+    }
+  }
+  const formatBase = (n: number) =>
+    `${baseSymbol}${formatAmount(n, { paren: true })}`;
 
   return (
     <>
       <PageHeader
         title="Bank Accounts"
-        meta={`${bankAccounts.length} accounts · ${formatUSD(totalBalance, { paren: true })} total`}
+        meta={`${bankAccounts.length} accounts · ${formatBase(totalBase)} total (${baseCode})`}
         actions={
           <ButtonLink variant="primary" href="/bank/new">
             + New bank account
@@ -60,7 +76,8 @@ export default async function Page() {
                   <TH>Last 4</TH>
                   <TH>Owner</TH>
                   <TH>As of</TH>
-                  <TH num>Current balance</TH>
+                  <TH num>Native balance</TH>
+                  <TH num>In {baseCode}</TH>
                   <TH>Status</TH>
                 </TR>
               </THead>
@@ -97,8 +114,17 @@ export default async function Page() {
                       </TD>
                       <TD num>
                         {b.currentBalance
-                          ? formatUSD(parseAmount(b.currentBalance), { paren: true })
+                          ? `${b.currencyCode} ${formatAmount(parseAmount(b.currentBalance), { paren: true })}`
                           : "—"}
+                      </TD>
+                      <TD num>
+                        {(() => {
+                          if (!b.currentBalance) return "—";
+                          const n = parseAmount(b.currentBalance);
+                          if (b.currencyCode === baseCode) return formatBase(n);
+                          const c = convertToBase(n, b.currencyCode, fxRates);
+                          return c == null ? "—" : formatBase(c);
+                        })()}
                       </TD>
                       <TD>
                         <Pill variant={statusVariant(b.isActive ? "active" : "inactive")}>
@@ -109,8 +135,9 @@ export default async function Page() {
                   );
                 })}
                 <TR total hover={false}>
-                  <TD colSpan={5}>Total</TD>
-                  <TD num>{formatUSD(totalBalance, { paren: true })}</TD>
+                  <TD colSpan={5}>Total ({baseCode})</TD>
+                  <TD num>{""}</TD>
+                  <TD num>{formatBase(totalBase)}</TD>
                   <TD>{""}</TD>
                 </TR>
               </TBody>

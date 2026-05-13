@@ -39,11 +39,13 @@ import {
   BILLS,
   CONTACTS,
   CONTACT_LINKS,
+  CURRENCIES,
   CUSTOMERS,
   EMPLOYEE_RATES,
   ENTITIES,
   ENTITY_FEES,
   FEE_SCHEDULES,
+  FX_RATES,
   INVOICES,
   JOURNAL_ENTRIES,
   OFFICES,
@@ -147,6 +149,8 @@ async function main() {
       assets,
       contact_links,
       contacts,
+      fx_rates,
+      currencies,
       price_list_entries,
       price_lists,
       offices,
@@ -162,6 +166,28 @@ async function main() {
       users
     RESTART IDENTITY CASCADE
   `);
+
+  console.log("Inserting currencies + FX rates…");
+  await db.insert(schema.currencies).values(
+    CURRENCIES.map((c) => ({
+      code: c.code,
+      symbol: c.symbol,
+      name: c.name,
+      decimals: c.decimals,
+      isBase: c.isBase,
+      isActive: c.isActive,
+    })),
+  );
+  await db.insert(schema.fxRates).values(
+    FX_RATES.map((r) => ({
+      id: r.id,
+      currencyCode: r.currencyCode,
+      rateDate: r.rateDate,
+      ratePerBase: r.ratePerBase,
+      source: r.source,
+      notes: r.notes,
+    })),
+  );
 
   console.log("Inserting users…");
   await db.insert(schema.users).values(
@@ -246,6 +272,7 @@ async function main() {
       status: e.status,
       ein: e.ein,
       notes: e.notes,
+      currencyCode: e.currencyCode,
     })),
   );
 

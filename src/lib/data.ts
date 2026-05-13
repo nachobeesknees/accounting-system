@@ -29,6 +29,7 @@ import type {
   ContactKind,
   ContactLink,
   ContactLinkRefType,
+  Currency,
   Customer,
   EmployeeRate,
   Entity,
@@ -38,6 +39,7 @@ import type {
   EntityStatus,
   FeeSchedule,
   FiscalPeriod,
+  FxRate,
   Invoice,
   InvoiceLine,
   JournalEntry,
@@ -105,6 +107,29 @@ function mapEntity(r: typeof schema.entities.$inferSelect): Entity {
     formationDate: r.formationDate,
     status: r.status as EntityStatus,
     ein: r.ein,
+    notes: r.notes,
+    currencyCode: r.currencyCode,
+  };
+}
+
+function mapCurrency(r: typeof schema.currencies.$inferSelect): Currency {
+  return {
+    code: r.code,
+    symbol: r.symbol,
+    name: r.name,
+    decimals: r.decimals,
+    isBase: r.isBase,
+    isActive: r.isActive,
+  };
+}
+
+function mapFxRate(r: typeof schema.fxRates.$inferSelect): FxRate {
+  return {
+    id: r.id,
+    currencyCode: r.currencyCode,
+    rateDate: r.rateDate,
+    ratePerBase: r.ratePerBase,
+    source: r.source,
     notes: r.notes,
   };
 }
@@ -495,6 +520,69 @@ export async function getCustomerById(id: string): Promise<Customer | undefined>
     .where(eq(schema.customers.id, id))
     .limit(1);
   return row ? mapCustomer(row) : undefined;
+}
+
+export async function getCurrencies(): Promise<Currency[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.currencies)
+    .orderBy(desc(schema.currencies.isBase), schema.currencies.code);
+  return rows.map(mapCurrency);
+}
+
+export async function getBaseCurrency(): Promise<Currency | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.currencies)
+    .where(eq(schema.currencies.isBase, true))
+    .limit(1);
+  return row ? mapCurrency(row) : undefined;
+}
+
+export async function getFxRates(): Promise<FxRate[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.fxRates)
+    .orderBy(desc(schema.fxRates.rateDate), schema.fxRates.currencyCode);
+  return rows.map(mapFxRate);
+}
+
+/**
+ * Most-recent FX rate per currency. Base currency is implicitly 1.0.
+ * Returns a map of currencyCode → rate (foreign per 1 unit of base).
+ */
+export async function getLatestFxRates(): Promise<Map<string, number>> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.fxRates)
+    .orderBy(desc(schema.fxRates.rateDate));
+  const latest = new Map<string, number>();
+  for (const r of rows) {
+    if (latest.has(r.currencyCode)) continue;
+    latest.set(r.currencyCode, parseFloat(r.ratePerBase));
+  }
+  const base = await getBaseCurrency();
+  if (base) latest.set(base.code, 1);
+  return latest;
+}
+
+/**
+ * Convert an amount in `from` currency to the base currency using the
+ * latest FX rate. Returns null if the rate is unknown.
+ */
+export function convertToBase(
+  amount: number,
+  fromCurrency: string,
+  rates: Map<string, number>,
+): number | null {
+  const r = rates.get(fromCurrency);
+  if (r == null) return null;
+  // ratePerBase is "foreign per 1 base" → base = foreign / rate
+  return amount / r;
 }
 
 export async function getOffices(): Promise<Office[]> {

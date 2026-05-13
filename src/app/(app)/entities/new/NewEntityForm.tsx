@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { createEntityAction, type CreateEntityState } from "./actions";
-import type { Customer } from "@/lib/types";
+import type { Currency, Customer } from "@/lib/types";
 
 const initial: CreateEntityState = { error: null };
 
@@ -23,12 +23,16 @@ const KIND_OPTIONS = [
 
 export function NewEntityForm({
   customers,
+  currencies,
   nextCode,
   defaultClientId,
+  defaultCurrency,
 }: {
   customers: Customer[];
+  currencies: Currency[];
   nextCode: string;
   defaultClientId?: string;
+  defaultCurrency: string;
 }) {
   const [state, action] = useActionState(createEntityAction, initial);
 
@@ -96,6 +100,22 @@ export function NewEntityForm({
                 <option value="dormant">Dormant</option>
                 <option value="dissolved">Dissolved</option>
               </SelectField>
+            </Row>
+            <Row>
+              <SelectField
+                label="Functional currency"
+                name="currencyCode"
+                defaultValue={defaultCurrency}
+              >
+                {currencies
+                  .filter((c) => c.isActive)
+                  .map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.code} — {c.name}
+                    </option>
+                  ))}
+              </SelectField>
+              <div />
             </Row>
             <TextareaField label="Notes" name="notes" placeholder="Optional notes" />
           </div>
