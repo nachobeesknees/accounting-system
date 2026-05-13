@@ -17,6 +17,7 @@ import {
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
 import type { SigningAuthority } from "@/lib/types";
+import { CustomFields } from "@/components/CustomFields";
 import {
   addSignerAction,
   deleteBankAccountAction,
@@ -370,6 +371,12 @@ export default async function Page({
             </div>
           </Card>
         </form>
+
+        <CustomFields
+          recordType="bank_account"
+          recordId={bank.id}
+          redirectPath={`/bank/${bank.id}`}
+        />
 
         <form action={deleteBankAccountAction}>
           <input type="hidden" name="id" value={bank.id} />

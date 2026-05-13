@@ -160,6 +160,73 @@ export const offices = pgTable("offices", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// ---------- Lookups (user-editable enums) ----------
+
+export const lookupTables = pgTable("lookup_tables", {
+  key: text("key").primaryKey(),
+  label: text("label").notNull(),
+  description: text("description"),
+  isSystem: boolean("is_system").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const lookupValues = pgTable("lookup_values", {
+  id: text("id").primaryKey(),
+  tableKey: text("table_key").notNull(),
+  code: text("code").notNull(),
+  label: text("label").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  isSystem: boolean("is_system").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Custom fields ----------
+
+export const customFieldRecordTypeEnum = pgEnum("custom_field_record_type", [
+  "entity",
+  "contact",
+  "asset",
+  "bank_account",
+]);
+
+export const customFieldTypeEnum = pgEnum("custom_field_type", [
+  "text",
+  "number",
+  "date",
+  "boolean",
+  "select",
+]);
+
+export const customFieldDefinitions = pgTable("custom_field_definitions", {
+  id: text("id").primaryKey(),
+  recordType: customFieldRecordTypeEnum("record_type").notNull(),
+  fieldKey: text("field_key").notNull(),
+  label: text("label").notNull(),
+  fieldType: customFieldTypeEnum("field_type").notNull(),
+  options: jsonb("options"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  isRequired: boolean("is_required").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  helpText: text("help_text"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const customFieldValues = pgTable("custom_field_values", {
+  id: text("id").primaryKey(),
+  definitionId: text("definition_id").notNull(),
+  recordId: text("record_id").notNull(),
+  valueText: text("value_text"),
+  valueNumber: numeric("value_number", { precision: 18, scale: 4 }),
+  valueDate: date("value_date"),
+  valueBoolean: boolean("value_boolean"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const priceLists = pgTable("price_lists", {
   id: text("id").primaryKey(),
   officeId: text("office_id").notNull(),
@@ -551,3 +618,7 @@ export type PriceList = typeof priceLists.$inferSelect;
 export type PriceListEntry = typeof priceListEntries.$inferSelect;
 export type Currency = typeof currencies.$inferSelect;
 export type FxRate = typeof fxRates.$inferSelect;
+export type LookupTable = typeof lookupTables.$inferSelect;
+export type LookupValue = typeof lookupValues.$inferSelect;
+export type CustomFieldDefinition = typeof customFieldDefinitions.$inferSelect;
+export type CustomFieldValue = typeof customFieldValues.$inferSelect;

@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { getCurrencies, getCustomers, getEntityById } from "@/lib/data";
+import { CustomFields } from "@/components/CustomFields";
 import type { EntityKind } from "@/lib/types";
 import { deleteEntityAction, updateEntityAction } from "./actions";
 
@@ -182,6 +183,12 @@ export default async function Page({
             </Button>
           </div>
         </form>
+
+        <CustomFields
+          recordType="entity"
+          recordId={entity.id}
+          redirectPath={`/entities/${entity.id}`}
+        />
 
         <form action={deleteEntityAction}>
           <input type="hidden" name="id" value={entity.id} />

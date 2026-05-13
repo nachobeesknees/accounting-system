@@ -39,6 +39,7 @@ import {
   BILLS,
   CONTACTS,
   CONTACT_LINKS,
+  CUSTOM_FIELD_DEFINITIONS,
   CURRENCIES,
   CUSTOMERS,
   EMPLOYEE_RATES,
@@ -48,6 +49,8 @@ import {
   FX_RATES,
   INVOICES,
   JOURNAL_ENTRIES,
+  LOOKUP_TABLES,
+  LOOKUP_VALUES,
   OFFICES,
   PERIODS,
   PRICE_LISTS,
@@ -151,6 +154,10 @@ async function main() {
       contacts,
       fx_rates,
       currencies,
+      custom_field_values,
+      custom_field_definitions,
+      lookup_values,
+      lookup_tables,
       price_list_entries,
       price_lists,
       offices,
@@ -274,6 +281,41 @@ async function main() {
       ein: e.ein,
       notes: e.notes,
       currencyCode: e.currencyCode,
+    })),
+  );
+
+  console.log("Inserting lookups + custom field definitions…");
+  await db.insert(schema.lookupTables).values(
+    LOOKUP_TABLES.map((t) => ({
+      key: t.key,
+      label: t.label,
+      description: t.description,
+      isSystem: t.isSystem,
+    })),
+  );
+  await db.insert(schema.lookupValues).values(
+    LOOKUP_VALUES.map((v) => ({
+      id: v.id,
+      tableKey: v.tableKey,
+      code: v.code,
+      label: v.label,
+      sortOrder: v.sortOrder,
+      isActive: v.isActive,
+      isSystem: v.isSystem,
+    })),
+  );
+  await db.insert(schema.customFieldDefinitions).values(
+    CUSTOM_FIELD_DEFINITIONS.map((d) => ({
+      id: d.id,
+      recordType: d.recordType,
+      fieldKey: d.fieldKey,
+      label: d.label,
+      fieldType: d.fieldType,
+      options: d.options,
+      sortOrder: d.sortOrder,
+      isRequired: d.isRequired,
+      isActive: d.isActive,
+      helpText: d.helpText,
     })),
   );
 

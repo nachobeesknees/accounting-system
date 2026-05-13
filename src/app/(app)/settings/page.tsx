@@ -84,6 +84,30 @@ export default async function Page() {
           </KVGrid>
         </Section>
 
+        <Section title="Customization (admin)">
+          <div className="flex flex-col gap-1 text-[13px]">
+            <Link
+              href="/settings/lookups"
+              style={{ color: "var(--ink)", textDecoration: "underline" }}
+            >
+              Lookup tables →
+            </Link>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+              Edit entity types, asset classes, contact roles, document types, task
+              types, GL categories.
+            </span>
+            <Link
+              href="/settings/custom-fields"
+              style={{ color: "var(--ink)", textDecoration: "underline" }}
+            >
+              Custom fields →
+            </Link>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+              Define extra fields on entities, contacts, assets, bank accounts.
+            </span>
+          </div>
+        </Section>
+
         <Section title="Bulk operations">
           <div className="flex flex-col gap-1 text-[13px]">
             <Link

@@ -16,6 +16,7 @@ import {
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
 import type { AssetKind } from "@/lib/types";
+import { CustomFields } from "@/components/CustomFields";
 import {
   addSnapshotAction,
   deleteAssetAction,
@@ -300,6 +301,12 @@ export default async function Page({
             </Table>
           )}
         </Card>
+
+        <CustomFields
+          recordType="asset"
+          recordId={asset.id}
+          redirectPath={`/aua/${asset.id}`}
+        />
 
         <form action={deleteAssetAction}>
           <input type="hidden" name="id" value={asset.id} />

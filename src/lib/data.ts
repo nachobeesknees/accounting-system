@@ -30,6 +30,10 @@ import type {
   ContactLink,
   ContactLinkRefType,
   Currency,
+  CustomFieldDefinition,
+  CustomFieldRecordType,
+  CustomFieldType,
+  CustomFieldValue,
   Customer,
   EmployeeRate,
   Entity,
@@ -45,6 +49,8 @@ import type {
   JournalEntry,
   JournalEntryStatus,
   JournalLine,
+  LookupTable,
+  LookupValue,
   Office,
   PriceList,
   PriceListEntry,
@@ -219,6 +225,58 @@ function mapEntityFee(r: typeof schema.entityFees.$inferSelect): EntityFee {
     status: r.status as EntityFeeStatus,
     invoiceId: r.invoiceId,
     notes: r.notes,
+  };
+}
+
+function mapLookupTable(r: typeof schema.lookupTables.$inferSelect): LookupTable {
+  return {
+    key: r.key,
+    label: r.label,
+    description: r.description,
+    isSystem: r.isSystem,
+  };
+}
+
+function mapLookupValue(r: typeof schema.lookupValues.$inferSelect): LookupValue {
+  return {
+    id: r.id,
+    tableKey: r.tableKey,
+    code: r.code,
+    label: r.label,
+    sortOrder: r.sortOrder,
+    isActive: r.isActive,
+    isSystem: r.isSystem,
+  };
+}
+
+function mapCustomFieldDef(
+  r: typeof schema.customFieldDefinitions.$inferSelect,
+): CustomFieldDefinition {
+  return {
+    id: r.id,
+    recordType: r.recordType as CustomFieldRecordType,
+    fieldKey: r.fieldKey,
+    label: r.label,
+    fieldType: r.fieldType as CustomFieldType,
+    options: Array.isArray(r.options) ? (r.options as string[]) : null,
+    sortOrder: r.sortOrder,
+    isRequired: r.isRequired,
+    isActive: r.isActive,
+    helpText: r.helpText,
+  };
+}
+
+function mapCustomFieldValue(
+  r: typeof schema.customFieldValues.$inferSelect,
+): CustomFieldValue {
+  return {
+    id: r.id,
+    definitionId: r.definitionId,
+    recordId: r.recordId,
+    valueText: r.valueText,
+    valueNumber: r.valueNumber,
+    valueDate: r.valueDate,
+    valueBoolean: r.valueBoolean,
   };
 }
 
@@ -614,6 +672,80 @@ export function convertToBase(
   if (r == null) return null;
   // ratePerBase is "foreign per 1 base" → base = foreign / rate
   return amount / r;
+}
+
+// ---------- Lookups + custom fields ----------
+
+export async function getLookupTables(): Promise<LookupTable[]> {
+  const db = getDb();
+  const rows = await db.select().from(schema.lookupTables).orderBy(schema.lookupTables.label);
+  return rows.map(mapLookupTable);
+}
+
+export async function getLookupTableByKey(key: string): Promise<LookupTable | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.lookupTables)
+    .where(eq(schema.lookupTables.key, key))
+    .limit(1);
+  return row ? mapLookupTable(row) : undefined;
+}
+
+export async function getLookupValues(tableKey: string): Promise<LookupValue[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.lookupValues)
+    .where(eq(schema.lookupValues.tableKey, tableKey))
+    .orderBy(schema.lookupValues.sortOrder, schema.lookupValues.label);
+  return rows.map(mapLookupValue);
+}
+
+export async function getAllLookupValues(): Promise<LookupValue[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.lookupValues)
+    .orderBy(schema.lookupValues.tableKey, schema.lookupValues.sortOrder);
+  return rows.map(mapLookupValue);
+}
+
+export async function getCustomFieldDefinitions(
+  recordType?: CustomFieldRecordType,
+): Promise<CustomFieldDefinition[]> {
+  const db = getDb();
+  const base = db
+    .select()
+    .from(schema.customFieldDefinitions)
+    .orderBy(schema.customFieldDefinitions.recordType, schema.customFieldDefinitions.sortOrder);
+  const rows = recordType
+    ? await base.where(eq(schema.customFieldDefinitions.recordType, recordType))
+    : await base;
+  return rows.map(mapCustomFieldDef);
+}
+
+export async function getCustomFieldDefinitionById(
+  id: string,
+): Promise<CustomFieldDefinition | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.customFieldDefinitions)
+    .where(eq(schema.customFieldDefinitions.id, id))
+    .limit(1);
+  return row ? mapCustomFieldDef(row) : undefined;
+}
+
+export async function getCustomFieldValuesForRecord(
+  recordId: string,
+): Promise<CustomFieldValue[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.customFieldValues)
+    .where(eq(schema.customFieldValues.recordId, recordId));
+  return rows.map(mapCustomFieldValue);
 }
 
 export async function getOffices(): Promise<Office[]> {

@@ -7,6 +7,7 @@ import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { CustomFields } from "@/components/CustomFields";
 import {
   getBankAccountById,
   getContactById,
@@ -262,6 +263,12 @@ export default async function Page({
             </div>
           </Card>
         </form>
+
+        <CustomFields
+          recordType="contact"
+          recordId={contact.id}
+          redirectPath={`/contacts/${contact.id}`}
+        />
 
         <form action={deleteContactAction}>
           <input type="hidden" name="id" value={contact.id} />

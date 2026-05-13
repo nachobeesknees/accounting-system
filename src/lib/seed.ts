@@ -9,6 +9,7 @@ import type {
   Contact,
   ContactLink,
   Currency,
+  CustomFieldDefinition,
   Customer,
   EmployeeRate,
   Entity,
@@ -18,6 +19,8 @@ import type {
   FxRate,
   Invoice,
   JournalEntry,
+  LookupTable,
+  LookupValue,
   Office,
   PriceList,
   PriceListEntry,
@@ -180,6 +183,81 @@ export const ASSET_VALUE_SNAPSHOTS: AssetValueSnapshot[] = [
   { id: id("av-018"),  assetId: "as-018", snapshotDate: D("2026-04-30"), value: "28900000.00", currencyCode: "USD", source: "UK valuation report", notes: null, createdBy: "u-aldous", createdAt: "2026-05-01T17:00:00Z" },
   { id: id("av-019"),  assetId: "as-019", snapshotDate: D("2026-04-10"), value: "2400000.00", currencyCode: "USD", source: "Sotheby's appraisal", notes: "Personal collection (direct hold)", createdBy: "u-eustace", createdAt: "2026-04-10T17:00:00Z" },
   { id: id("av-020"),  assetId: "as-020", snapshotDate: D("2026-05-10"), value: "850000.00", currencyCode: "USD", source: "Bank balance", notes: null, createdBy: "u-margery", createdAt: "2026-05-10T20:00:00Z" },
+];
+
+// ---- Lookups (user-editable enum content) ----------------------------------
+export const LOOKUP_TABLES: LookupTable[] = [
+  { key: "entity_kind", label: "Entity kinds", description: "Types of legal structures clients may own (LLC, trust, etc.)", isSystem: true },
+  { key: "asset_class", label: "Asset classes", description: "Categories used in AUA rollups", isSystem: true },
+  { key: "account_category", label: "GL account categories", description: "Optional sub-type label for chart of accounts", isSystem: false },
+  { key: "contact_role", label: "Contact roles", description: "Free-form roles on contact_links (signer, trustee, advisor, etc.)", isSystem: false },
+  { key: "document_type", label: "Document types", description: "Categories for attached files", isSystem: false },
+  { key: "task_type", label: "Time task types", description: "Labels used on time entries", isSystem: false },
+];
+
+export const LOOKUP_VALUES: LookupValue[] = [
+  // entity_kind
+  { id: id("lv-ek-llc"), tableKey: "entity_kind", code: "llc", label: "LLC", sortOrder: 1, isActive: true, isSystem: true },
+  { id: id("lv-ek-trust"), tableKey: "entity_kind", code: "trust", label: "Trust", sortOrder: 2, isActive: true, isSystem: true },
+  { id: id("lv-ek-scorp"), tableKey: "entity_kind", code: "scorp", label: "S-Corp", sortOrder: 3, isActive: true, isSystem: true },
+  { id: id("lv-ek-ccorp"), tableKey: "entity_kind", code: "ccorp", label: "C-Corp", sortOrder: 4, isActive: true, isSystem: true },
+  { id: id("lv-ek-part"), tableKey: "entity_kind", code: "partnership", label: "Partnership", sortOrder: 5, isActive: true, isSystem: true },
+  { id: id("lv-ek-found"), tableKey: "entity_kind", code: "foundation", label: "Foundation", sortOrder: 6, isActive: true, isSystem: true },
+  { id: id("lv-ek-indiv"), tableKey: "entity_kind", code: "individual", label: "Individual", sortOrder: 7, isActive: true, isSystem: true },
+  { id: id("lv-ek-other"), tableKey: "entity_kind", code: "other", label: "Other", sortOrder: 99, isActive: true, isSystem: true },
+  // asset_class
+  { id: id("lv-ac-re"), tableKey: "asset_class", code: "real_estate", label: "Real Estate", sortOrder: 1, isActive: true, isSystem: true },
+  { id: id("lv-ac-sec"), tableKey: "asset_class", code: "securities", label: "Securities", sortOrder: 2, isActive: true, isSystem: true },
+  { id: id("lv-ac-cash"), tableKey: "asset_class", code: "cash", label: "Cash", sortOrder: 3, isActive: true, isSystem: true },
+  { id: id("lv-ac-pe"), tableKey: "asset_class", code: "private_equity", label: "Private Equity", sortOrder: 4, isActive: true, isSystem: true },
+  { id: id("lv-ac-art"), tableKey: "asset_class", code: "art", label: "Art", sortOrder: 5, isActive: true, isSystem: true },
+  { id: id("lv-ac-vehicle"), tableKey: "asset_class", code: "vehicle", label: "Vehicle", sortOrder: 6, isActive: true, isSystem: true },
+  { id: id("lv-ac-bizint"), tableKey: "asset_class", code: "business_interest", label: "Business Interest", sortOrder: 7, isActive: true, isSystem: true },
+  { id: id("lv-ac-ip"), tableKey: "asset_class", code: "intellectual_property", label: "Intellectual Property", sortOrder: 8, isActive: true, isSystem: true },
+  { id: id("lv-ac-crypto"), tableKey: "asset_class", code: "crypto", label: "Crypto / Digital Assets", sortOrder: 9, isActive: true, isSystem: false },
+  // account_category
+  { id: id("lv-cat-curr"), tableKey: "account_category", code: "current_asset", label: "Current asset", sortOrder: 1, isActive: true, isSystem: false },
+  { id: id("lv-cat-long"), tableKey: "account_category", code: "long_term_asset", label: "Long-term asset", sortOrder: 2, isActive: true, isSystem: false },
+  { id: id("lv-cat-cl"), tableKey: "account_category", code: "current_liability", label: "Current liability", sortOrder: 3, isActive: true, isSystem: false },
+  { id: id("lv-cat-cap"), tableKey: "account_category", code: "capital", label: "Capital", sortOrder: 4, isActive: true, isSystem: false },
+  { id: id("lv-cat-retained"), tableKey: "account_category", code: "retained", label: "Retained", sortOrder: 5, isActive: true, isSystem: false },
+  { id: id("lv-cat-op"), tableKey: "account_category", code: "operating", label: "Operating", sortOrder: 6, isActive: true, isSystem: false },
+  { id: id("lv-cat-nonop"), tableKey: "account_category", code: "non_operating", label: "Non-operating", sortOrder: 7, isActive: true, isSystem: false },
+  // contact_role
+  { id: id("lv-cr-trustee"), tableKey: "contact_role", code: "trustee", label: "Trustee", sortOrder: 1, isActive: true, isSystem: false },
+  { id: id("lv-cr-signer"), tableKey: "contact_role", code: "signer", label: "Authorized signer", sortOrder: 2, isActive: true, isSystem: false },
+  { id: id("lv-cr-bo"), tableKey: "contact_role", code: "beneficial_owner", label: "Beneficial owner", sortOrder: 3, isActive: true, isSystem: false },
+  { id: id("lv-cr-advisor"), tableKey: "contact_role", code: "advisor", label: "Outside advisor", sortOrder: 4, isActive: true, isSystem: false },
+  { id: id("lv-cr-tax"), tableKey: "contact_role", code: "tax_preparer", label: "Tax preparer", sortOrder: 5, isActive: true, isSystem: false },
+  // document_type
+  { id: id("lv-dt-formation"), tableKey: "document_type", code: "formation", label: "Formation documents", sortOrder: 1, isActive: true, isSystem: false },
+  { id: id("lv-dt-tax"), tableKey: "document_type", code: "tax", label: "Tax filings", sortOrder: 2, isActive: true, isSystem: false },
+  { id: id("lv-dt-bank"), tableKey: "document_type", code: "bank_statement", label: "Bank statement", sortOrder: 3, isActive: true, isSystem: false },
+  { id: id("lv-dt-id"), tableKey: "document_type", code: "id_verification", label: "ID / KYC", sortOrder: 4, isActive: true, isSystem: false },
+  { id: id("lv-dt-contract"), tableKey: "document_type", code: "contract", label: "Contract", sortOrder: 5, isActive: true, isSystem: false },
+  { id: id("lv-dt-other"), tableKey: "document_type", code: "other", label: "Other", sortOrder: 99, isActive: true, isSystem: false },
+  // task_type
+  { id: id("lv-tt-book"), tableKey: "task_type", code: "bookkeeping", label: "Bookkeeping", sortOrder: 1, isActive: true, isSystem: false },
+  { id: id("lv-tt-tax"), tableKey: "task_type", code: "tax", label: "Tax", sortOrder: 2, isActive: true, isSystem: false },
+  { id: id("lv-tt-advisory"), tableKey: "task_type", code: "advisory", label: "Advisory", sortOrder: 3, isActive: true, isSystem: false },
+  { id: id("lv-tt-reporting"), tableKey: "task_type", code: "reporting", label: "Reporting", sortOrder: 4, isActive: true, isSystem: false },
+  { id: id("lv-tt-trust"), tableKey: "task_type", code: "trust_admin", label: "Trust administration", sortOrder: 5, isActive: true, isSystem: false },
+  { id: id("lv-tt-internal"), tableKey: "task_type", code: "internal", label: "Internal / non-billable", sortOrder: 6, isActive: true, isSystem: false },
+];
+
+export const CUSTOM_FIELD_DEFINITIONS: CustomFieldDefinition[] = [
+  // Entity custom fields
+  { id: id("cf-ent-001"), recordType: "entity", fieldKey: "internal_ref", label: "Internal reference", fieldType: "text", options: null, sortOrder: 1, isRequired: false, isActive: true, helpText: "Optional cross-reference to the entity's prior accounting code." },
+  { id: id("cf-ent-002"), recordType: "entity", fieldKey: "risk_tier", label: "Risk tier", fieldType: "select", options: ["Low", "Medium", "High"], sortOrder: 2, isRequired: false, isActive: true, helpText: "Used for compliance review cadence." },
+  { id: id("cf-ent-003"), recordType: "entity", fieldKey: "annual_review_due", label: "Annual review due", fieldType: "date", options: null, sortOrder: 3, isRequired: false, isActive: true, helpText: null },
+  // Contact custom fields
+  { id: id("cf-con-001"), recordType: "contact", fieldKey: "linkedin_url", label: "LinkedIn URL", fieldType: "text", options: null, sortOrder: 1, isRequired: false, isActive: true, helpText: null },
+  { id: id("cf-con-002"), recordType: "contact", fieldKey: "kyc_complete", label: "KYC complete", fieldType: "boolean", options: null, sortOrder: 2, isRequired: false, isActive: true, helpText: null },
+  // Asset custom fields
+  { id: id("cf-ast-001"), recordType: "asset", fieldKey: "insurance_policy", label: "Insurance policy #", fieldType: "text", options: null, sortOrder: 1, isRequired: false, isActive: true, helpText: null },
+  { id: id("cf-ast-002"), recordType: "asset", fieldKey: "next_appraisal", label: "Next appraisal due", fieldType: "date", options: null, sortOrder: 2, isRequired: false, isActive: true, helpText: null },
+  // Bank account custom fields
+  { id: id("cf-ba-001"), recordType: "bank_account", fieldKey: "swift_code", label: "SWIFT / BIC", fieldType: "text", options: null, sortOrder: 1, isRequired: false, isActive: true, helpText: null },
 ];
 
 export const OFFICES: Office[] = [

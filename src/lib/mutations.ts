@@ -12,7 +12,7 @@
 
 import "server-only";
 
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { sumCredits, sumDebits, toDecimalString } from "./money";
@@ -270,6 +270,205 @@ export async function voidJournalEntry(
   const updated = await getJournalEntryById(entryId);
   if (!updated) throw new Error("Entry vanished after void.");
   return updated;
+}
+
+// --------- Lookups + custom fields ---------
+
+export async function createLookupTable(
+  _user: SessionUser,
+  input: { key: string; label: string; description?: string | null },
+) {
+  const db = getDb();
+  const [created] = await db
+    .insert(schema.lookupTables)
+    .values({
+      key: input.key,
+      label: input.label,
+      description: input.description ?? null,
+      isSystem: false,
+    })
+    .returning();
+  return created;
+}
+
+export async function deleteLookupTable(_user: SessionUser, key: string) {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx.delete(schema.lookupValues).where(eq(schema.lookupValues.tableKey, key));
+    await tx.delete(schema.lookupTables).where(eq(schema.lookupTables.key, key));
+  });
+}
+
+export async function createLookupValue(
+  _user: SessionUser,
+  input: { tableKey: string; code: string; label: string; sortOrder?: number },
+) {
+  const db = getDb();
+  const id = uid("lv");
+  const [created] = await db
+    .insert(schema.lookupValues)
+    .values({
+      id,
+      tableKey: input.tableKey,
+      code: input.code,
+      label: input.label,
+      sortOrder: input.sortOrder ?? 0,
+      isActive: true,
+      isSystem: false,
+    })
+    .returning();
+  return created;
+}
+
+export async function updateLookupValue(
+  _user: SessionUser,
+  id: string,
+  input: { label?: string; sortOrder?: number; isActive?: boolean },
+) {
+  const db = getDb();
+  await db
+    .update(schema.lookupValues)
+    .set({
+      ...(input.label !== undefined && { label: input.label }),
+      ...(input.sortOrder !== undefined && { sortOrder: input.sortOrder }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.lookupValues.id, id));
+}
+
+export async function deleteLookupValue(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.lookupValues).where(eq(schema.lookupValues.id, id));
+}
+
+export async function createCustomFieldDefinition(
+  _user: SessionUser,
+  input: {
+    recordType: "entity" | "contact" | "asset" | "bank_account";
+    fieldKey: string;
+    label: string;
+    fieldType: "text" | "number" | "date" | "boolean" | "select";
+    options?: string[] | null;
+    sortOrder?: number;
+    isRequired?: boolean;
+    helpText?: string | null;
+  },
+) {
+  if (input.fieldType === "select" && (!input.options || input.options.length === 0)) {
+    throw new Error("Select-type custom fields require at least one option.");
+  }
+  const db = getDb();
+  const id = uid("cf");
+  const [created] = await db
+    .insert(schema.customFieldDefinitions)
+    .values({
+      id,
+      recordType: input.recordType,
+      fieldKey: input.fieldKey,
+      label: input.label,
+      fieldType: input.fieldType,
+      options: input.options ?? null,
+      sortOrder: input.sortOrder ?? 0,
+      isRequired: input.isRequired ?? false,
+      isActive: true,
+      helpText: input.helpText ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export async function updateCustomFieldDefinition(
+  _user: SessionUser,
+  id: string,
+  input: {
+    label?: string;
+    sortOrder?: number;
+    isRequired?: boolean;
+    isActive?: boolean;
+    helpText?: string | null;
+    options?: string[] | null;
+  },
+) {
+  const db = getDb();
+  await db
+    .update(schema.customFieldDefinitions)
+    .set({
+      ...(input.label !== undefined && { label: input.label }),
+      ...(input.sortOrder !== undefined && { sortOrder: input.sortOrder }),
+      ...(input.isRequired !== undefined && { isRequired: input.isRequired }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+      ...(input.helpText !== undefined && { helpText: input.helpText }),
+      ...(input.options !== undefined && { options: input.options }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.customFieldDefinitions.id, id));
+}
+
+export async function deleteCustomFieldDefinition(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(schema.customFieldValues)
+      .where(eq(schema.customFieldValues.definitionId, id));
+    await tx
+      .delete(schema.customFieldDefinitions)
+      .where(eq(schema.customFieldDefinitions.id, id));
+  });
+}
+
+/**
+ * Upsert a custom field value for a record. Stores the value into the
+ * type-appropriate column on `custom_field_values` and nulls the rest.
+ */
+export async function setCustomFieldValue(
+  _user: SessionUser,
+  input: {
+    definitionId: string;
+    recordId: string;
+    valueText?: string | null;
+    valueNumber?: number | null;
+    valueDate?: string | null;
+    valueBoolean?: boolean | null;
+  },
+) {
+  const db = getDb();
+  const [existing] = await db
+    .select({ id: schema.customFieldValues.id })
+    .from(schema.customFieldValues)
+    .where(
+      and(
+        eq(schema.customFieldValues.definitionId, input.definitionId),
+        eq(schema.customFieldValues.recordId, input.recordId),
+      ),
+    )
+    .limit(1);
+  const valueNumberStr =
+    input.valueNumber == null ? null : Number(input.valueNumber).toFixed(4);
+  if (existing) {
+    await db
+      .update(schema.customFieldValues)
+      .set({
+        valueText: input.valueText ?? null,
+        valueNumber: valueNumberStr,
+        valueDate: input.valueDate ?? null,
+        valueBoolean: input.valueBoolean ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.customFieldValues.id, existing.id));
+    return existing.id;
+  }
+  const id = uid("cv");
+  await db.insert(schema.customFieldValues).values({
+    id,
+    definitionId: input.definitionId,
+    recordId: input.recordId,
+    valueText: input.valueText ?? null,
+    valueNumber: valueNumberStr,
+    valueDate: input.valueDate ?? null,
+    valueBoolean: input.valueBoolean ?? null,
+  });
+  return id;
 }
 
 // --------- Currencies + FX rates ---------

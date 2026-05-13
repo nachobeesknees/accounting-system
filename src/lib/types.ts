@@ -89,6 +89,49 @@ export type Currency = {
   isActive: boolean;
 };
 
+export type LookupTable = {
+  key: string;
+  label: string;
+  description: string | null;
+  isSystem: boolean;
+};
+
+export type LookupValue = {
+  id: string;
+  tableKey: string;
+  code: string;
+  label: string;
+  sortOrder: number;
+  isActive: boolean;
+  isSystem: boolean;
+};
+
+export type CustomFieldRecordType = "entity" | "contact" | "asset" | "bank_account";
+export type CustomFieldType = "text" | "number" | "date" | "boolean" | "select";
+
+export type CustomFieldDefinition = {
+  id: string;
+  recordType: CustomFieldRecordType;
+  fieldKey: string;
+  label: string;
+  fieldType: CustomFieldType;
+  options: string[] | null;
+  sortOrder: number;
+  isRequired: boolean;
+  isActive: boolean;
+  helpText: string | null;
+};
+
+export type CustomFieldValue = {
+  id: string;
+  definitionId: string;
+  recordId: string;
+  valueText: string | null;
+  valueNumber: string | null;
+  valueDate: string | null;
+  valueBoolean: boolean | null;
+};
+
 export type FxRate = {
   id: string;
   currencyCode: string;
