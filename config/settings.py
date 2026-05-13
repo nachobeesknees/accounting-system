@@ -132,6 +132,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Authentication
 AUTHENTICATION_BACKENDS = [
+    'apps.core.auth.DemoAuthenticationBackend',  # Custom backend for demo accounts
     'django.contrib.auth.backends.ModelBackend',
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
