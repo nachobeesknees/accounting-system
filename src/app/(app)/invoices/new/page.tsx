@@ -1,22 +1,35 @@
 import { PageHeader } from "@/components/ui/PageHeader";
-import { ButtonLink } from "@/components/ui/Button";
-import { Empty } from "@/components/ui/Empty";
+import { getAccounts, getCustomers } from "@/lib/data";
+import { NewInvoiceForm } from "./NewInvoiceForm";
 
-export default function Page() {
+function todayISO(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function plusDaysISO(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export default async function Page() {
+  const [customers, accounts] = await Promise.all([
+    getCustomers(),
+    getAccounts(),
+  ]);
+  const revenueAccounts = accounts
+    .filter((a) => a.accountType === "revenue" && a.isActive)
+    .sort((a, b) => a.code.localeCompare(b.code));
+
   return (
     <>
       <PageHeader title="New invoice" meta="Invoices / New" />
-      <div className="px-6 my-3.5">
-        <Empty
-          title="Coming soon"
-          body="The new entity form will land in the next iteration."
-          cta={
-            <ButtonLink href="/invoices" variant="secondary">
-              Back to invoices
-            </ButtonLink>
-          }
-        />
-      </div>
+      <NewInvoiceForm
+        customers={customers}
+        revenueAccounts={revenueAccounts}
+        today={todayISO()}
+        dueDefault={plusDaysISO(30)}
+      />
     </>
   );
 }

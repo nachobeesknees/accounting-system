@@ -1,22 +1,71 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ButtonLink } from "@/components/ui/Button";
 import { Empty } from "@/components/ui/Empty";
+import { getAccounts, getVendors } from "@/lib/data";
 
-export default function Page() {
-  return (
-    <>
-      <PageHeader title="New bill" meta="Bills / New" />
-      <div className="px-6 my-3.5">
-        <Empty
-          title="Coming soon"
-          body="The new entity form will land in the next iteration."
-          cta={
+import { NewBillForm } from "./NewBillForm";
+
+export default async function Page() {
+  const [vendorsAll, accountsAll] = await Promise.all([
+    getVendors(),
+    getAccounts(),
+  ]);
+  const vendors = vendorsAll
+    .filter((v) => v.isActive)
+    .sort((a, b) => a.code.localeCompare(b.code));
+  const expenseAccounts = accountsAll
+    .filter((a) => a.accountType === "expense" && a.isActive)
+    .sort((a, b) => a.code.localeCompare(b.code));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const due = new Date();
+  due.setUTCDate(due.getUTCDate() + 30);
+  const defaultDueDate = due.toISOString().slice(0, 10);
+
+  if (vendors.length === 0) {
+    return (
+      <>
+        <PageHeader
+          title="New bill"
+          meta="Bills / New"
+          actions={
             <ButtonLink href="/bills" variant="secondary">
-              Back to bills
+              Cancel
             </ButtonLink>
           }
         />
-      </div>
+        <div className="px-6 my-3.5">
+          <Empty
+            title="No vendors"
+            body="Add a vendor before creating a bill."
+            cta={
+              <ButtonLink href="/vendors/new" variant="primary">
+                + New vendor
+              </ButtonLink>
+            }
+          />
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <PageHeader
+        title="New bill"
+        meta="Bills / New"
+        actions={
+          <ButtonLink href="/bills" variant="secondary">
+            Cancel
+          </ButtonLink>
+        }
+      />
+      <NewBillForm
+        vendors={vendors}
+        expenseAccounts={expenseAccounts}
+        today={today}
+        defaultDueDate={defaultDueDate}
+      />
     </>
   );
 }

@@ -40,3 +40,5 @@ drizzle/meta/
 .python-version
 .venv/
 __pycache__/
+.vercel
+.claude/worktrees/

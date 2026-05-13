@@ -1232,6 +1232,436 @@ export async function createVendor(
   return created;
 }
 
+// --------- Invoices (with auto-JE on post + payment) ---------
+
+const AR_ACCOUNT_ID = "a-1200";
+const AP_ACCOUNT_ID = "a-2000";
+const DEFAULT_CASH_ACCOUNT_ID = "a-1000";
+
+export type DraftInvoiceLine = {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  accountId: string;
+};
+
+export type CreateInvoiceInput = {
+  customerId: string;
+  invoiceDate: string;
+  dueDate: string;
+  notes?: string | null;
+  lines: DraftInvoiceLine[];
+};
+
+export async function createInvoice(_user: SessionUser, input: CreateInvoiceInput) {
+  if (input.lines.length === 0) throw new Error("Invoice must have at least 1 line.");
+  for (const [i, l] of input.lines.entries()) {
+    if (!l.accountId) throw new Error(`Line ${i + 1}: account is required.`);
+    if (l.quantity <= 0) throw new Error(`Line ${i + 1}: quantity must be > 0.`);
+    if (l.unitPrice < 0) throw new Error(`Line ${i + 1}: unit price must be >= 0.`);
+    if (!l.description.trim()) throw new Error(`Line ${i + 1}: description is required.`);
+  }
+
+  const db = getDb();
+  const id = uid("i");
+  const invoiceNumber = await nextInvoiceNumber();
+  const subtotal = input.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.invoices).values({
+      id,
+      invoiceNumber,
+      customerId: input.customerId,
+      invoiceDate: input.invoiceDate,
+      dueDate: input.dueDate,
+      status: "draft",
+      subtotal: toDecimalString(subtotal),
+      taxAmount: "0.00",
+      total: toDecimalString(subtotal),
+      amountPaid: "0.00",
+      balanceDue: toDecimalString(subtotal),
+      currencyCode: "USD",
+      notes: input.notes ?? null,
+      journalEntryId: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await tx.insert(schema.invoiceLines).values(
+      input.lines.map((l, i) => ({
+        id: `${id}-l${i + 1}`,
+        invoiceId: id,
+        lineNumber: i + 1,
+        description: l.description,
+        quantity: l.quantity.toString(),
+        unitPrice: toDecimalString(l.unitPrice),
+        amount: toDecimalString(l.quantity * l.unitPrice),
+        accountId: l.accountId,
+        createdAt: now,
+      })),
+    );
+  });
+  return { id, invoiceNumber };
+}
+
+export async function postInvoice(user: SessionUser, invoiceId: string) {
+  const db = getDb();
+  const [inv] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, invoiceId))
+    .limit(1);
+  if (!inv) throw new Error("Invoice not found.");
+  if (inv.status !== "draft") {
+    throw new Error(`Invoice is already ${inv.status}.`);
+  }
+
+  const lines = await db
+    .select()
+    .from(schema.invoiceLines)
+    .where(eq(schema.invoiceLines.invoiceId, invoiceId));
+  if (lines.length === 0) throw new Error("Invoice has no lines.");
+
+  const total = lines.reduce((s, l) => s + parseFloat(l.amount), 0);
+  const jeLines: DraftJournalLine[] = [
+    {
+      accountId: AR_ACCOUNT_ID,
+      description: `${inv.invoiceNumber}`,
+      debit: total,
+      credit: 0,
+    },
+    ...lines.map((l) => ({
+      accountId: l.accountId,
+      description: l.description,
+      debit: 0,
+      credit: parseFloat(l.amount),
+    })),
+  ];
+
+  const je = await createJournalEntry(user, {
+    entryDate: inv.invoiceDate,
+    description: `Service invoice issued (${inv.invoiceNumber})`,
+    reference: inv.invoiceNumber,
+    source: "invoice",
+    status: "posted",
+    lines: jeLines,
+  });
+
+  await db
+    .update(schema.invoices)
+    .set({
+      status: "sent",
+      journalEntryId: je.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.invoices.id, invoiceId));
+
+  return { invoiceId, journalEntryId: je.id, entryNumber: je.entryNumber };
+}
+
+export type RecordInvoicePaymentInput = {
+  invoiceId: string;
+  amount: number;
+  paymentDate: string;
+  bankAccountId?: string | null;
+  reference?: string | null;
+};
+
+export async function recordInvoicePayment(
+  user: SessionUser,
+  input: RecordInvoicePaymentInput,
+) {
+  const db = getDb();
+  const [inv] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, input.invoiceId))
+    .limit(1);
+  if (!inv) throw new Error("Invoice not found.");
+  if (inv.status === "draft") {
+    throw new Error("Post the invoice before recording a payment.");
+  }
+  if (inv.status === "void") throw new Error("Invoice is voided.");
+  if (inv.status === "paid") throw new Error("Invoice is already paid.");
+
+  if (input.amount <= 0) throw new Error("Payment amount must be > 0.");
+  const balanceDue = parseFloat(inv.balanceDue);
+  if (input.amount > balanceDue + 0.005) {
+    throw new Error(
+      `Payment ${input.amount.toFixed(2)} exceeds balance due ${balanceDue.toFixed(2)}.`,
+    );
+  }
+
+  let cashAccountId = DEFAULT_CASH_ACCOUNT_ID;
+  if (input.bankAccountId) {
+    const [ba] = await db
+      .select({ accountId: schema.bankAccounts.accountId })
+      .from(schema.bankAccounts)
+      .where(eq(schema.bankAccounts.id, input.bankAccountId))
+      .limit(1);
+    if (ba) cashAccountId = ba.accountId;
+  }
+
+  const je = await createJournalEntry(user, {
+    entryDate: input.paymentDate,
+    description: `Payment received (${inv.invoiceNumber})`,
+    reference: input.reference ?? inv.invoiceNumber,
+    source: "invoice",
+    status: "posted",
+    lines: [
+      { accountId: cashAccountId, description: "Deposit", debit: input.amount, credit: 0 },
+      { accountId: AR_ACCOUNT_ID, description: "Apply AR", debit: 0, credit: input.amount },
+    ],
+  });
+
+  const newPaid = parseFloat(inv.amountPaid) + input.amount;
+  const newBalance = parseFloat(inv.total) - newPaid;
+  const newStatus = newBalance < 0.005 ? "paid" : "partial";
+  await db
+    .update(schema.invoices)
+    .set({
+      amountPaid: toDecimalString(newPaid),
+      balanceDue: toDecimalString(Math.max(0, newBalance)),
+      status: newStatus,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.invoices.id, input.invoiceId));
+
+  return { invoiceId: input.invoiceId, journalEntryId: je.id, entryNumber: je.entryNumber };
+}
+
+export async function voidInvoice(user: SessionUser, invoiceId: string, reason: string) {
+  const db = getDb();
+  const [inv] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, invoiceId))
+    .limit(1);
+  if (!inv) throw new Error("Invoice not found.");
+  if (inv.status === "void") return inv;
+
+  if (inv.journalEntryId) {
+    await voidJournalEntry(
+      user,
+      inv.journalEntryId,
+      `Invoice ${inv.invoiceNumber} voided: ${reason}`,
+    );
+  }
+  await db
+    .update(schema.invoices)
+    .set({ status: "void", updatedAt: new Date() })
+    .where(eq(schema.invoices.id, invoiceId));
+}
+
+// --------- Bills (with auto-JE on approve + payment) ---------
+
+export type DraftBillLine = {
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  accountId: string; // expense account
+};
+
+export type CreateBillInput = {
+  vendorId: string;
+  billDate: string;
+  dueDate: string;
+  reference?: string | null;
+  notes?: string | null;
+  lines: DraftBillLine[];
+};
+
+export async function createBill(_user: SessionUser, input: CreateBillInput) {
+  if (input.lines.length === 0) throw new Error("Bill must have at least 1 line.");
+  for (const [i, l] of input.lines.entries()) {
+    if (!l.accountId) throw new Error(`Line ${i + 1}: account is required.`);
+    if (l.quantity <= 0) throw new Error(`Line ${i + 1}: quantity must be > 0.`);
+    if (l.unitPrice < 0) throw new Error(`Line ${i + 1}: unit price must be >= 0.`);
+    if (!l.description.trim()) throw new Error(`Line ${i + 1}: description is required.`);
+  }
+
+  const db = getDb();
+  const id = uid("b");
+  const billNumber = input.reference?.trim() || (await nextBillNumber());
+  const subtotal = input.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.bills).values({
+      id,
+      billNumber,
+      vendorId: input.vendorId,
+      billDate: input.billDate,
+      dueDate: input.dueDate,
+      status: "draft",
+      subtotal: toDecimalString(subtotal),
+      taxAmount: "0.00",
+      total: toDecimalString(subtotal),
+      amountPaid: "0.00",
+      balanceDue: toDecimalString(subtotal),
+      currencyCode: "USD",
+      notes: input.notes ?? null,
+      journalEntryId: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await tx.insert(schema.billLines).values(
+      input.lines.map((l, i) => ({
+        id: `${id}-l${i + 1}`,
+        billId: id,
+        lineNumber: i + 1,
+        description: l.description,
+        quantity: l.quantity.toString(),
+        unitPrice: toDecimalString(l.unitPrice),
+        amount: toDecimalString(l.quantity * l.unitPrice),
+        accountId: l.accountId,
+        createdAt: now,
+      })),
+    );
+  });
+  return { id, billNumber };
+}
+
+export async function approveBill(user: SessionUser, billId: string) {
+  const db = getDb();
+  const [bill] = await db
+    .select()
+    .from(schema.bills)
+    .where(eq(schema.bills.id, billId))
+    .limit(1);
+  if (!bill) throw new Error("Bill not found.");
+  if (bill.status !== "draft") throw new Error(`Bill is already ${bill.status}.`);
+
+  const lines = await db
+    .select()
+    .from(schema.billLines)
+    .where(eq(schema.billLines.billId, billId));
+  if (lines.length === 0) throw new Error("Bill has no lines.");
+
+  const total = lines.reduce((s, l) => s + parseFloat(l.amount), 0);
+  const jeLines: DraftJournalLine[] = [
+    ...lines.map((l) => ({
+      accountId: l.accountId,
+      description: l.description,
+      debit: parseFloat(l.amount),
+      credit: 0,
+    })),
+    { accountId: AP_ACCOUNT_ID, description: bill.billNumber, debit: 0, credit: total },
+  ];
+
+  const je = await createJournalEntry(user, {
+    entryDate: bill.billDate,
+    description: `Bill approved (${bill.billNumber})`,
+    reference: bill.billNumber,
+    source: "bill",
+    status: "posted",
+    lines: jeLines,
+  });
+
+  await db
+    .update(schema.bills)
+    .set({
+      status: "approved",
+      journalEntryId: je.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.bills.id, billId));
+
+  return { billId, journalEntryId: je.id, entryNumber: je.entryNumber };
+}
+
+export type RecordBillPaymentInput = {
+  billId: string;
+  amount: number;
+  paymentDate: string;
+  bankAccountId?: string | null;
+  reference?: string | null;
+};
+
+export async function recordBillPayment(
+  user: SessionUser,
+  input: RecordBillPaymentInput,
+) {
+  const db = getDb();
+  const [bill] = await db
+    .select()
+    .from(schema.bills)
+    .where(eq(schema.bills.id, input.billId))
+    .limit(1);
+  if (!bill) throw new Error("Bill not found.");
+  if (bill.status === "draft") throw new Error("Approve the bill before paying.");
+  if (bill.status === "void") throw new Error("Bill is voided.");
+  if (bill.status === "paid") throw new Error("Bill is already paid.");
+
+  if (input.amount <= 0) throw new Error("Payment amount must be > 0.");
+  const balanceDue = parseFloat(bill.balanceDue);
+  if (input.amount > balanceDue + 0.005) {
+    throw new Error(
+      `Payment ${input.amount.toFixed(2)} exceeds balance due ${balanceDue.toFixed(2)}.`,
+    );
+  }
+
+  let cashAccountId = DEFAULT_CASH_ACCOUNT_ID;
+  if (input.bankAccountId) {
+    const [ba] = await db
+      .select({ accountId: schema.bankAccounts.accountId })
+      .from(schema.bankAccounts)
+      .where(eq(schema.bankAccounts.id, input.bankAccountId))
+      .limit(1);
+    if (ba) cashAccountId = ba.accountId;
+  }
+
+  const je = await createJournalEntry(user, {
+    entryDate: input.paymentDate,
+    description: `Payment sent (${bill.billNumber})`,
+    reference: input.reference ?? bill.billNumber,
+    source: "bill",
+    status: "posted",
+    lines: [
+      { accountId: AP_ACCOUNT_ID, description: "Pay AP", debit: input.amount, credit: 0 },
+      { accountId: cashAccountId, description: "Bank out", debit: 0, credit: input.amount },
+    ],
+  });
+
+  const newPaid = parseFloat(bill.amountPaid) + input.amount;
+  const newBalance = parseFloat(bill.total) - newPaid;
+  const newStatus = newBalance < 0.005 ? "paid" : "partial";
+  await db
+    .update(schema.bills)
+    .set({
+      amountPaid: toDecimalString(newPaid),
+      balanceDue: toDecimalString(Math.max(0, newBalance)),
+      status: newStatus,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.bills.id, input.billId));
+
+  return { billId: input.billId, journalEntryId: je.id, entryNumber: je.entryNumber };
+}
+
+export async function voidBill(user: SessionUser, billId: string, reason: string) {
+  const db = getDb();
+  const [bill] = await db
+    .select()
+    .from(schema.bills)
+    .where(eq(schema.bills.id, billId))
+    .limit(1);
+  if (!bill) throw new Error("Bill not found.");
+  if (bill.status === "void") return bill;
+
+  if (bill.journalEntryId) {
+    await voidJournalEntry(
+      user,
+      bill.journalEntryId,
+      `Bill ${bill.billNumber} voided: ${reason}`,
+    );
+  }
+  await db
+    .update(schema.bills)
+    .set({ status: "void", updatedAt: new Date() })
+    .where(eq(schema.bills.id, billId));
+}
+
 // --------- Bank accounts + signers ---------
 
 export type CreateBankAccountInput = {
