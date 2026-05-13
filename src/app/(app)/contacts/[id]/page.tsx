@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -285,9 +286,12 @@ export default async function Page({
                 Deleting a contact removes all its links. Prefer marking
                 inactive for compliance trails.
               </span>
-              <Button variant="danger" type="submit">
-                Delete contact
-              </Button>
+              <ConfirmButton
+                label="Delete contact"
+                title={`Delete contact ${contact.name}?`}
+                message="This removes the contact and all of its links to entities, clients, vendors, and bank signers. Prefer marking inactive for a compliance trail."
+                confirmText="Delete contact"
+              />
             </div>
           </Card>
         </form>

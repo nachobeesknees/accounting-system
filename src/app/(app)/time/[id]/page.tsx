@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import {
@@ -177,9 +178,12 @@ export default async function Page({
               <span style={{ color: "var(--ink-3)" }}>
                 Deleting this entry removes it from utilization reports.
               </span>
-              <Button variant="danger" type="submit">
-                Delete entry
-              </Button>
+              <ConfirmButton
+                label="Delete entry"
+                title="Delete this time entry?"
+                message="This permanently removes the entry from utilization reports and billing rollups. This cannot be undone."
+                confirmText="Delete entry"
+              />
             </div>
           </Card>
         </form>

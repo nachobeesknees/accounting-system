@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -301,9 +302,12 @@ export default async function Page({
                 Deleting this price list removes its entries permanently. Prefer
                 marking inactive for compliance trails.
               </span>
-              <Button variant="danger" type="submit">
-                Delete price list
-              </Button>
+              <ConfirmButton
+                label="Delete price list"
+                title="Delete this price list?"
+                message="This permanently removes the price list and all of its entries. Prefer marking it inactive if you need a compliance trail."
+                confirmText="Delete price list"
+              />
             </div>
           </Card>
         </form>

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Field, Row, SelectField } from "@/components/ui/Field";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
@@ -84,9 +85,13 @@ export default async function Page({
       {canVoid && (
         <form action={voidBillAction} style={{ display: "inline-flex" }}>
           <input type="hidden" name="billId" value={bill.id} />
-          <Button variant="danger" type="submit">
-            Void
-          </Button>
+          <ConfirmButton
+            label="Void"
+            title={`Void bill ${bill.billNumber}?`}
+            message="Voiding a bill reverses its payable. If posted, a reversing JE will be generated. This cannot be undone."
+            confirmText="Void bill"
+            requirePhrase={bill.billNumber}
+          />
         </form>
       )}
     </>

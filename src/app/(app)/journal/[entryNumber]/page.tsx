@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Empty } from "@/components/ui/Empty";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
@@ -85,9 +86,12 @@ export default async function Page({
           <form action={voidEntry}>
             <input type="hidden" name="entryId" value={entry.id} />
             <input type="hidden" name="reason" value="Voided from detail" />
-            <Button variant="danger" type="submit">
-              Void
-            </Button>
+            <ConfirmButton
+              label="Void"
+              title={`Void ${entry.entryNumber}?`}
+              message="Voiding a draft entry hides it from the ledger but keeps an audit record. This action cannot be undone."
+              confirmText="Void entry"
+            />
           </form>
         </>
       )}
@@ -95,9 +99,13 @@ export default async function Page({
         <form action={voidEntry}>
           <input type="hidden" name="entryId" value={entry.id} />
           <input type="hidden" name="reason" value="Voided from detail" />
-          <Button variant="danger" type="submit">
-            Void
-          </Button>
+          <ConfirmButton
+            label="Void"
+            title={`Void posted entry ${entry.entryNumber}?`}
+            message="Voiding a posted entry reverses its impact on the ledger and the period totals. Make sure you intend to reverse this entry — the action cannot be undone."
+            confirmText="Void entry"
+            requirePhrase={entry.entryNumber}
+          />
         </form>
       )}
     </>

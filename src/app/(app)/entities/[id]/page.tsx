@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
@@ -315,9 +316,13 @@ export default async function Page({
                 Deleting an entity is permanent. Prefer setting status to{" "}
                 <em>dissolved</em> for compliance trails.
               </span>
-              <Button variant="danger" type="submit">
-                Delete entity
-              </Button>
+              <ConfirmButton
+                label="Delete entity"
+                title={`Delete ${entity.code} — ${entity.name}?`}
+                message="This permanently removes the entity, its books scope, and any unposted JE lines tied to it. Prefer setting status to Dissolved if you need a compliance trail."
+                confirmText="Delete entity"
+                requirePhrase={entity.code}
+              />
             </div>
           </Card>
         </form>

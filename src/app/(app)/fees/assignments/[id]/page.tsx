@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -374,9 +375,12 @@ export default async function Page({
                 Deleting this assignment removes the entity's fee record for{" "}
                 {fee.billingYear}. The invoice (if any) is not deleted.
               </span>
-              <Button variant="danger" type="submit">
-                Delete assignment
-              </Button>
+              <ConfirmButton
+                label="Delete assignment"
+                title={`Delete ${fee.billingYear} fee assignment?`}
+                message={`This removes the entity's fee record for ${fee.billingYear}. The invoice (if any) is not deleted. This cannot be undone.`}
+                confirmText="Delete assignment"
+              />
             </div>
           </Card>
         </form>

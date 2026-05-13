@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
@@ -393,9 +394,12 @@ export default async function Page({
                 Deleting this bank account removes all signers and unlinks any
                 bank transactions referencing it.
               </span>
-              <Button variant="danger" type="submit">
-                Delete bank account
-              </Button>
+              <ConfirmButton
+                label="Delete bank account"
+                title={`Delete bank account ${bank.name}?`}
+                message="This removes all signers and unlinks any transactions referencing this account. This cannot be undone."
+                confirmText="Delete bank account"
+              />
             </div>
           </Card>
         </form>

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
@@ -219,9 +220,13 @@ export default async function Page({
         <form action={voidInvoiceAction}>
           <input type="hidden" name="invoiceId" value={invoice.id} />
           <input type="hidden" name="reason" value="Voided from detail view" />
-          <Button variant="danger" type="submit">
-            Void
-          </Button>
+          <ConfirmButton
+            label="Void"
+            title={`Void invoice ${invoice.invoiceNumber}?`}
+            message="Voiding an invoice reverses its receivable. If the invoice was already posted, a reversing JE will be generated. This cannot be undone."
+            confirmText="Void invoice"
+            requirePhrase={invoice.invoiceNumber}
+          />
         </form>
       )}
     </>
