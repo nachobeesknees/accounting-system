@@ -1,10 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
-from django.contrib.auth.models import User as DjangoUser
-import logging
 
 User = get_user_model()
-logger = logging.getLogger(__name__)
 
 DEMO_ACCOUNTS = {
     'demo_admin': {
@@ -36,8 +33,8 @@ DEMO_ACCOUNTS = {
 
 class DemoAuthenticationBackend(ModelBackend):
     """
-    Custom authentication backend that allows demo accounts to log in.
-    Handles both pre-created users and on-demand user creation.
+    Custom authentication backend that allows demo accounts to log in without
+    requiring pre-existing database records. Creates users on first authentication.
     """
 
     def authenticate(self, request, username=None, password=None, **kwargs):
@@ -50,30 +47,21 @@ class DemoAuthenticationBackend(ModelBackend):
                 return None
 
             # Try to get or create the user
-            try:
-                user = User.objects.get(username=username)
-            except User.DoesNotExist:
-                # Try to create the user if it doesn't exist
-                try:
-                    user = User.objects.create_user(
-                        username=username,
-                        email=demo_config['email'],
-                        password=password,
-                        first_name=demo_config['first_name'],
-                        last_name=demo_config['last_name'],
-                    )
-                    logger.info(f"Created demo user: {username}")
-                except Exception as e:
-                    # If user creation fails (e.g., database issue), create a minimal user object
-                    # This allows demo login to work even if the database is not fully functional
-                    logger.warning(f"Could not create user {username}: {str(e)}. Using minimal auth.")
-                    user = DjangoUser(
-                        username=username,
-                        email=demo_config['email'],
-                        first_name=demo_config['first_name'],
-                        last_name=demo_config['last_name'],
-                    )
-                    user.set_password(password)
+            user, created = User.objects.get_or_create(
+                username=username,
+                defaults={
+                    'email': demo_config['email'],
+                    'first_name': demo_config['first_name'],
+                    'last_name': demo_config['last_name'],
+                }
+            )
+
+            # Set password if user was just created (or update it anyway)
+            if password != demo_config['password']:  # Verify again for safety
+                return None
+
+            user.set_password(password)
+            user.save()
 
             return user
 
