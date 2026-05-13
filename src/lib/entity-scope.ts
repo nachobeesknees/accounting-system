@@ -10,13 +10,27 @@
 
 import "server-only";
 import { cookies } from "next/headers";
+import { eq } from "drizzle-orm";
+import { getDb, schema } from "@/db";
 
 const COOKIE = "tw_entity_scope";
 
+/**
+ * Returns the firm-entity-id stored in the cookie, but only if it
+ * resolves to an actual firm in the offices table. Stale or unknown
+ * values (e.g. an old client-entity id) are treated as "all firms".
+ */
 export async function getEntityScope(): Promise<string | null> {
   const jar = await cookies();
   const v = jar.get(COOKIE)?.value;
   if (!v || v === "all") return null;
+  const db = getDb();
+  const [row] = await db
+    .select({ id: schema.offices.id })
+    .from(schema.offices)
+    .where(eq(schema.offices.id, v))
+    .limit(1);
+  if (!row) return null; // stale cookie — fall back to "all firms"
   return v;
 }
 

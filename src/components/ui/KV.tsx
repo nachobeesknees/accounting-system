@@ -27,18 +27,28 @@ export function KV({
         {k}
       </div>
       <div
-        className="text-[12.5px]"
+        className="text-[12.5px] min-w-0"
         style={{
           color: "var(--ink)",
           fontFamily: mono ? "var(--font-mono)" : undefined,
           fontVariantNumeric: mono ? "tabular-nums" : undefined,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
         }}
+        title={typeof v === "string" ? v : undefined}
       >
         {v}
         {sub && (
           <div
             className="text-[11px] mt-0.5"
-            style={{ color: "var(--ink-4)", fontFamily: "var(--font-sans)" }}
+            style={{
+              color: "var(--ink-4)",
+              fontFamily: "var(--font-sans)",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
           >
             {sub}
           </div>
