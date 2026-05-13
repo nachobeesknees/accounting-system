@@ -1,20 +1,13 @@
 {
-  "buildCommand": "pip install -r requirements.txt && python manage.py migrate && python manage.py collectstatic --noinput",
+  "buildCommand": "bash build.sh",
+  "outputDirectory": ".",
   "framework": "django",
   "python": {
     "version": "3.12"
   },
   "env": {
     "DEBUG": {
-      "value": "False"
-    },
-    "ENVIRONMENT": {
-      "value": "production"
-    }
-  },
-  "git": {
-    "deploymentEnabled": {
-      "main": true
+      "default": "false"
     }
   }
 }
