@@ -14,6 +14,7 @@ import {
   getEntityFeesByEntityId,
 } from "@/lib/data";
 import { CustomFields } from "@/components/CustomFields";
+import { Attachments } from "@/components/Attachments";
 import type { EntityKind } from "@/lib/types";
 import { formatUSD, parseAmount } from "@/lib/money";
 import { deleteEntityAction, updateEntityAction } from "./actions";
@@ -295,6 +296,12 @@ export default async function Page({
         </Card>
 
         <CustomFields
+          recordType="entity"
+          recordId={entity.id}
+          redirectPath={`/entities/${entity.id}`}
+        />
+
+        <Attachments
           recordType="entity"
           recordId={entity.id}
           redirectPath={`/entities/${entity.id}`}

@@ -18,6 +18,7 @@ import {
 } from "@/lib/data";
 import { formatUSD, parseAmount } from "@/lib/money";
 import { postEntry, voidEntry } from "./actions";
+import { Attachments } from "@/components/Attachments";
 
 function formatLongDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -280,6 +281,12 @@ export default async function Page({
             />
           </Card>
         )}
+
+        <Attachments
+          recordType="journal_entry"
+          recordId={entry.id}
+          redirectPath={`/journal/${entry.entryNumber}`}
+        />
       </div>
     </>
   );

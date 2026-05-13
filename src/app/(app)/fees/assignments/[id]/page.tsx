@@ -22,6 +22,7 @@ import {
   deleteAssignmentAction,
   updateAssignmentAction,
 } from "./actions";
+import { Attachments } from "@/components/Attachments";
 
 const MONTH_NAMES = [
   "January",
@@ -358,6 +359,12 @@ export default async function Page({
             View entity →
           </Link>
         )}
+
+        <Attachments
+          recordType="fee"
+          recordId={fee.id}
+          redirectPath={`/fees/assignments/${fee.id}`}
+        />
 
         <form action={deleteAssignmentAction}>
           <input type="hidden" name="id" value={fee.id} />

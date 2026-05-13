@@ -17,6 +17,7 @@ import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
 import type { AssetKind } from "@/lib/types";
 import { CustomFields } from "@/components/CustomFields";
+import { Attachments } from "@/components/Attachments";
 import {
   addSnapshotAction,
   deleteAssetAction,
@@ -303,6 +304,12 @@ export default async function Page({
         </Card>
 
         <CustomFields
+          recordType="asset"
+          recordId={asset.id}
+          redirectPath={`/aua/${asset.id}`}
+        />
+
+        <Attachments
           recordType="asset"
           recordId={asset.id}
           redirectPath={`/aua/${asset.id}`}

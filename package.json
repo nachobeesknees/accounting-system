@@ -12,6 +12,7 @@
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@vercel/blob": "^2.3.3",
     "drizzle-orm": "^0.36.4",
     "next": "^15.1.0",
     "postgres": "^3.4.5",

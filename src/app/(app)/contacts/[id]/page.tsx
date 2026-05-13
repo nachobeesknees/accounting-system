@@ -8,6 +8,7 @@ import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { CustomFields } from "@/components/CustomFields";
+import { Attachments } from "@/components/Attachments";
 import {
   getBankAccountById,
   getContactById,
@@ -265,6 +266,12 @@ export default async function Page({
         </form>
 
         <CustomFields
+          recordType="contact"
+          recordId={contact.id}
+          redirectPath={`/contacts/${contact.id}`}
+        />
+
+        <Attachments
           recordType="contact"
           recordId={contact.id}
           redirectPath={`/contacts/${contact.id}`}

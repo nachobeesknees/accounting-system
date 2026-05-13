@@ -13,6 +13,7 @@ import {
   deleteTimeEntryAction,
   updateTimeEntryAction,
 } from "./actions";
+import { Attachments } from "@/components/Attachments";
 
 export default async function Page({
   params,
@@ -162,6 +163,12 @@ export default async function Page({
             </div>
           </Card>
         </form>
+
+        <Attachments
+          recordType="time_entry"
+          recordId={entry.id}
+          redirectPath={`/time/${entry.id}`}
+        />
 
         <form action={deleteTimeEntryAction}>
           <input type="hidden" name="id" value={entry.id} />

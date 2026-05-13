@@ -18,6 +18,7 @@ import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
 import type { SigningAuthority } from "@/lib/types";
 import { CustomFields } from "@/components/CustomFields";
+import { Attachments } from "@/components/Attachments";
 import {
   addSignerAction,
   deleteBankAccountAction,
@@ -373,6 +374,12 @@ export default async function Page({
         </form>
 
         <CustomFields
+          recordType="bank_account"
+          recordId={bank.id}
+          redirectPath={`/bank/${bank.id}`}
+        />
+
+        <Attachments
           recordType="bank_account"
           recordId={bank.id}
           redirectPath={`/bank/${bank.id}`}

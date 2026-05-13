@@ -280,6 +280,112 @@ export async function voidJournalEntry(
   return updated;
 }
 
+// --------- Attachments + activity log ---------
+
+export async function logActivity(
+  user: SessionUser,
+  input: {
+    action: string;
+    tableName: string;
+    recordId: string;
+    before?: unknown;
+    after?: unknown;
+    diff?: unknown;
+  },
+) {
+  const db = getDb();
+  await db.insert(schema.activityLog).values({
+    id: uid("al"),
+    actorUserId: user.userId,
+    action: input.action,
+    tableName: input.tableName,
+    recordId: input.recordId,
+    before: input.before ?? null,
+    after: input.after ?? null,
+    diff: input.diff ?? null,
+  });
+}
+
+export async function createAttachment(
+  user: SessionUser,
+  input: {
+    recordType:
+      | "journal_entry"
+      | "invoice"
+      | "bill"
+      | "contact"
+      | "entity"
+      | "asset"
+      | "bank_account"
+      | "fee"
+      | "time_entry"
+      | "other";
+    recordId: string;
+    fileName: string;
+    fileSize: number;
+    mimeType: string;
+    fileUrl: string;
+    blobPathname?: string | null;
+    notes?: string | null;
+    documentType?: string | null;
+  },
+) {
+  const db = getDb();
+  const id = uid("att");
+  const [created] = await db
+    .insert(schema.attachments)
+    .values({
+      id,
+      recordType: input.recordType,
+      recordId: input.recordId,
+      fileName: input.fileName,
+      fileSize: input.fileSize,
+      mimeType: input.mimeType,
+      fileUrl: input.fileUrl,
+      blobPathname: input.blobPathname ?? null,
+      uploadedBy: user.userId,
+      notes: input.notes ?? null,
+      documentType: input.documentType ?? null,
+    })
+    .returning();
+  await logActivity(user, {
+    action: "attachment.upload",
+    tableName: "attachments",
+    recordId: id,
+    after: {
+      recordType: input.recordType,
+      recordId: input.recordId,
+      fileName: input.fileName,
+      fileSize: input.fileSize,
+      mimeType: input.mimeType,
+    },
+  });
+  return created;
+}
+
+export async function deleteAttachment(user: SessionUser, id: string) {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.attachments)
+    .where(eq(schema.attachments.id, id))
+    .limit(1);
+  if (!row) return;
+  await db.delete(schema.attachments).where(eq(schema.attachments.id, id));
+  await logActivity(user, {
+    action: "attachment.delete",
+    tableName: "attachments",
+    recordId: id,
+    before: {
+      recordType: row.recordType,
+      recordId: row.recordId,
+      fileName: row.fileName,
+      fileUrl: row.fileUrl,
+      blobPathname: row.blobPathname,
+    },
+  });
+}
+
 // --------- Lookups + custom fields ---------
 
 export async function createLookupTable(

@@ -22,6 +22,7 @@ import {
   recordBillPaymentAction,
   voidBillAction,
 } from "./actions";
+import { Attachments } from "@/components/Attachments";
 
 export default async function Page({
   params,
@@ -369,6 +370,12 @@ export default async function Page({
             </TBody>
           </Table>
         </Card>
+
+        <Attachments
+          recordType="bill"
+          recordId={bill.id}
+          redirectPath={`/bills/${bill.id}`}
+        />
       </div>
     </>
   );

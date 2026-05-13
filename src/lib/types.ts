@@ -124,6 +124,33 @@ export type CustomFieldDefinition = {
   helpText: string | null;
 };
 
+export type AttachmentRecordType =
+  | "journal_entry"
+  | "invoice"
+  | "bill"
+  | "contact"
+  | "entity"
+  | "asset"
+  | "bank_account"
+  | "fee"
+  | "time_entry"
+  | "other";
+
+export type Attachment = {
+  id: string;
+  recordType: AttachmentRecordType;
+  recordId: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  fileUrl: string;
+  blobPathname: string | null;
+  uploadedBy: string | null;
+  notes: string | null;
+  documentType: string | null;
+  createdAt: string;
+};
+
 export type CustomFieldValue = {
   id: string;
   definitionId: string;

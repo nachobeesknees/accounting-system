@@ -231,6 +231,36 @@ export const customFieldDefinitions = pgTable("custom_field_definitions", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+// ---------- Attachments ----------
+
+export const attachmentRecordTypeEnum = pgEnum("attachment_record_type", [
+  "journal_entry",
+  "invoice",
+  "bill",
+  "contact",
+  "entity",
+  "asset",
+  "bank_account",
+  "fee",
+  "time_entry",
+  "other",
+]);
+
+export const attachments = pgTable("attachments", {
+  id: text("id").primaryKey(),
+  recordType: attachmentRecordTypeEnum("record_type").notNull(),
+  recordId: text("record_id").notNull(),
+  fileName: text("file_name").notNull(),
+  fileSize: integer("file_size").notNull(),
+  mimeType: text("mime_type").notNull(),
+  fileUrl: text("file_url").notNull(),
+  blobPathname: text("blob_pathname"),
+  uploadedBy: text("uploaded_by"),
+  notes: text("notes"),
+  documentType: text("document_type"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const customFieldValues = pgTable("custom_field_values", {
   id: text("id").primaryKey(),
   definitionId: text("definition_id").notNull(),
@@ -732,3 +762,4 @@ export type LookupTable = typeof lookupTables.$inferSelect;
 export type LookupValue = typeof lookupValues.$inferSelect;
 export type CustomFieldDefinition = typeof customFieldDefinitions.$inferSelect;
 export type CustomFieldValue = typeof customFieldValues.$inferSelect;
+export type Attachment = typeof attachments.$inferSelect;

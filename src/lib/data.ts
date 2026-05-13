@@ -21,6 +21,8 @@ import type {
   Asset,
   AssetKind,
   AssetValueSnapshot,
+  Attachment,
+  AttachmentRecordType,
   Bill,
   BillLine,
   BankAccount,
@@ -264,6 +266,23 @@ function mapBudget(r: typeof schema.budgets.$inferSelect): import("./types").Bud
     month: r.month,
     amount: r.amount,
     notes: r.notes,
+  };
+}
+
+function mapAttachment(r: typeof schema.attachments.$inferSelect): Attachment {
+  return {
+    id: r.id,
+    recordType: r.recordType as AttachmentRecordType,
+    recordId: r.recordId,
+    fileName: r.fileName,
+    fileSize: r.fileSize,
+    mimeType: r.mimeType,
+    fileUrl: r.fileUrl,
+    blobPathname: r.blobPathname,
+    uploadedBy: r.uploadedBy,
+    notes: r.notes,
+    documentType: r.documentType,
+    createdAt: r.createdAt.toISOString(),
   };
 }
 
@@ -730,6 +749,34 @@ export function convertToBase(
 }
 
 // ---------- Lookups + custom fields ----------
+
+export async function getAttachments(
+  recordType: AttachmentRecordType,
+  recordId: string,
+): Promise<Attachment[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.attachments)
+    .where(
+      and(
+        eq(schema.attachments.recordType, recordType),
+        eq(schema.attachments.recordId, recordId),
+      ),
+    )
+    .orderBy(desc(schema.attachments.createdAt));
+  return rows.map(mapAttachment);
+}
+
+export async function getAttachmentById(id: string): Promise<Attachment | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.attachments)
+    .where(eq(schema.attachments.id, id))
+    .limit(1);
+  return row ? mapAttachment(row) : undefined;
+}
 
 export async function getLookupTables(): Promise<LookupTable[]> {
   const db = getDb();

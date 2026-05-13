@@ -29,6 +29,7 @@ import {
   submitInvoiceForApprovalAction,
   voidInvoiceAction,
 } from "./actions";
+import { Attachments } from "@/components/Attachments";
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -654,6 +655,12 @@ export default async function Page({
             </TBody>
           </Table>
         </Card>
+
+        <Attachments
+          recordType="invoice"
+          recordId={invoice.id}
+          redirectPath={`/invoices/${invoice.id}`}
+        />
       </div>
     </>
   );
