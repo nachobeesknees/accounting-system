@@ -150,7 +150,43 @@ export default async function Page({
                     value={getAccountBalance(a.id)}
                   />
                 ))}
-                <TotalRow label="Total Equity" value={kpis.equity} />
+                <TR>
+                  <TD mono>—</TD>
+                  <TD>Current Year Earnings</TD>
+                  <TD num neg={kpis.netIncome < 0}>
+                    {formatUSD(kpis.netIncome, { paren: true })}
+                  </TD>
+                </TR>
+                <TotalRow
+                  label="Total Equity"
+                  value={kpis.equity + kpis.netIncome}
+                />
+              </TBody>
+              <TBody>
+                <TR total hover={false}>
+                  <TD
+                    colSpan={2}
+                    style={{
+                      fontWeight: 700,
+                      color: "var(--p-formation-fg)",
+                      background: "var(--p-formation-bg)",
+                    }}
+                  >
+                    Liabilities + Equity
+                  </TD>
+                  <TD
+                    num
+                    style={{
+                      fontWeight: 700,
+                      color: "var(--p-formation-fg)",
+                      background: "var(--p-formation-bg)",
+                    }}
+                  >
+                    {formatUSD(kpis.liabilities + kpis.equity + kpis.netIncome, {
+                      paren: true,
+                    })}
+                  </TD>
+                </TR>
               </TBody>
             </Table>
           </Card>

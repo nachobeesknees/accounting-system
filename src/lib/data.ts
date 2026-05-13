@@ -114,8 +114,10 @@ export function getAccountBalance(accountId: string): number {
 
 // Prior-period opening balances so the demo books look populated.
 // Stored as signed debit-normal amounts.
+// These must sum to zero so the trial balance balances.
+// (Cash carries the offsetting amount.)
 const OPENING_BALANCES: Record<string, number> = {
-  "a-1000": 410_000,
+  "a-1000": 540_130,
   "a-1200": 165_000,
   "a-1300": 18_250,
   "a-1500": 73_200,
@@ -134,15 +136,35 @@ const OPENING_BALANCES: Record<string, number> = {
   "a-5500": 4_400,
 };
 
+/**
+ * Raw signed (debit-normal) balance — debits positive, credits negative.
+ * Equal to getAccountBalance() flipped for credit-normal accounts. Used
+ * for accounting-equation arithmetic where contra accounts should subtract
+ * naturally from their parent category.
+ */
+function getSignedDebitBalance(accountId: string): number {
+  let bal = 0;
+  for (const entry of store.journalEntries) {
+    if (entry.status !== "posted") continue;
+    for (const line of entry.lines) {
+      if (line.accountId !== accountId) continue;
+      bal += parseAmount(line.debit) - parseAmount(line.credit);
+    }
+  }
+  const opening = OPENING_BALANCES[accountId];
+  if (opening !== undefined) bal += opening;
+  return bal;
+}
+
 export function getKpis() {
   let revenue = 0, expenses = 0, assets = 0, liabilities = 0, equity = 0;
   for (const a of store.accounts) {
-    const bal = getAccountBalance(a.id);
-    if (a.accountType === "revenue") revenue += bal;
-    else if (a.accountType === "expense") expenses += bal;
-    else if (a.accountType === "asset") assets += bal;
-    else if (a.accountType === "liability") liabilities += bal;
-    else if (a.accountType === "equity") equity += bal;
+    const raw = getSignedDebitBalance(a.id);
+    if (a.accountType === "asset") assets += raw;
+    else if (a.accountType === "liability") liabilities += -raw;
+    else if (a.accountType === "equity") equity += -raw;
+    else if (a.accountType === "revenue") revenue += -raw;
+    else if (a.accountType === "expense") expenses += raw;
   }
   const cash = getAccountBalance("a-1000");
   return {
