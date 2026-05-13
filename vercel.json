@@ -2,9 +2,6 @@
   "buildCommand": "bash build.sh",
   "outputDirectory": ".",
   "framework": "django",
-  "python": {
-    "version": "3.12"
-  },
   "env": {
     "DEBUG": {
       "default": "false"
