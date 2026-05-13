@@ -9,6 +9,8 @@ export type Account = {
   normalBalance: "debit" | "credit";
   isActive: boolean;
   currencyCode: string;
+  /** null = firm-level account; non-null = entity-scoped chart. */
+  entityId: string | null;
 };
 
 export type FiscalPeriod = {
@@ -47,6 +49,8 @@ export type JournalEntry = {
   createdBy: string | null;
   createdAt: string;
   updatedAt: string;
+  /** null = firm-level journal; non-null = entity-scoped. */
+  entityId: string | null;
   lines: JournalLine[];
 };
 

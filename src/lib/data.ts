@@ -10,7 +10,7 @@
 
 import "server-only";
 
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumDebits, sumCredits } from "./money";
@@ -73,6 +73,7 @@ function mapAccount(r: typeof schema.accounts.$inferSelect): Account {
     normalBalance: r.normalBalance as "debit" | "credit",
     isActive: r.isActive,
     currencyCode: r.currencyCode,
+    entityId: r.entityId,
   };
 }
 
@@ -428,6 +429,7 @@ function mapJournalEntry(
     createdBy: r.createdBy,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
+    entityId: r.entityId,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }
@@ -477,18 +479,46 @@ function mapBill(r: typeof schema.bills.$inferSelect, lines: BillLine[]): Bill {
 
 // --------- Lookups ---------
 
-export async function getAccounts(): Promise<Account[]> {
+/**
+ * Account lookups are entity-scoped:
+ *   - omitted / `"all"` → every account (firm + entity-scoped). Default so
+ *     existing callers (journal, reports, accounts page) keep their global
+ *     view without changes.
+ *   - `null` → firm-level chart only (entityId IS NULL).
+ *   - `string` → just that entity's chart.
+ */
+export async function getAccounts(
+  scope: string | null | "all" = "all",
+): Promise<Account[]> {
   const db = getDb();
-  const rows = await db.select().from(schema.accounts).orderBy(schema.accounts.code);
+  const q = db.select().from(schema.accounts).orderBy(schema.accounts.code);
+  if (scope === "all") {
+    const rows = await q;
+    return rows.map(mapAccount);
+  }
+  const rows =
+    scope == null
+      ? await q.where(isNull(schema.accounts.entityId))
+      : await q.where(eq(schema.accounts.entityId, scope));
   return rows.map(mapAccount);
 }
 
-export async function getAccountByCode(code: string): Promise<Account | undefined> {
+export async function getAccountByCode(
+  code: string,
+  scope: string | null = null,
+): Promise<Account | undefined> {
   const db = getDb();
   const [row] = await db
     .select()
     .from(schema.accounts)
-    .where(eq(schema.accounts.code, code))
+    .where(
+      and(
+        eq(schema.accounts.code, code),
+        scope == null
+          ? isNull(schema.accounts.entityId)
+          : eq(schema.accounts.entityId, scope),
+      ),
+    )
     .limit(1);
   return row ? mapAccount(row) : undefined;
 }
@@ -952,12 +982,26 @@ export async function getBillById(id: string): Promise<Bill | undefined> {
   return mapBill(head, lines.map(mapBillLine));
 }
 
-export async function getJournalEntries(): Promise<JournalEntry[]> {
+/**
+ * Journal-entry scope is symmetrical to getAccounts():
+ *   - omitted / `"all"` → all entries (firm + every entity).
+ *   - `null` → firm-level only (entityId IS NULL).
+ *   - `string` → just that entity.
+ */
+export async function getJournalEntries(
+  scope: string | null | "all" = "all",
+): Promise<JournalEntry[]> {
   const db = getDb();
-  const heads = await db
+  const base = db
     .select()
     .from(schema.journalEntries)
     .orderBy(desc(schema.journalEntries.entryDate), desc(schema.journalEntries.entryNumber));
+  const heads =
+    scope === "all"
+      ? await base
+      : scope == null
+        ? await base.where(isNull(schema.journalEntries.entityId))
+        : await base.where(eq(schema.journalEntries.entityId, scope));
   if (heads.length === 0) return [];
   const ids = heads.map((h) => h.id);
   const lineRows = await db
@@ -1116,6 +1160,60 @@ export async function getAccountBalance(accountId: string): Promise<number> {
   const signed = balances.get(accountId) ?? 0;
   if (!account) return signed;
   return account.normalBalance === "debit" ? signed : -signed;
+}
+
+/**
+ * Per-entity P&L summary — totals revenue and expenses from posted
+ * entity-scoped journal entries. The "firm" bucket holds JE rows whose
+ * entityId is null, so the firm-level P&L still rolls up alongside.
+ *
+ * Returns one row per entity (plus a "firm" pseudo-row) so the
+ * consolidation view can render a single table.
+ */
+export type EntityPlRow = {
+  entityId: string | null;
+  revenue: number;
+  expenses: number;
+  netIncome: number;
+};
+
+export async function getEntityPlRollup(): Promise<EntityPlRow[]> {
+  const db = getDb();
+  // Pull every posted line + entry.entityId + account.accountType in one shot.
+  const rows = await db
+    .select({
+      entityId: schema.journalEntries.entityId,
+      accountType: schema.accounts.accountType,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .innerJoin(
+      schema.accounts,
+      eq(schema.journalLines.accountId, schema.accounts.id),
+    )
+    .where(eq(schema.journalEntries.status, "posted"));
+
+  const buckets = new Map<string | null, { revenue: number; expenses: number }>();
+  for (const r of rows) {
+    const key = r.entityId;
+    const b = buckets.get(key) ?? { revenue: 0, expenses: 0 };
+    const d = parseAmount(r.debit);
+    const c = parseAmount(r.credit);
+    if (r.accountType === "revenue") b.revenue += c - d;
+    else if (r.accountType === "expense") b.expenses += d - c;
+    buckets.set(key, b);
+  }
+  return Array.from(buckets.entries()).map(([entityId, b]) => ({
+    entityId,
+    revenue: b.revenue,
+    expenses: b.expenses,
+    netIncome: b.revenue - b.expenses,
+  }));
 }
 
 export async function getKpis() {

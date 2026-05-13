@@ -83,7 +83,7 @@ export const users = pgTable("users", {
 
 export const accounts = pgTable("accounts", {
   id: text("id").primaryKey(),
-  code: text("code").notNull().unique(),
+  code: text("code").notNull(),
   name: text("name").notNull(),
   accountType: accountTypeEnum("account_type").notNull(),
   subType: text("sub_type"),
@@ -92,6 +92,8 @@ export const accounts = pgTable("accounts", {
   isActive: boolean("is_active").notNull().default(true),
   description: text("description"),
   normalBalance: text("normal_balance").notNull(),
+  /** null = firm-level (global) chart of accounts. Non-null = entity-scoped books. */
+  entityId: text("entity_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -119,6 +121,8 @@ export const journalEntries = pgTable("journal_entries", {
   voidedAt: timestamp("voided_at", { withTimezone: true }),
   voidReason: text("void_reason"),
   createdBy: text("created_by"),
+  /** null = firm-level. Non-null = entity-scoped journal. */
+  entityId: text("entity_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

@@ -6,16 +6,21 @@ import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   DEMO_TODAY,
+  convertToBase,
   getApAging,
   getArAging,
+  getBaseCurrency,
   getBills,
   getCustomers,
+  getEntities,
+  getEntityPlRollup,
   getInvoices,
   getJournalEntries,
   getKpis,
+  getLatestFxRates,
   getVendors,
 } from "@/lib/data";
-import { formatUSD } from "@/lib/money";
+import { formatAmount, formatUSD } from "@/lib/money";
 import { parseAmount } from "@/lib/money";
 import { getSessionUser } from "@/lib/session";
 
@@ -112,17 +117,52 @@ export default async function Page() {
   const user = await getSessionUser();
   const role = user?.role ?? "Demo";
 
-  const [kpis, ar, ap, allEntries, allBills, allInvoices, customers, vendors] =
-    await Promise.all([
-      getKpis(),
-      getArAging(DEMO_TODAY),
-      getApAging(DEMO_TODAY),
-      getJournalEntries(),
-      getBills(),
-      getInvoices(),
-      getCustomers(),
-      getVendors(),
-    ]);
+  const [
+    kpis,
+    ar,
+    ap,
+    allEntries,
+    allBills,
+    allInvoices,
+    customers,
+    vendors,
+    entities,
+    plRollup,
+    base,
+    fxRates,
+  ] = await Promise.all([
+    getKpis(),
+    getArAging(DEMO_TODAY),
+    getApAging(DEMO_TODAY),
+    getJournalEntries(),
+    getBills(),
+    getInvoices(),
+    getCustomers(),
+    getVendors(),
+    getEntities(),
+    getEntityPlRollup(),
+    getBaseCurrency(),
+    getLatestFxRates(),
+  ]);
+  const entityById = new Map(entities.map((e) => [e.id, e] as const));
+  const baseCode = base?.code ?? "USD";
+  const baseSymbol = base?.symbol ?? "$";
+  const entityPlRows = plRollup
+    .filter((r) => r.entityId != null)
+    .map((r) => {
+      const ent = entityById.get(r.entityId!);
+      const ccy = ent?.currencyCode ?? baseCode;
+      const conv = (n: number) =>
+        ccy === baseCode ? n : (convertToBase(n, ccy, fxRates) ?? 0);
+      return {
+        entityId: r.entityId!,
+        entity: ent,
+        ccy,
+        netNative: r.netIncome,
+        netBase: conv(r.netIncome),
+      };
+    })
+    .sort((a, b) => b.netBase - a.netBase);
 
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
   const vendorById = new Map(vendors.map((v) => [v.id, v] as const));
@@ -184,6 +224,55 @@ export default async function Page() {
           sub="Account 1000 — Cash"
         />
       </div>
+
+      {entityPlRows.length > 0 && (
+        <div className="px-6 mb-3.5">
+          <Card
+            title="Per-entity P&L (YTD, posted)"
+            actions={
+              <Link
+                href="/consolidation"
+                style={{ color: "var(--ink-3)", textDecoration: "none" }}
+              >
+                Consolidation →
+              </Link>
+            }
+          >
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Entity</TH>
+                  <TH>Ccy</TH>
+                  <TH num>Net (native)</TH>
+                  <TH num>Net ({baseCode})</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {entityPlRows.map((r) => (
+                  <TR key={r.entityId}>
+                    <TD>
+                      <Link
+                        href={`/entities/${r.entityId}/books`}
+                        style={{ color: "var(--ink)", textDecoration: "none" }}
+                      >
+                        {r.entity?.code ?? r.entityId} — {r.entity?.name ?? "—"}
+                      </Link>
+                    </TD>
+                    <TD mono>{r.ccy}</TD>
+                    <TD num neg={r.netNative < 0}>
+                      {formatAmount(r.netNative, { paren: true })}
+                    </TD>
+                    <TD num neg={r.netBase < 0}>
+                      {baseSymbol}
+                      {formatAmount(r.netBase, { paren: true })}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </Card>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 px-6 mb-3.5">
         <Card

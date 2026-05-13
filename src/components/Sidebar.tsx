@@ -54,6 +54,7 @@ const SECTIONS: Section[] = [
     heading: "Reporting",
     items: [
       { href: "/reports", label: "Financial Statements" },
+      { href: "/consolidation", label: "Consolidation" },
     ],
   },
   {

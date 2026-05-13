@@ -216,6 +216,7 @@ async function main() {
       currencyCode: a.currencyCode,
       isActive: a.isActive,
       normalBalance: a.normalBalance,
+      entityId: a.entityId,
     })),
   );
 
@@ -495,6 +496,7 @@ async function main() {
       createdBy: j.createdBy,
       createdAt: new Date(j.createdAt),
       updatedAt: new Date(j.updatedAt),
+      entityId: j.entityId,
     })),
   );
   const allActivityLines = JOURNAL_ENTRIES.flatMap((j) =>

@@ -47,6 +47,9 @@ export default async function Page({
             <ButtonLink href="/entities" variant="secondary">
               ← All entities
             </ButtonLink>
+            <ButtonLink href={`/entities/${entity.id}/books`} variant="primary">
+              Entity books →
+            </ButtonLink>
             <Pill variant={statusVariant(entity.status)}>
               {statusLabel(entity.status)}
             </Pill>

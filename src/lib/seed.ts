@@ -61,27 +61,32 @@ export const FX_RATES: FxRate[] = [
 ];
 
 export const ACCOUNTS: Account[] = [
-  { id: id("a-1000"), code: "1000", name: "Cash", accountType: "asset", subType: "current_asset", normalBalance: "debit", isActive: true, currencyCode: "USD" },
-  { id: id("a-1200"), code: "1200", name: "Accounts Receivable", accountType: "asset", subType: "current_asset", normalBalance: "debit", isActive: true, currencyCode: "USD" },
-  { id: id("a-1300"), code: "1300", name: "Prepaid Expenses", accountType: "asset", subType: "current_asset", normalBalance: "debit", isActive: true, currencyCode: "USD" },
-  { id: id("a-1500"), code: "1500", name: "Office Equipment", accountType: "asset", subType: "long_term_asset", normalBalance: "debit", isActive: true, currencyCode: "USD" },
-  { id: id("a-1510"), code: "1510", name: "Accumulated Depreciation", accountType: "asset", subType: "long_term_asset", normalBalance: "credit", isActive: true, currencyCode: "USD" },
+  // Firm-level chart of accounts (entityId null)
+  { id: id("a-1000"), code: "1000", name: "Cash", accountType: "asset", subType: "current_asset", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-1200"), code: "1200", name: "Accounts Receivable", accountType: "asset", subType: "current_asset", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-1300"), code: "1300", name: "Prepaid Expenses", accountType: "asset", subType: "current_asset", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-1500"), code: "1500", name: "Office Equipment", accountType: "asset", subType: "long_term_asset", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-1510"), code: "1510", name: "Accumulated Depreciation", accountType: "asset", subType: "long_term_asset", normalBalance: "credit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-2000"), code: "2000", name: "Accounts Payable", accountType: "liability", subType: "current_liability", normalBalance: "credit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-2100"), code: "2100", name: "Accrued Liabilities", accountType: "liability", subType: "current_liability", normalBalance: "credit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-3000"), code: "3000", name: "Owner's Equity", accountType: "equity", subType: "capital", normalBalance: "credit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-3100"), code: "3100", name: "Retained Earnings", accountType: "equity", subType: "retained", normalBalance: "credit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-4000"), code: "4000", name: "Service Revenue", accountType: "revenue", subType: "operating", normalBalance: "credit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-4100"), code: "4100", name: "Interest Income", accountType: "revenue", subType: "non_operating", normalBalance: "credit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-5000"), code: "5000", name: "Rent Expense", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-5100"), code: "5100", name: "Salaries Expense", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-5200"), code: "5200", name: "Office Supplies", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-5300"), code: "5300", name: "Utilities", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-5400"), code: "5400", name: "Professional Fees", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-5500"), code: "5500", name: "Depreciation", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
 
-  { id: id("a-2000"), code: "2000", name: "Accounts Payable", accountType: "liability", subType: "current_liability", normalBalance: "credit", isActive: true, currencyCode: "USD" },
-  { id: id("a-2100"), code: "2100", name: "Accrued Liabilities", accountType: "liability", subType: "current_liability", normalBalance: "credit", isActive: true, currencyCode: "USD" },
-
-  { id: id("a-3000"), code: "3000", name: "Owner's Equity", accountType: "equity", subType: "capital", normalBalance: "credit", isActive: true, currencyCode: "USD" },
-  { id: id("a-3100"), code: "3100", name: "Retained Earnings", accountType: "equity", subType: "retained", normalBalance: "credit", isActive: true, currencyCode: "USD" },
-
-  { id: id("a-4000"), code: "4000", name: "Service Revenue", accountType: "revenue", subType: "operating", normalBalance: "credit", isActive: true, currencyCode: "USD" },
-  { id: id("a-4100"), code: "4100", name: "Interest Income", accountType: "revenue", subType: "non_operating", normalBalance: "credit", isActive: true, currencyCode: "USD" },
-
-  { id: id("a-5000"), code: "5000", name: "Rent Expense", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD" },
-  { id: id("a-5100"), code: "5100", name: "Salaries Expense", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD" },
-  { id: id("a-5200"), code: "5200", name: "Office Supplies", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD" },
-  { id: id("a-5300"), code: "5300", name: "Utilities", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD" },
-  { id: id("a-5400"), code: "5400", name: "Professional Fees", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD" },
-  { id: id("a-5500"), code: "5500", name: "Depreciation", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD" },
+  // ENT-001 (Pumpernickel Holdings LLC) entity-scoped chart — illustrative subset.
+  { id: id("a-e001-1000"), code: "1000", name: "Cash — Pumpernickel Holdings", accountType: "asset", subType: "current_asset", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: "e-001" },
+  { id: id("a-e001-1200"), code: "1200", name: "AR — Pumpernickel Holdings", accountType: "asset", subType: "current_asset", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: "e-001" },
+  { id: id("a-e001-3000"), code: "3000", name: "Owner's Equity", accountType: "equity", subType: "capital", normalBalance: "credit", isActive: true, currencyCode: "USD", entityId: "e-001" },
+  { id: id("a-e001-4000"), code: "4000", name: "Rental Income", accountType: "revenue", subType: "operating", normalBalance: "credit", isActive: true, currencyCode: "USD", entityId: "e-001" },
+  { id: id("a-e001-5000"), code: "5000", name: "Property OpEx", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: "e-001" },
+  { id: id("a-e001-5400"), code: "5400", name: "Professional Fees", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: "e-001" },
 ];
 
 export const PERIODS: FiscalPeriod[] = [
@@ -497,6 +502,7 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
     source: "manual", status: "posted", postedAt: "2026-05-11T18:00:00Z", postedBy: "u-margery",
     voidedAt: null, voidReason: null, createdBy: "u-margery",
     createdAt: "2026-05-11T17:55:00Z", updatedAt: "2026-05-11T18:00:00Z",
+    entityId: null,
     lines: [
       { id: "j-142-l1", journalEntryId: "j-142", lineNumber: 1, accountId: "a-5000", description: "May rent", debit: "4000.00", credit: "0.00" },
       { id: "j-142-l2", journalEntryId: "j-142", lineNumber: 2, accountId: "a-1000", description: "Cash payment", debit: "0.00", credit: "4000.00" },
@@ -508,6 +514,7 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
     source: "invoice", status: "posted", postedAt: "2026-05-10T15:20:00Z", postedBy: "u-margery",
     voidedAt: null, voidReason: null, createdBy: "u-margery",
     createdAt: "2026-05-10T15:00:00Z", updatedAt: "2026-05-10T15:20:00Z",
+    entityId: null,
     lines: [
       { id: "j-141-l1", journalEntryId: "j-141", lineNumber: 1, accountId: "a-1000", description: "Deposit", debit: "17500.00", credit: "0.00" },
       { id: "j-141-l2", journalEntryId: "j-141", lineNumber: 2, accountId: "a-1200", description: "Apply AR", debit: "0.00", credit: "17500.00" },
@@ -519,6 +526,7 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
     source: "manual", status: "posted", postedAt: "2026-05-09T17:00:00Z", postedBy: "u-margery",
     voidedAt: null, voidReason: null, createdBy: "u-margery",
     createdAt: "2026-05-09T16:30:00Z", updatedAt: "2026-05-09T17:00:00Z",
+    entityId: null,
     lines: [
       { id: "j-140-l1", journalEntryId: "j-140", lineNumber: 1, accountId: "a-5100", description: "Payroll", debit: "28500.00", credit: "0.00" },
       { id: "j-140-l2", journalEntryId: "j-140", lineNumber: 2, accountId: "a-1000", description: "Cash out", debit: "0.00", credit: "28500.00" },
@@ -530,6 +538,7 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
     source: "invoice", status: "posted", postedAt: "2026-05-08T12:00:00Z", postedBy: "u-margery",
     voidedAt: null, voidReason: null, createdBy: "u-margery",
     createdAt: "2026-05-08T11:45:00Z", updatedAt: "2026-05-08T12:00:00Z",
+    entityId: null,
     lines: [
       { id: "j-139-l1", journalEntryId: "j-139", lineNumber: 1, accountId: "a-1200", description: "Receivable", debit: "62300.00", credit: "0.00" },
       { id: "j-139-l2", journalEntryId: "j-139", lineNumber: 2, accountId: "a-4000", description: "Service revenue", debit: "0.00", credit: "62300.00" },
@@ -541,6 +550,7 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
     source: "bill", status: "draft", postedAt: null, postedBy: null,
     voidedAt: null, voidReason: null, createdBy: "u-margery",
     createdAt: "2026-05-04T10:00:00Z", updatedAt: "2026-05-04T10:00:00Z",
+    entityId: null,
     lines: [
       { id: "j-138-l1", journalEntryId: "j-138", lineNumber: 1, accountId: "a-5400", description: "Pro fees", debit: "38900.00", credit: "0.00" },
       { id: "j-138-l2", journalEntryId: "j-138", lineNumber: 2, accountId: "a-2000", description: "AP", debit: "0.00", credit: "38900.00" },
@@ -552,6 +562,7 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
     source: "bill", status: "posted", postedAt: "2026-05-02T14:00:00Z", postedBy: "u-margery",
     voidedAt: null, voidReason: null, createdBy: "u-margery",
     createdAt: "2026-05-02T13:30:00Z", updatedAt: "2026-05-02T14:00:00Z",
+    entityId: null,
     lines: [
       { id: "j-137-l1", journalEntryId: "j-137", lineNumber: 1, accountId: "a-5300", description: "Utilities", debit: "1180.00", credit: "0.00" },
       { id: "j-137-l2", journalEntryId: "j-137", lineNumber: 2, accountId: "a-2000", description: "AP", debit: "0.00", credit: "1180.00" },
@@ -563,6 +574,7 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
     source: "bill", status: "posted", postedAt: "2026-04-28T18:00:00Z", postedBy: "u-margery",
     voidedAt: null, voidReason: null, createdBy: "u-margery",
     createdAt: "2026-04-28T17:30:00Z", updatedAt: "2026-04-28T18:00:00Z",
+    entityId: null,
     lines: [
       { id: "j-136-l1", journalEntryId: "j-136", lineNumber: 1, accountId: "a-1500", description: "Equipment", debit: "12800.00", credit: "0.00" },
       { id: "j-136-l2", journalEntryId: "j-136", lineNumber: 2, accountId: "a-2000", description: "AP", debit: "0.00", credit: "12800.00" },
@@ -574,6 +586,7 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
     source: "manual", status: "posted", postedAt: "2026-04-30T20:00:00Z", postedBy: "u-aldous",
     voidedAt: null, voidReason: null, createdBy: "u-aldous",
     createdAt: "2026-04-30T19:30:00Z", updatedAt: "2026-04-30T20:00:00Z",
+    entityId: null,
     lines: [
       { id: "j-135-l1", journalEntryId: "j-135", lineNumber: 1, accountId: "a-5500", description: "Depreciation", debit: "1100.00", credit: "0.00" },
       { id: "j-135-l2", journalEntryId: "j-135", lineNumber: 2, accountId: "a-1510", description: "Accumulated depreciation", debit: "0.00", credit: "1100.00" },
@@ -585,6 +598,7 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
     source: "invoice", status: "posted", postedAt: "2026-04-25T15:00:00Z", postedBy: "u-margery",
     voidedAt: null, voidReason: null, createdBy: "u-margery",
     createdAt: "2026-04-25T14:30:00Z", updatedAt: "2026-04-25T15:00:00Z",
+    entityId: null,
     lines: [
       { id: "j-134-l1", journalEntryId: "j-134", lineNumber: 1, accountId: "a-1000", description: "Deposit", debit: "28200.00", credit: "0.00" },
       { id: "j-134-l2", journalEntryId: "j-134", lineNumber: 2, accountId: "a-1200", description: "Apply AR", debit: "0.00", credit: "28200.00" },
@@ -596,9 +610,59 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
     source: "manual", status: "void", postedAt: null, postedBy: null,
     voidedAt: "2026-04-20T11:00:00Z", voidReason: "Test entry, voided.", createdBy: "u-margery",
     createdAt: "2026-04-20T10:00:00Z", updatedAt: "2026-04-20T11:00:00Z",
+    entityId: null,
     lines: [
       { id: "j-133-l1", journalEntryId: "j-133", lineNumber: 1, accountId: "a-5200", description: "Test", debit: "100.00", credit: "0.00" },
       { id: "j-133-l2", journalEntryId: "j-133", lineNumber: 2, accountId: "a-1000", description: "Test", debit: "0.00", credit: "100.00" },
+    ],
+  },
+  // ENT-001 entity-scoped journal entries — Pumpernickel Holdings LLC's own books.
+  {
+    id: id("j-e001-200"), entryNumber: "JE-E001-000001", entryDate: D("2026-04-01"),
+    fiscalPeriodId: "p-q2", description: "Q2 rental income — 401 Pine Tower", reference: "RENT-Q2-001",
+    source: "manual", status: "posted", postedAt: "2026-04-01T16:00:00Z", postedBy: "u-aldous",
+    voidedAt: null, voidReason: null, createdBy: "u-aldous",
+    createdAt: "2026-04-01T15:30:00Z", updatedAt: "2026-04-01T16:00:00Z",
+    entityId: "e-001",
+    lines: [
+      { id: "j-e001-200-l1", journalEntryId: "j-e001-200", lineNumber: 1, accountId: "a-e001-1000", description: "Tenant rent received", debit: "184000.00", credit: "0.00" },
+      { id: "j-e001-200-l2", journalEntryId: "j-e001-200", lineNumber: 2, accountId: "a-e001-4000", description: "April rental income", debit: "0.00", credit: "184000.00" },
+    ],
+  },
+  {
+    id: id("j-e001-201"), entryNumber: "JE-E001-000002", entryDate: D("2026-04-15"),
+    fiscalPeriodId: "p-q2", description: "Property OpEx — landscape + HOA", reference: "OPEX-2026-04",
+    source: "manual", status: "posted", postedAt: "2026-04-15T19:00:00Z", postedBy: "u-margery",
+    voidedAt: null, voidReason: null, createdBy: "u-margery",
+    createdAt: "2026-04-15T18:30:00Z", updatedAt: "2026-04-15T19:00:00Z",
+    entityId: "e-001",
+    lines: [
+      { id: "j-e001-201-l1", journalEntryId: "j-e001-201", lineNumber: 1, accountId: "a-e001-5000", description: "OpEx", debit: "21500.00", credit: "0.00" },
+      { id: "j-e001-201-l2", journalEntryId: "j-e001-201", lineNumber: 2, accountId: "a-e001-1000", description: "Cash out", debit: "0.00", credit: "21500.00" },
+    ],
+  },
+  {
+    id: id("j-e001-202"), entryNumber: "JE-E001-000003", entryDate: D("2026-05-01"),
+    fiscalPeriodId: "p-q2", description: "Q2 rental income — May", reference: "RENT-2026-05",
+    source: "manual", status: "posted", postedAt: "2026-05-01T16:00:00Z", postedBy: "u-aldous",
+    voidedAt: null, voidReason: null, createdBy: "u-aldous",
+    createdAt: "2026-05-01T15:30:00Z", updatedAt: "2026-05-01T16:00:00Z",
+    entityId: "e-001",
+    lines: [
+      { id: "j-e001-202-l1", journalEntryId: "j-e001-202", lineNumber: 1, accountId: "a-e001-1000", description: "Tenant rent received", debit: "184000.00", credit: "0.00" },
+      { id: "j-e001-202-l2", journalEntryId: "j-e001-202", lineNumber: 2, accountId: "a-e001-4000", description: "May rental income", debit: "0.00", credit: "184000.00" },
+    ],
+  },
+  {
+    id: id("j-e001-203"), entryNumber: "JE-E001-000004", entryDate: D("2026-05-08"),
+    fiscalPeriodId: "p-q2", description: "Pro fees — Hadley & Kettlewell tax filing", reference: "PRO-Q1",
+    source: "manual", status: "posted", postedAt: "2026-05-08T15:00:00Z", postedBy: "u-aldous",
+    voidedAt: null, voidReason: null, createdBy: "u-aldous",
+    createdAt: "2026-05-08T14:30:00Z", updatedAt: "2026-05-08T15:00:00Z",
+    entityId: "e-001",
+    lines: [
+      { id: "j-e001-203-l1", journalEntryId: "j-e001-203", lineNumber: 1, accountId: "a-e001-5400", description: "Tax prep fees", debit: "12800.00", credit: "0.00" },
+      { id: "j-e001-203-l2", journalEntryId: "j-e001-203", lineNumber: 2, accountId: "a-e001-1000", description: "Cash out", debit: "0.00", credit: "12800.00" },
     ],
   },
 ];
