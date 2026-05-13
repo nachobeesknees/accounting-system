@@ -20,6 +20,8 @@ RUN cat > /app/entrypoint.sh << 'EOF'
 #!/bin/bash
 set -e
 
+PORT=${PORT:-8000}
+
 echo "Starting Django app..."
 echo "DEBUG: $DEBUG"
 echo "ALLOWED_HOSTS: $ALLOWED_HOSTS"
