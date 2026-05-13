@@ -23,9 +23,7 @@ INSTALLED_APPS = [
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
     'corsheaders',
-    'django_q',
     'django_extensions',
-    'tailwind',
 
     # Local
     'apps.core',
