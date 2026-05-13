@@ -84,6 +84,8 @@ export type CreateJournalEntryInput = {
   reference?: string | null;
   source?: "manual" | "invoice" | "bill" | "reconciliation";
   fiscalPeriodId?: string | null;
+  /** Attribute this entry (and all its lines) to a specific entity's books. */
+  entityId?: string | null;
   status?: "draft" | "posted";
   lines: DraftJournalLine[];
 };
@@ -135,6 +137,7 @@ export async function createJournalEntry(
       voidedAt: null,
       voidReason: null,
       createdBy: user.userId,
+      entityId: input.entityId ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -147,6 +150,7 @@ export async function createJournalEntry(
         description: l.description ?? null,
         debit: toDecimalString(l.debit ?? 0),
         credit: toDecimalString(l.credit ?? 0),
+        entityId: input.entityId ?? null,
       })),
     );
   });
@@ -1622,6 +1626,24 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
   return { id, invoiceNumber };
 }
 
+/**
+ * Look up the customer's primary entity. Used by postInvoice and
+ * recordInvoicePayment to attribute generated JEs to the right entity
+ * so the multi-entity scope picker shows real per-entity numbers.
+ */
+async function getPrimaryEntityForCustomer(customerId: string): Promise<string | null> {
+  const db = getDb();
+  // Prefer the entity stored on the invoice if any; otherwise fall back to
+  // the customer's first entity (entities.clientId = customer.id in our seed).
+  const [ent] = await db
+    .select({ id: schema.entities.id })
+    .from(schema.entities)
+    .where(eq(schema.entities.clientId, customerId))
+    .orderBy(schema.entities.code)
+    .limit(1);
+  return ent?.id ?? null;
+}
+
 export async function postInvoice(user: SessionUser, invoiceId: string) {
   const db = getDb();
   const [inv] = await db
@@ -1656,12 +1678,16 @@ export async function postInvoice(user: SessionUser, invoiceId: string) {
     })),
   ];
 
+  const entityId =
+    inv.entityId ?? (await getPrimaryEntityForCustomer(inv.customerId));
+
   const je = await createJournalEntry(user, {
     entryDate: inv.invoiceDate,
     description: `Service invoice issued (${inv.invoiceNumber})`,
     reference: inv.invoiceNumber,
     source: "invoice",
     status: "posted",
+    entityId,
     lines: jeLines,
   });
 
@@ -1670,6 +1696,9 @@ export async function postInvoice(user: SessionUser, invoiceId: string) {
     .set({
       status: "sent",
       journalEntryId: je.id,
+      // Cache the entity on the invoice so subsequent operations
+      // (payment, void) reuse the same attribution without another lookup.
+      entityId,
       updatedAt: new Date(),
     })
     .where(eq(schema.invoices.id, invoiceId));
@@ -1720,12 +1749,16 @@ export async function recordInvoicePayment(
     if (ba) cashAccountId = ba.accountId;
   }
 
+  const entityId =
+    inv.entityId ?? (await getPrimaryEntityForCustomer(inv.customerId));
+
   const je = await createJournalEntry(user, {
     entryDate: input.paymentDate,
     description: `Payment received (${inv.invoiceNumber})`,
     reference: input.reference ?? inv.invoiceNumber,
     source: "invoice",
     status: "posted",
+    entityId,
     lines: [
       { accountId: cashAccountId, description: "Deposit", debit: input.amount, credit: 0 },
       { accountId: AR_ACCOUNT_ID, description: "Apply AR", debit: 0, credit: input.amount },

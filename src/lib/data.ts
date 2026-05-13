@@ -1598,8 +1598,10 @@ export async function accountsByType(): Promise<Map<AccountType, Account[]>> {
  * negated for credit-normal so the value follows accounting conventions).
  */
 export async function getDisplayBalances(): Promise<Map<string, number>> {
-  const accounts = await getAccounts();
-  const balances = await getSignedBalancesByAccount();
+  const scope = await getEntityScope();
+  // Chart of accounts is firm-level. Only postings are filtered by entity.
+  const accounts = await getAccounts("all");
+  const balances = await getSignedBalancesByAccount(scope ?? "all");
   const out = new Map<string, number>();
   for (const a of accounts) {
     const signed = balances.get(a.id) ?? 0;
