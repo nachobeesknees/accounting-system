@@ -263,6 +263,30 @@ export const bankAccounts = pgTable("bank_accounts", {
   lastFour: text("last_four"),
   currencyCode: text("currency_code").notNull().default("USD"),
   isActive: boolean("is_active").notNull().default(true),
+  entityId: text("entity_id"),
+  clientId: text("client_id"),
+  currentBalance: numeric("current_balance", { precision: 15, scale: 2 }),
+  balanceAsOf: date("balance_as_of"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const signingAuthorityEnum = pgEnum("signing_authority", [
+  "sole",
+  "joint",
+  "limited",
+  "view_only",
+]);
+
+export const bankAccountSigners = pgTable("bank_account_signers", {
+  id: text("id").primaryKey(),
+  bankAccountId: text("bank_account_id").notNull(),
+  name: text("name").notNull(),
+  email: text("email"),
+  title: text("title"),
+  authority: signingAuthorityEnum("authority").notNull().default("joint"),
+  isPrimary: boolean("is_primary").notNull().default(false),
+  addedDate: date("added_date"),
+  notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -331,3 +355,4 @@ export type FiscalPeriod = typeof fiscalPeriods.$inferSelect;
 export type Entity = typeof entities.$inferSelect;
 export type Asset = typeof assets.$inferSelect;
 export type AssetValueSnapshot = typeof assetValueSnapshots.$inferSelect;
+export type BankAccountSigner = typeof bankAccountSigners.$inferSelect;

@@ -34,6 +34,7 @@ import {
   ASSETS,
   ASSET_VALUE_SNAPSHOTS,
   BANK_ACCOUNTS,
+  BANK_ACCOUNT_SIGNERS,
   BANK_TRANSACTIONS,
   BILLS,
   CUSTOMERS,
@@ -124,6 +125,7 @@ async function main() {
       payment_allocations,
       payments,
       bank_transactions,
+      bank_account_signers,
       bank_accounts,
       bill_lines,
       bills,
@@ -408,7 +410,7 @@ async function main() {
     await db.insert(schema.billLines).values(allBillLines);
   }
 
-  console.log("Inserting bank accounts + transactions…");
+  console.log("Inserting bank accounts + signers + transactions…");
   await db.insert(schema.bankAccounts).values(
     BANK_ACCOUNTS.map((b) => ({
       id: b.id,
@@ -418,6 +420,23 @@ async function main() {
       lastFour: b.lastFour,
       currencyCode: b.currencyCode,
       isActive: b.isActive,
+      entityId: b.entityId,
+      clientId: b.clientId,
+      currentBalance: b.currentBalance,
+      balanceAsOf: b.balanceAsOf,
+    })),
+  );
+  await db.insert(schema.bankAccountSigners).values(
+    BANK_ACCOUNT_SIGNERS.map((s) => ({
+      id: s.id,
+      bankAccountId: s.bankAccountId,
+      name: s.name,
+      email: s.email,
+      title: s.title,
+      authority: s.authority,
+      isPrimary: s.isPrimary,
+      addedDate: s.addedDate,
+      notes: s.notes,
     })),
   );
   await db.insert(schema.bankTransactions).values(

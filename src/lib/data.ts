@@ -23,6 +23,7 @@ import type {
   Bill,
   BillLine,
   BankAccount,
+  BankAccountSigner,
   BankTransaction,
   Customer,
   Entity,
@@ -34,6 +35,7 @@ import type {
   JournalEntry,
   JournalEntryStatus,
   JournalLine,
+  SigningAuthority,
   User,
   Vendor,
 } from "./types";
@@ -161,6 +163,26 @@ function mapBankAccount(r: typeof schema.bankAccounts.$inferSelect): BankAccount
     lastFour: r.lastFour,
     currencyCode: r.currencyCode,
     isActive: r.isActive,
+    entityId: r.entityId,
+    clientId: r.clientId,
+    currentBalance: r.currentBalance,
+    balanceAsOf: r.balanceAsOf,
+  };
+}
+
+function mapSigner(
+  r: typeof schema.bankAccountSigners.$inferSelect,
+): BankAccountSigner {
+  return {
+    id: r.id,
+    bankAccountId: r.bankAccountId,
+    name: r.name,
+    email: r.email,
+    title: r.title,
+    authority: r.authority as SigningAuthority,
+    isPrimary: r.isPrimary,
+    addedDate: r.addedDate,
+    notes: r.notes,
   };
 }
 
@@ -573,8 +595,33 @@ export async function getPeriods(): Promise<FiscalPeriod[]> {
 
 export async function getBankAccounts(): Promise<BankAccount[]> {
   const db = getDb();
-  const rows = await db.select().from(schema.bankAccounts);
+  const rows = await db
+    .select()
+    .from(schema.bankAccounts)
+    .orderBy(schema.bankAccounts.name);
   return rows.map(mapBankAccount);
+}
+
+export async function getBankAccountById(id: string): Promise<BankAccount | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.bankAccounts)
+    .where(eq(schema.bankAccounts.id, id))
+    .limit(1);
+  return row ? mapBankAccount(row) : undefined;
+}
+
+export async function getSignersByBankAccountId(
+  bankAccountId: string,
+): Promise<BankAccountSigner[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.bankAccountSigners)
+    .where(eq(schema.bankAccountSigners.bankAccountId, bankAccountId))
+    .orderBy(desc(schema.bankAccountSigners.isPrimary), schema.bankAccountSigners.name);
+  return rows.map(mapSigner);
 }
 
 export async function getBankTransactions(bankAccountId?: string): Promise<BankTransaction[]> {

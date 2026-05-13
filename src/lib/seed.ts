@@ -4,6 +4,7 @@ import type {
   AssetValueSnapshot,
   Bill,
   BankAccount,
+  BankAccountSigner,
   BankTransaction,
   Customer,
   Entity,
@@ -420,7 +421,26 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
 ];
 
 export const BANK_ACCOUNTS: BankAccount[] = [
-  { id: id("ba-001"), name: "Operating Account", accountId: "a-1000", institution: "First National", lastFour: "4521", currencyCode: "USD", isActive: true },
+  { id: id("ba-001"), name: "Thistlewood Operating", accountId: "a-1000", institution: "First National", lastFour: "4521", currencyCode: "USD", isActive: true, entityId: null, clientId: null, currentBalance: "553330.00", balanceAsOf: D("2026-05-12") },
+  { id: id("ba-002"), name: "Pumpernickel Holdings Treasury", accountId: "a-1000", institution: "JPMorgan Private Bank", lastFour: "8814", currencyCode: "USD", isActive: true, entityId: "e-001", clientId: "c-001", currentBalance: "1240000.00", balanceAsOf: D("2026-05-10") },
+  { id: id("ba-003"), name: "Snickerthorpe Real Estate Operating", accountId: "a-1000", institution: "BNY Mellon", lastFour: "2207", currencyCode: "USD", isActive: true, entityId: "e-004", clientId: "c-002", currentBalance: "4200000.00", balanceAsOf: D("2026-05-09") },
+  { id: id("ba-004"), name: "Tsukimomo USD Sweep", accountId: "a-1000", institution: "MUFG Union Bank", lastFour: "3301", currencyCode: "USD", isActive: true, entityId: "e-008", clientId: "c-004", currentBalance: "8400000.00", balanceAsOf: D("2026-05-10") },
+];
+
+export const BANK_ACCOUNT_SIGNERS: BankAccountSigner[] = [
+  // Thistlewood operating — internal officers
+  { id: id("bs-001"), bankAccountId: "ba-001", name: "Aldous Pepperton", email: "aldous@thistlewood.com", title: "Controller", authority: "joint", isPrimary: true, addedDate: D("2022-01-01"), notes: null },
+  { id: id("bs-002"), bankAccountId: "ba-001", name: "Eustace Brindleworth", email: "eustace@thistlewood.com", title: "CFO", authority: "sole", isPrimary: false, addedDate: D("2022-01-01"), notes: "Approves wires above $50k" },
+  { id: id("bs-003"), bankAccountId: "ba-001", name: "Margery Crumplebottom", email: "margery@thistlewood.com", title: "Bookkeeper", authority: "view_only", isPrimary: false, addedDate: D("2023-06-15"), notes: null },
+  // Pumpernickel
+  { id: id("bs-004"), bankAccountId: "ba-002", name: "Cordelia Pumpernickel", email: "cordelia@pumpernickel.co", title: "Trustee", authority: "sole", isPrimary: true, addedDate: D("2012-06-04"), notes: null },
+  { id: id("bs-005"), bankAccountId: "ba-002", name: "Wadsworth Pumpernickel III", email: "wadsworth@pumpernickel.co", title: "Co-Trustee", authority: "joint", isPrimary: false, addedDate: D("2015-04-19"), notes: "Requires CFO countersignature for transfers > $250k" },
+  // Snickerthorpe RE
+  { id: id("bs-006"), bankAccountId: "ba-003", name: "Beauregard Snickerthorpe", email: "beau@snickerthorpe.com", title: "Managing Director", authority: "sole", isPrimary: true, addedDate: D("2016-08-30"), notes: null },
+  { id: id("bs-007"), bankAccountId: "ba-003", name: "Persephone Snickerthorpe", email: "persephone@snickerthorpe.com", title: "Trustee", authority: "limited", isPrimary: false, addedDate: D("2019-02-10"), notes: "Up to $100k per transaction" },
+  // Tsukimomo
+  { id: id("bs-008"), bankAccountId: "ba-004", name: "Yoshiro Tsukimomo", email: "yoshiro@tsukimomo.jp", title: "President", authority: "sole", isPrimary: true, addedDate: D("2020-09-30"), notes: "Tokyo-based; wires require 48h cooling period" },
+  { id: id("bs-009"), bankAccountId: "ba-004", name: "Akiko Tanabe", email: "akiko@tsukimomo.jp", title: "US Operations Lead", authority: "limited", isPrimary: false, addedDate: D("2022-03-04"), notes: "US payroll only" },
 ];
 
 export const BANK_TRANSACTIONS: BankTransaction[] = [

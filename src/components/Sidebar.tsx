@@ -34,10 +34,16 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    heading: "Banking",
+    items: [
+      { href: "/bank", label: "Bank Accounts" },
+      { href: "/reconciliation", label: "Reconciliation" },
+    ],
+  },
+  {
     heading: "Reporting",
     items: [
       { href: "/reports", label: "Financial Statements" },
-      { href: "/reconciliation", label: "Reconciliation" },
     ],
   },
   {

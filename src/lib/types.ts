@@ -204,6 +204,24 @@ export type BankAccount = {
   lastFour: string | null;
   currencyCode: string;
   isActive: boolean;
+  entityId: string | null;
+  clientId: string | null;
+  currentBalance: string | null;
+  balanceAsOf: string | null;
+};
+
+export type SigningAuthority = "sole" | "joint" | "limited" | "view_only";
+
+export type BankAccountSigner = {
+  id: string;
+  bankAccountId: string;
+  name: string;
+  email: string | null;
+  title: string | null;
+  authority: SigningAuthority;
+  isPrimary: boolean;
+  addedDate: string | null;
+  notes: string | null;
 };
 
 export type BankTransaction = {

@@ -549,6 +549,127 @@ export async function createVendor(
   return created;
 }
 
+// --------- Bank accounts + signers ---------
+
+export type CreateBankAccountInput = {
+  name: string;
+  accountId: string; // GL account
+  institution?: string | null;
+  lastFour?: string | null;
+  currencyCode?: string;
+  entityId?: string | null;
+  clientId?: string | null;
+  currentBalance?: number | null;
+  balanceAsOf?: string | null;
+};
+
+export async function createBankAccount(
+  _user: SessionUser,
+  input: CreateBankAccountInput,
+) {
+  const db = getDb();
+  const id = uid("ba");
+  const [created] = await db
+    .insert(schema.bankAccounts)
+    .values({
+      id,
+      name: input.name,
+      accountId: input.accountId,
+      institution: input.institution ?? null,
+      lastFour: input.lastFour ?? null,
+      currencyCode: input.currencyCode ?? "USD",
+      isActive: true,
+      entityId: input.entityId ?? null,
+      clientId: input.clientId ?? null,
+      currentBalance:
+        input.currentBalance == null ? null : toDecimalString(input.currentBalance),
+      balanceAsOf: input.balanceAsOf ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export type UpdateBankAccountInput = Partial<CreateBankAccountInput> & {
+  isActive?: boolean;
+};
+
+export async function updateBankAccount(
+  _user: SessionUser,
+  id: string,
+  input: UpdateBankAccountInput,
+) {
+  const db = getDb();
+  const [updated] = await db
+    .update(schema.bankAccounts)
+    .set({
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.accountId !== undefined && { accountId: input.accountId }),
+      ...(input.institution !== undefined && { institution: input.institution }),
+      ...(input.lastFour !== undefined && { lastFour: input.lastFour }),
+      ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+      ...(input.entityId !== undefined && { entityId: input.entityId }),
+      ...(input.clientId !== undefined && { clientId: input.clientId }),
+      ...(input.currentBalance !== undefined && {
+        currentBalance:
+          input.currentBalance == null
+            ? null
+            : toDecimalString(input.currentBalance),
+      }),
+      ...(input.balanceAsOf !== undefined && { balanceAsOf: input.balanceAsOf }),
+    })
+    .where(eq(schema.bankAccounts.id, id))
+    .returning();
+  if (!updated) throw new Error("Bank account not found.");
+  return updated;
+}
+
+export async function deleteBankAccount(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(schema.bankAccountSigners)
+      .where(eq(schema.bankAccountSigners.bankAccountId, id));
+    await tx.delete(schema.bankAccounts).where(eq(schema.bankAccounts.id, id));
+  });
+}
+
+export type CreateSignerInput = {
+  bankAccountId: string;
+  name: string;
+  email?: string | null;
+  title?: string | null;
+  authority: "sole" | "joint" | "limited" | "view_only";
+  isPrimary?: boolean;
+  addedDate?: string | null;
+  notes?: string | null;
+};
+
+export async function createSigner(_user: SessionUser, input: CreateSignerInput) {
+  const db = getDb();
+  const id = uid("bs");
+  const [created] = await db
+    .insert(schema.bankAccountSigners)
+    .values({
+      id,
+      bankAccountId: input.bankAccountId,
+      name: input.name,
+      email: input.email ?? null,
+      title: input.title ?? null,
+      authority: input.authority,
+      isPrimary: input.isPrimary ?? false,
+      addedDate: input.addedDate ?? null,
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export async function deleteSigner(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.bankAccountSigners).where(eq(schema.bankAccountSigners.id, id));
+}
+
 // --------- Reconciliation ---------
 
 export async function reconcileTransaction(
