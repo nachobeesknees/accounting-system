@@ -469,6 +469,158 @@ export async function createAssetSnapshot(
   return created;
 }
 
+// --------- Fee schedules + entity fees ---------
+
+export type CreateFeeScheduleInput = {
+  name: string;
+  entityKind:
+    | "llc"
+    | "trust"
+    | "scorp"
+    | "ccorp"
+    | "partnership"
+    | "foundation"
+    | "individual"
+    | "other";
+  annualFee: number;
+  includedHours: number;
+  applicableYear?: number | null;
+  notes?: string | null;
+};
+
+export async function createFeeSchedule(
+  _user: SessionUser,
+  input: CreateFeeScheduleInput,
+) {
+  if (input.annualFee < 0) throw new Error("Annual fee must be ≥ 0.");
+  if (input.includedHours < 0) throw new Error("Included hours must be ≥ 0.");
+  const db = getDb();
+  const id = uid("fs");
+  const [created] = await db
+    .insert(schema.feeSchedules)
+    .values({
+      id,
+      name: input.name,
+      entityKind: input.entityKind,
+      annualFee: toDecimalString(input.annualFee),
+      includedHours: input.includedHours.toFixed(2),
+      applicableYear: input.applicableYear ?? null,
+      isActive: true,
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export type UpdateFeeScheduleInput = Partial<CreateFeeScheduleInput> & {
+  isActive?: boolean;
+};
+
+export async function updateFeeSchedule(
+  _user: SessionUser,
+  id: string,
+  input: UpdateFeeScheduleInput,
+) {
+  const db = getDb();
+  const [updated] = await db
+    .update(schema.feeSchedules)
+    .set({
+      ...(input.name !== undefined && { name: input.name }),
+      ...(input.entityKind !== undefined && { entityKind: input.entityKind }),
+      ...(input.annualFee !== undefined && {
+        annualFee: toDecimalString(input.annualFee),
+      }),
+      ...(input.includedHours !== undefined && {
+        includedHours: input.includedHours.toFixed(2),
+      }),
+      ...(input.applicableYear !== undefined && {
+        applicableYear: input.applicableYear,
+      }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.feeSchedules.id, id))
+    .returning();
+  if (!updated) throw new Error("Fee schedule not found.");
+  return updated;
+}
+
+export async function deleteFeeSchedule(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.feeSchedules).where(eq(schema.feeSchedules.id, id));
+}
+
+export type CreateEntityFeeInput = {
+  entityId: string;
+  billingYear: number;
+  feeScheduleId?: string | null;
+  annualFee: number;
+  includedHours: number;
+  status?: "draft" | "active" | "billed" | "paid" | "void";
+  invoiceId?: string | null;
+  notes?: string | null;
+};
+
+export async function createEntityFee(
+  _user: SessionUser,
+  input: CreateEntityFeeInput,
+) {
+  const db = getDb();
+  const id = uid("ef");
+  const [created] = await db
+    .insert(schema.entityFees)
+    .values({
+      id,
+      entityId: input.entityId,
+      billingYear: input.billingYear,
+      feeScheduleId: input.feeScheduleId ?? null,
+      annualFee: toDecimalString(input.annualFee),
+      includedHours: input.includedHours.toFixed(2),
+      status: input.status ?? "draft",
+      invoiceId: input.invoiceId ?? null,
+      notes: input.notes ?? null,
+    })
+    .returning();
+  return created;
+}
+
+export type UpdateEntityFeeInput = Partial<CreateEntityFeeInput>;
+
+export async function updateEntityFee(
+  _user: SessionUser,
+  id: string,
+  input: UpdateEntityFeeInput,
+) {
+  const db = getDb();
+  const [updated] = await db
+    .update(schema.entityFees)
+    .set({
+      ...(input.entityId !== undefined && { entityId: input.entityId }),
+      ...(input.billingYear !== undefined && { billingYear: input.billingYear }),
+      ...(input.feeScheduleId !== undefined && { feeScheduleId: input.feeScheduleId }),
+      ...(input.annualFee !== undefined && {
+        annualFee: toDecimalString(input.annualFee),
+      }),
+      ...(input.includedHours !== undefined && {
+        includedHours: input.includedHours.toFixed(2),
+      }),
+      ...(input.status !== undefined && { status: input.status }),
+      ...(input.invoiceId !== undefined && { invoiceId: input.invoiceId }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.entityFees.id, id))
+    .returning();
+  if (!updated) throw new Error("Entity fee not found.");
+  return updated;
+}
+
+export async function deleteEntityFee(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db.delete(schema.entityFees).where(eq(schema.entityFees.id, id));
+}
+
 // --------- Customers / Vendors ---------
 
 export async function createCustomer(

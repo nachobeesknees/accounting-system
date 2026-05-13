@@ -153,6 +153,41 @@ export const entities = pgTable("entities", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+export const feeSchedules = pgTable("fee_schedules", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  entityKind: entityKindEnum("entity_kind").notNull(),
+  annualFee: numeric("annual_fee", { precision: 15, scale: 2 }).notNull(),
+  includedHours: numeric("included_hours", { precision: 8, scale: 2 }).notNull(),
+  applicableYear: integer("applicable_year"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const entityFeeStatusEnum = pgEnum("entity_fee_status", [
+  "draft",
+  "active",
+  "billed",
+  "paid",
+  "void",
+]);
+
+export const entityFees = pgTable("entity_fees", {
+  id: text("id").primaryKey(),
+  entityId: text("entity_id").notNull(),
+  billingYear: integer("billing_year").notNull(),
+  feeScheduleId: text("fee_schedule_id"),
+  annualFee: numeric("annual_fee", { precision: 15, scale: 2 }).notNull(),
+  includedHours: numeric("included_hours", { precision: 8, scale: 2 }).notNull(),
+  status: entityFeeStatusEnum("status").notNull().default("draft"),
+  invoiceId: text("invoice_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const assets = pgTable("assets", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
@@ -356,3 +391,5 @@ export type Entity = typeof entities.$inferSelect;
 export type Asset = typeof assets.$inferSelect;
 export type AssetValueSnapshot = typeof assetValueSnapshots.$inferSelect;
 export type BankAccountSigner = typeof bankAccountSigners.$inferSelect;
+export type FeeSchedule = typeof feeSchedules.$inferSelect;
+export type EntityFee = typeof entityFees.$inferSelect;

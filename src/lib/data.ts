@@ -27,8 +27,11 @@ import type {
   BankTransaction,
   Customer,
   Entity,
+  EntityFee,
+  EntityFeeStatus,
   EntityKind,
   EntityStatus,
+  FeeSchedule,
   FiscalPeriod,
   Invoice,
   InvoiceLine,
@@ -122,6 +125,33 @@ function mapSnapshot(
     notes: r.notes,
     createdBy: r.createdBy,
     createdAt: r.createdAt.toISOString(),
+  };
+}
+
+function mapFeeSchedule(r: typeof schema.feeSchedules.$inferSelect): FeeSchedule {
+  return {
+    id: r.id,
+    name: r.name,
+    entityKind: r.entityKind as EntityKind,
+    annualFee: r.annualFee,
+    includedHours: r.includedHours,
+    applicableYear: r.applicableYear,
+    isActive: r.isActive,
+    notes: r.notes,
+  };
+}
+
+function mapEntityFee(r: typeof schema.entityFees.$inferSelect): EntityFee {
+  return {
+    id: r.id,
+    entityId: r.entityId,
+    billingYear: r.billingYear,
+    feeScheduleId: r.feeScheduleId,
+    annualFee: r.annualFee,
+    includedHours: r.includedHours,
+    status: r.status as EntityFeeStatus,
+    invoiceId: r.invoiceId,
+    notes: r.notes,
   };
 }
 
@@ -352,6 +382,54 @@ export async function getCustomerById(id: string): Promise<Customer | undefined>
     .where(eq(schema.customers.id, id))
     .limit(1);
   return row ? mapCustomer(row) : undefined;
+}
+
+export async function getFeeSchedules(): Promise<FeeSchedule[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.feeSchedules)
+    .orderBy(desc(schema.feeSchedules.applicableYear), schema.feeSchedules.name);
+  return rows.map(mapFeeSchedule);
+}
+
+export async function getFeeScheduleById(id: string): Promise<FeeSchedule | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.feeSchedules)
+    .where(eq(schema.feeSchedules.id, id))
+    .limit(1);
+  return row ? mapFeeSchedule(row) : undefined;
+}
+
+export async function getEntityFees(): Promise<EntityFee[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.entityFees)
+    .orderBy(desc(schema.entityFees.billingYear));
+  return rows.map(mapEntityFee);
+}
+
+export async function getEntityFeesByEntityId(entityId: string): Promise<EntityFee[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.entityFees)
+    .where(eq(schema.entityFees.entityId, entityId))
+    .orderBy(desc(schema.entityFees.billingYear));
+  return rows.map(mapEntityFee);
+}
+
+export async function getEntityFeeById(id: string): Promise<EntityFee | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.entityFees)
+    .where(eq(schema.entityFees.id, id))
+    .limit(1);
+  return row ? mapEntityFee(row) : undefined;
 }
 
 export async function getEntities(): Promise<Entity[]> {

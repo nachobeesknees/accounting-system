@@ -8,6 +8,8 @@ import type {
   BankTransaction,
   Customer,
   Entity,
+  EntityFee,
+  FeeSchedule,
   FiscalPeriod,
   Invoice,
   JournalEntry,
@@ -136,6 +138,32 @@ export const ASSET_VALUE_SNAPSHOTS: AssetValueSnapshot[] = [
   { id: id("av-016"),  assetId: "as-016", snapshotDate: D("2026-03-31"), value: "3200000.00", currencyCode: "USD", source: "Internal valuation", notes: "Royalty-stream model", createdBy: "u-aldous", createdAt: "2026-04-15T17:00:00Z" },
   { id: id("av-017"),  assetId: "as-017", snapshotDate: D("2026-05-09"), value: "41500000.00", currencyCode: "USD", source: "Lloyds statement", notes: null, createdBy: "u-aldous", createdAt: "2026-05-10T17:00:00Z" },
   { id: id("av-018"),  assetId: "as-018", snapshotDate: D("2026-04-30"), value: "28900000.00", currencyCode: "USD", source: "UK valuation report", notes: null, createdBy: "u-aldous", createdAt: "2026-05-01T17:00:00Z" },
+];
+
+export const FEE_SCHEDULES: FeeSchedule[] = [
+  { id: id("fs-001"), name: "LLC Standard — 2026", entityKind: "llc", annualFee: "12000.00", includedHours: "40", applicableYear: 2026, isActive: true, notes: "Annual maintenance + 40 hrs included" },
+  { id: id("fs-002"), name: "LLC Premium — 2026", entityKind: "llc", annualFee: "28000.00", includedHours: "100", applicableYear: 2026, isActive: true, notes: "Complex multi-state structures" },
+  { id: id("fs-003"), name: "Trust Standard — 2026", entityKind: "trust", annualFee: "18000.00", includedHours: "60", applicableYear: 2026, isActive: true, notes: null },
+  { id: id("fs-004"), name: "Trust Premium — 2026", entityKind: "trust", annualFee: "42000.00", includedHours: "150", applicableYear: 2026, isActive: true, notes: "Dynasty / multi-generational" },
+  { id: id("fs-005"), name: "S-Corp Standard — 2026", entityKind: "scorp", annualFee: "9500.00", includedHours: "30", applicableYear: 2026, isActive: true, notes: null },
+  { id: id("fs-006"), name: "C-Corp Standard — 2026", entityKind: "ccorp", annualFee: "22000.00", includedHours: "80", applicableYear: 2026, isActive: true, notes: null },
+  { id: id("fs-007"), name: "Partnership Standard — 2026", entityKind: "partnership", annualFee: "16500.00", includedHours: "55", applicableYear: 2026, isActive: true, notes: null },
+  { id: id("fs-008"), name: "Foundation — 2026", entityKind: "foundation", annualFee: "24000.00", includedHours: "90", applicableYear: 2026, isActive: true, notes: "Includes 990-PF prep" },
+  { id: id("fs-009"), name: "LLC Standard — 2025", entityKind: "llc", annualFee: "11000.00", includedHours: "40", applicableYear: 2025, isActive: false, notes: "Superseded by 2026 schedule" },
+];
+
+export const ENTITY_FEES: EntityFee[] = [
+  // 2026 assignments — one per entity
+  { id: id("ef-001"), entityId: "e-001", billingYear: 2026, feeScheduleId: "fs-001", annualFee: "12000.00", includedHours: "40", status: "billed", invoiceId: null, notes: null },
+  { id: id("ef-002"), entityId: "e-002", billingYear: 2026, feeScheduleId: "fs-004", annualFee: "42000.00", includedHours: "150", status: "billed", invoiceId: null, notes: "Dynasty trust" },
+  { id: id("ef-003"), entityId: "e-003", billingYear: 2026, feeScheduleId: "fs-004", annualFee: "42000.00", includedHours: "150", status: "active", invoiceId: null, notes: null },
+  { id: id("ef-004"), entityId: "e-004", billingYear: 2026, feeScheduleId: "fs-002", annualFee: "28000.00", includedHours: "100", status: "billed", invoiceId: null, notes: "Multi-state RE" },
+  { id: id("ef-005"), entityId: "e-005", billingYear: 2026, feeScheduleId: "fs-007", annualFee: "16500.00", includedHours: "55", status: "active", invoiceId: null, notes: null },
+  { id: id("ef-006"), entityId: "e-006", billingYear: 2026, feeScheduleId: "fs-006", annualFee: "22000.00", includedHours: "80", status: "billed", invoiceId: null, notes: null },
+  { id: id("ef-007"), entityId: "e-007", billingYear: 2026, feeScheduleId: "fs-008", annualFee: "24000.00", includedHours: "90", status: "active", invoiceId: null, notes: null },
+  { id: id("ef-008"), entityId: "e-008", billingYear: 2026, feeScheduleId: "fs-001", annualFee: "14500.00", includedHours: "50", status: "billed", invoiceId: null, notes: "Custom — foreign-parent overhead" },
+  { id: id("ef-009"), entityId: "e-009", billingYear: 2026, feeScheduleId: "fs-006", annualFee: "22000.00", includedHours: "80", status: "active", invoiceId: null, notes: null },
+  { id: id("ef-010"), entityId: "e-010", billingYear: 2026, feeScheduleId: "fs-003", annualFee: "9000.00", includedHours: "20", status: "draft", invoiceId: null, notes: "Dormant — reduced fee" },
 ];
 
 export const VENDORS: Vendor[] = [

@@ -75,6 +75,31 @@ export type Entity = {
   notes: string | null;
 };
 
+export type FeeSchedule = {
+  id: string;
+  name: string;
+  entityKind: EntityKind;
+  annualFee: string;
+  includedHours: string;
+  applicableYear: number | null;
+  isActive: boolean;
+  notes: string | null;
+};
+
+export type EntityFeeStatus = "draft" | "active" | "billed" | "paid" | "void";
+
+export type EntityFee = {
+  id: string;
+  entityId: string;
+  billingYear: number;
+  feeScheduleId: string | null;
+  annualFee: string;
+  includedHours: string;
+  status: EntityFeeStatus;
+  invoiceId: string | null;
+  notes: string | null;
+};
+
 export type AssetKind =
   | "real_estate"
   | "securities"

@@ -39,6 +39,8 @@ import {
   BILLS,
   CUSTOMERS,
   ENTITIES,
+  ENTITY_FEES,
+  FEE_SCHEDULES,
   INVOICES,
   JOURNAL_ENTRIES,
   PERIODS,
@@ -136,6 +138,8 @@ async function main() {
       activity_log,
       asset_value_snapshots,
       assets,
+      entity_fees,
+      fee_schedules,
       fiscal_periods,
       entities,
       vendors,
@@ -228,6 +232,33 @@ async function main() {
       status: e.status,
       ein: e.ein,
       notes: e.notes,
+    })),
+  );
+
+  console.log("Inserting fee schedules + entity fees…");
+  await db.insert(schema.feeSchedules).values(
+    FEE_SCHEDULES.map((f) => ({
+      id: f.id,
+      name: f.name,
+      entityKind: f.entityKind,
+      annualFee: f.annualFee,
+      includedHours: f.includedHours,
+      applicableYear: f.applicableYear,
+      isActive: f.isActive,
+      notes: f.notes,
+    })),
+  );
+  await db.insert(schema.entityFees).values(
+    ENTITY_FEES.map((f) => ({
+      id: f.id,
+      entityId: f.entityId,
+      billingYear: f.billingYear,
+      feeScheduleId: f.feeScheduleId,
+      annualFee: f.annualFee,
+      includedHours: f.includedHours,
+      status: f.status,
+      invoiceId: f.invoiceId,
+      notes: f.notes,
     })),
   );
 
