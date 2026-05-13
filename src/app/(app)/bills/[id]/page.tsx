@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -99,6 +100,15 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Bills", href: "/bills" },
+          vendor
+            ? { label: vendor.name, href: `/vendors/${vendor.id}` }
+            : { label: "—" },
+          { label: bill.billNumber },
+        ]}
+      />
       <PageHeader
         title={bill.billNumber}
         meta={vendor?.name ?? "Unknown vendor"}

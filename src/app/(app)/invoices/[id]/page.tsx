@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -247,6 +248,15 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Invoices", href: "/invoices" },
+          customer
+            ? { label: customer.name, href: `/customers/${customer.id}` }
+            : { label: "—" },
+          { label: invoice.invoiceNumber },
+        ]}
+      />
       <PageHeader
         title={invoice.invoiceNumber}
         meta={customer?.name ?? "Unknown customer"}

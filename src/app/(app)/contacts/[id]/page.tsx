@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ConfirmButton } from "@/components/ui/ConfirmButton";
@@ -75,6 +76,12 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Contacts", href: "/contacts" },
+          { label: `${contact.code} — ${contact.name}` },
+        ]}
+      />
       <PageHeader
         title={contact.name}
         meta={contact.code}

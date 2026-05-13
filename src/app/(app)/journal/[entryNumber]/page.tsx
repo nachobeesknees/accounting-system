@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { ConfirmButton } from "@/components/ui/ConfirmButton";
@@ -113,6 +114,12 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Journal entries", href: "/journal" },
+          { label: entry.entryNumber },
+        ]}
+      />
       <PageHeader
         title={entry.entryNumber}
         meta={entry.description ?? undefined}
