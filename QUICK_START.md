@@ -1,14 +1,23 @@
 # Quick Start Guide
 
-## 1️⃣ After Deployment
+## 🚀 Deployment Status
 
-Once `deploy-fly.sh` completes, you'll see:
-```
-✅ DEPLOYMENT COMPLETE
-========================================
-App: accounting-system-demo
-URL: https://accounting-system-demo.fly.dev
-```
+**Latest Update (May 12, 2026):**
+- Database configuration fixed (auto-fallback to SQLite)
+- Auto-migrations enabled in Docker entrypoint
+- Demo data loader fully functional
+
+The app is being deployed to: **https://accounting-system-demo.fly.dev**
+
+**Check deployment status:** https://github.com/nachobeesknees/accounting-system/actions
+
+Once deployment completes (may take 2-5 minutes), proceed to step 2.
+
+## 1️⃣ First Access
+
+The application is at: **https://accounting-system-demo.fly.dev/**
+
+If you see 502 error, the deployment is still in progress. Wait 1-2 minutes and refresh.
 
 ## 2️⃣ Single-Click Demo Login
 
