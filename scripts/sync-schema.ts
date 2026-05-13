@@ -68,6 +68,22 @@ const COLUMNS: ColumnSpec[] = [
 
   // Entity registration number (corporate filing # / EIN-equivalent).
   { table: "entities", column: "registration_number", type: "text" },
+
+  // ---- Firm (corporate billing) entity attribution ----
+  // We bill clients FROM one of our firm's corporate entities. Each
+  // journal entry / invoice carries the firm_entity_id of the billing
+  // firm. Firms live in the `offices` table (lightly repurposed).
+  { table: "journal_entries", column: "firm_entity_id", type: "text" },
+  { table: "journal_lines", column: "firm_entity_id", type: "text" },
+  { table: "invoices", column: "firm_entity_id", type: "text" },
+
+  // ---- Offices repurposed as firm entities ----
+  { table: "offices", column: "kind", type: "text" },
+  { table: "offices", column: "jurisdiction", type: "text" },
+  { table: "offices", column: "ein", type: "text" },
+  { table: "offices", column: "registration_number", type: "text" },
+  { table: "offices", column: "formation_date", type: "date" },
+  { table: "offices", column: "address", type: "text" },
 ];
 
 const TABLES = [

@@ -121,8 +121,10 @@ export const journalEntries = pgTable("journal_entries", {
   voidedAt: timestamp("voided_at", { withTimezone: true }),
   voidReason: text("void_reason"),
   createdBy: text("created_by"),
-  /** null = firm-level. Non-null = entity-scoped journal. */
+  /** Legacy: client-entity tag. Reserved; not used for scoping anymore. */
   entityId: text("entity_id"),
+  /** Which of our firm's corporate entities issued this entry. */
+  firmEntityId: text("firm_entity_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -138,6 +140,7 @@ export const journalLines = pgTable(
     debit: numeric("debit", { precision: 15, scale: 2 }).notNull().default("0"),
     credit: numeric("credit", { precision: 15, scale: 2 }).notNull().default("0"),
     entityId: text("entity_id"),
+    firmEntityId: text("firm_entity_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({
@@ -148,12 +151,25 @@ export const journalLines = pgTable(
   }),
 );
 
+/**
+ * Firm corporate entities. We bill clients FROM one of these (e.g.
+ * Thistlewood US LLC, Cayman trust co, Europe SARL). The `entityScope`
+ * cookie picks one to filter all journal entries / invoices / reports.
+ *
+ * Kept as `offices` for table name to avoid a destructive migration.
+ */
 export const offices = pgTable("offices", {
   id: text("id").primaryKey(),
   code: text("code").notNull().unique(),
   name: text("name").notNull(),
   address: text("address"),
   currencyCode: text("currency_code").notNull().default("USD"),
+  /** llc | trust_company | sarl | etc. */
+  kind: text("kind"),
+  jurisdiction: text("jurisdiction"),
+  ein: text("ein"),
+  registrationNumber: text("registration_number"),
+  formationDate: date("formation_date"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -536,6 +552,8 @@ export const invoices = pgTable("invoices", {
   expectedPaymentDate: date("expected_payment_date"),
   notes: text("notes"),
   journalEntryId: text("journal_entry_id"),
+  /** Which of our firm's corporate entities issued this invoice. */
+  firmEntityId: text("firm_entity_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

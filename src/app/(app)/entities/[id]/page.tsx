@@ -3,12 +3,50 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
-import { getCurrencies, getCustomers, getEntityById } from "@/lib/data";
+import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import {
+  getCurrencies,
+  getCustomers,
+  getEntityById,
+  getEntityFeesByEntityId,
+} from "@/lib/data";
 import { CustomFields } from "@/components/CustomFields";
 import type { EntityKind } from "@/lib/types";
+import { formatUSD, parseAmount } from "@/lib/money";
 import { deleteEntityAction, updateEntityAction } from "./actions";
+
+function periodCount(freq: string | null | undefined): number {
+  switch (freq) {
+    case "monthly":
+      return 12;
+    case "quarterly":
+      return 4;
+    case "semiannual":
+      return 2;
+    case "one_time":
+      return 1;
+    default:
+      return 1; // annual
+  }
+}
+
+function frequencyLabel(freq: string | null | undefined): string {
+  switch (freq) {
+    case "monthly":
+      return "Monthly";
+    case "quarterly":
+      return "Quarterly";
+    case "semiannual":
+      return "Semi-annual";
+    case "one_time":
+      return "One-time";
+    default:
+      return "Annual";
+  }
+}
 
 const KIND_LABEL: Record<EntityKind, string> = {
   llc: "LLC",
@@ -30,13 +68,19 @@ export default async function Page({
 }) {
   const { id } = await params;
   const { saved, error } = await searchParams;
-  const [entity, customers, currencies] = await Promise.all([
+  const [entity, customers, currencies, fees] = await Promise.all([
     getEntityById(id),
     getCustomers(),
     getCurrencies(),
+    getEntityFeesByEntityId(id),
   ]);
   if (!entity) notFound();
   const client = customers.find((c) => c.id === entity.clientId);
+  // Sort fees: active before draft/billed; primary services first.
+  const sortedFees = [...fees].sort((a, b) => {
+    const order = { active: 0, draft: 1, billed: 2, paid: 3, void: 4 } as Record<string, number>;
+    return (order[a.status] ?? 99) - (order[b.status] ?? 99);
+  });
 
   return (
     <>
@@ -192,6 +236,63 @@ export default async function Page({
             </Button>
           </div>
         </form>
+
+        <Card
+          title="Services & fees"
+          actions={
+            <Link
+              href={`/fees/assignments/new?entityId=${entity.id}`}
+              style={{ color: "var(--ink-3)", textDecoration: "none" }}
+            >
+              + Add service →
+            </Link>
+          }
+        >
+          {sortedFees.length === 0 ? (
+            <Empty
+              title="No services billed for this entity yet"
+              body="Use + Add service above to set up a recurring fee or one-time charge."
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Service / year</TH>
+                  <TH>Frequency</TH>
+                  <TH>Next billing</TH>
+                  <TH num>Per period</TH>
+                  <TH num>Annual fee</TH>
+                  <TH num>Included hrs</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {sortedFees.map((f) => {
+                  const annual = parseAmount(f.annualFee);
+                  const periods = periodCount(f.frequency);
+                  const perPeriod = f.perPeriodAmount
+                    ? parseAmount(f.perPeriodAmount)
+                    : annual / periods;
+                  return (
+                    <TR key={f.id} href={`/fees/assignments/${f.id}`}>
+                      <TD>{f.billingYear}</TD>
+                      <TD>{frequencyLabel(f.frequency)}</TD>
+                      <TD>{f.nextBillingDate ?? "—"}</TD>
+                      <TD num>USD {formatUSD(perPeriod)}</TD>
+                      <TD num>USD {formatUSD(annual)}</TD>
+                      <TD num>{f.includedHours}</TD>
+                      <TD>
+                        <Pill variant={statusVariant(f.status)}>
+                          {statusLabel(f.status)}
+                        </Pill>
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          )}
+        </Card>
 
         <CustomFields
           recordType="entity"

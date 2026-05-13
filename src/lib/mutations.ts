@@ -84,8 +84,10 @@ export type CreateJournalEntryInput = {
   reference?: string | null;
   source?: "manual" | "invoice" | "bill" | "reconciliation";
   fiscalPeriodId?: string | null;
-  /** Attribute this entry (and all its lines) to a specific entity's books. */
+  /** Legacy: client-entity tag. Reserved; not used for scoping. */
   entityId?: string | null;
+  /** Which firm corporate entity issued this entry (drives the topbar scope). */
+  firmEntityId?: string | null;
   status?: "draft" | "posted";
   lines: DraftJournalLine[];
 };
@@ -138,6 +140,7 @@ export async function createJournalEntry(
       voidReason: null,
       createdBy: user.userId,
       entityId: input.entityId ?? null,
+      firmEntityId: input.firmEntityId ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -151,6 +154,7 @@ export async function createJournalEntry(
         debit: toDecimalString(l.debit ?? 0),
         credit: toDecimalString(l.credit ?? 0),
         entityId: input.entityId ?? null,
+        firmEntityId: input.firmEntityId ?? null,
       })),
     );
   });
@@ -1739,6 +1743,22 @@ async function getPrimaryEntityForCustomer(customerId: string): Promise<string |
   return ent?.id ?? null;
 }
 
+/**
+ * Default firm corporate entity used when an invoice doesn't already have
+ * one set. Picks the first active office by code so the seed's US LLC
+ * comes up first.
+ */
+async function getDefaultFirmEntityId(): Promise<string | null> {
+  const db = getDb();
+  const [first] = await db
+    .select({ id: schema.offices.id })
+    .from(schema.offices)
+    .where(eq(schema.offices.isActive, true))
+    .orderBy(schema.offices.code)
+    .limit(1);
+  return first?.id ?? null;
+}
+
 export async function postInvoice(user: SessionUser, invoiceId: string) {
   const db = getDb();
   const [inv] = await db
@@ -1775,6 +1795,10 @@ export async function postInvoice(user: SessionUser, invoiceId: string) {
 
   const entityId =
     inv.entityId ?? (await getPrimaryEntityForCustomer(inv.customerId));
+  // Firm scope: which of OUR corporate entities issued this invoice.
+  // Default to the firm that's already on the invoice (set at create
+  // time / by /invoices/generate), or fall back to the primary US LLC.
+  const firmEntityId = inv.firmEntityId ?? (await getDefaultFirmEntityId());
 
   const je = await createJournalEntry(user, {
     entryDate: inv.invoiceDate,
@@ -1783,6 +1807,7 @@ export async function postInvoice(user: SessionUser, invoiceId: string) {
     source: "invoice",
     status: "posted",
     entityId,
+    firmEntityId,
     lines: jeLines,
   });
 
@@ -1791,9 +1816,8 @@ export async function postInvoice(user: SessionUser, invoiceId: string) {
     .set({
       status: "sent",
       journalEntryId: je.id,
-      // Cache the entity on the invoice so subsequent operations
-      // (payment, void) reuse the same attribution without another lookup.
       entityId,
+      firmEntityId,
       updatedAt: new Date(),
     })
     .where(eq(schema.invoices.id, invoiceId));
@@ -1846,6 +1870,7 @@ export async function recordInvoicePayment(
 
   const entityId =
     inv.entityId ?? (await getPrimaryEntityForCustomer(inv.customerId));
+  const firmEntityId = inv.firmEntityId ?? (await getDefaultFirmEntityId());
 
   const je = await createJournalEntry(user, {
     entryDate: input.paymentDate,
@@ -1854,6 +1879,7 @@ export async function recordInvoicePayment(
     source: "invoice",
     status: "posted",
     entityId,
+    firmEntityId,
     lines: [
       { accountId: cashAccountId, description: "Deposit", debit: input.amount, credit: 0 },
       { accountId: AR_ACCOUNT_ID, description: "Apply AR", debit: 0, credit: input.amount },

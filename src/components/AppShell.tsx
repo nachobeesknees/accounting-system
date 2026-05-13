@@ -3,7 +3,7 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import {
   getBills,
-  getEntities,
+  getFirmEntities,
   getInvoices,
   getInvoicesAwaitingApproval,
   getJournalEntries,
@@ -21,14 +21,15 @@ export async function AppShell({
   breadcrumb?: string;
   children: ReactNode;
 }) {
-  const [entries, invoices, bills, awaiting, entities, currentScope] = await Promise.all([
-    getJournalEntries(),
-    getInvoices(),
-    getBills(),
-    getInvoicesAwaitingApproval(user.userId, user.role, user.isSuperuser),
-    getEntities(),
-    getEntityScope(),
-  ]);
+  const [entries, invoices, bills, awaiting, firmEntities, currentScope] =
+    await Promise.all([
+      getJournalEntries(),
+      getInvoices(),
+      getBills(),
+      getInvoicesAwaitingApproval(user.userId, user.role, user.isSuperuser),
+      getFirmEntities(),
+      getEntityScope(),
+    ]);
   const jeCount = entries.length;
   const outstandingInvoiceCount = invoices.filter(
     (i) => parseAmount(i.balanceDue) > 0,
@@ -45,7 +46,10 @@ export async function AppShell({
     "/invoices": approvalsCount > 0,
   };
 
-  const entityOptions = entities.map((e) => ({ id: e.id, code: e.code, name: e.name }));
+  // The topbar picker shows OUR firm's corporate entities — what we
+  // bill clients from. Switching narrows every report and JE list to
+  // that firm's books.
+  const firmOptions = firmEntities.map((f) => ({ id: f.id, code: f.code, name: f.name }));
 
   return (
     <div
@@ -62,7 +66,7 @@ export async function AppShell({
         <Topbar
           user={user}
           breadcrumb={breadcrumb}
-          entities={entityOptions}
+          entities={firmOptions}
           currentEntityId={currentScope}
         />
       </div>

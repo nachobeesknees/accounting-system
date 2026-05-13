@@ -90,6 +90,7 @@ export function TH({
         position: "sticky",
         top: 0,
         zIndex: 1,
+        whiteSpace: "nowrap",
         fontFamily: num ? "var(--font-mono)" : undefined,
         ...style,
       }}
@@ -103,10 +104,18 @@ export function TD({
   num,
   mono,
   neg,
+  wrap,
   children,
   style,
   ...rest
-}: TdHTMLAttributes<HTMLTableCellElement> & { num?: boolean; mono?: boolean; neg?: boolean }) {
+}: TdHTMLAttributes<HTMLTableCellElement> & {
+  num?: boolean;
+  mono?: boolean;
+  neg?: boolean;
+  /** Opt into wrapping for long-form / description columns. Default off so
+   *  rows stay compact and never balloon to two lines. */
+  wrap?: boolean;
+}) {
   const useMono = num || mono;
   return (
     <td
@@ -117,6 +126,10 @@ export function TD({
         color: neg ? "var(--p-review-fg)" : "var(--ink-2)",
         fontFamily: useMono ? "var(--font-mono)" : undefined,
         fontVariantNumeric: useMono ? "tabular-nums" : undefined,
+        whiteSpace: wrap ? "normal" : "nowrap",
+        overflow: wrap ? undefined : "hidden",
+        textOverflow: wrap ? undefined : "ellipsis",
+        maxWidth: wrap ? undefined : 360,
         ...style,
       }}
     >

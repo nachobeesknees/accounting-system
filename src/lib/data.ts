@@ -326,6 +326,11 @@ function mapOffice(r: typeof schema.offices.$inferSelect): Office {
     name: r.name,
     address: r.address,
     currencyCode: r.currencyCode,
+    kind: r.kind,
+    jurisdiction: r.jurisdiction,
+    ein: r.ein,
+    registrationNumber: r.registrationNumber,
+    formationDate: r.formationDate,
     isActive: r.isActive,
     notes: r.notes,
   };
@@ -802,6 +807,20 @@ export async function getOffices(): Promise<Office[]> {
   const db = getDb();
   const rows = await db.select().from(schema.offices).orderBy(schema.offices.name);
   return rows.map(mapOffice);
+}
+
+/**
+ * Firm corporate entities. Alias for offices that read as "the firms we
+ * bill clients from". The topbar entity-scope picker shows these.
+ */
+export async function getFirmEntities(): Promise<Office[]> {
+  return getOffices();
+}
+
+export async function getFirmEntityById(id: string): Promise<Office | undefined> {
+  const db = getDb();
+  const [row] = await db.select().from(schema.offices).where(eq(schema.offices.id, id)).limit(1);
+  return row ? mapOffice(row) : undefined;
 }
 
 export async function getOfficeById(id: string): Promise<Office | undefined> {
@@ -1304,12 +1323,14 @@ export async function getJournalEntries(
     .select()
     .from(schema.journalEntries)
     .orderBy(desc(schema.journalEntries.entryDate), desc(schema.journalEntries.entryNumber));
+  // Scope by FIRM entity (which of our corporate entities issued the JE),
+  // not by the legacy client-entity tag.
   const heads =
     effective === "all"
       ? await base
       : effective == null
-        ? await base.where(isNull(schema.journalEntries.entityId))
-        : await base.where(eq(schema.journalEntries.entityId, effective));
+        ? await base.where(isNull(schema.journalEntries.firmEntityId))
+        : await base.where(eq(schema.journalEntries.firmEntityId, effective));
   if (heads.length === 0) return [];
   const ids = heads.map((h) => h.id);
   const lineRows = await db
@@ -1457,14 +1478,14 @@ async function getSignedBalancesByAccount(
     rows = await q.where(
       and(
         eq(schema.journalEntries.status, "posted"),
-        isNull(schema.journalEntries.entityId),
+        isNull(schema.journalEntries.firmEntityId),
       ),
     );
   } else {
     rows = await q.where(
       and(
         eq(schema.journalEntries.status, "posted"),
-        eq(schema.journalEntries.entityId, scope),
+        eq(schema.journalEntries.firmEntityId, scope),
       ),
     );
   }

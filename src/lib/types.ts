@@ -244,15 +244,28 @@ export type TimeEntry = {
   notes: string | null;
 };
 
+/**
+ * Firm corporate entity (kept as `Office` for table-name compatibility).
+ * Represents one of the firm's billing legal entities — what the topbar
+ * scope picker switches between.
+ */
 export type Office = {
   id: string;
   code: string;
   name: string;
   address: string | null;
   currencyCode: string;
+  kind?: string | null;
+  jurisdiction?: string | null;
+  ein?: string | null;
+  registrationNumber?: string | null;
+  formationDate?: string | null;
   isActive: boolean;
   notes: string | null;
 };
+
+/** Semantic alias surfaced in UI. */
+export type FirmEntity = Office;
 
 export type PriceList = {
   id: string;
