@@ -289,6 +289,50 @@ export default async function Page({
               k="Payment terms"
               v={vendor ? `Net ${vendor.paymentTerms}` : "—"}
             />
+            {(() => {
+              const c = bill.clientId
+                ? customers.find((x) => x.id === bill.clientId)
+                : null;
+              return (
+                <KV
+                  k="Client"
+                  v={
+                    c ? (
+                      <Link
+                        href={`/customers/${c.id}`}
+                        style={{ color: "var(--ink)", textDecoration: "none" }}
+                      >
+                        {c.name}
+                      </Link>
+                    ) : (
+                      "—"
+                    )
+                  }
+                />
+              );
+            })()}
+            {(() => {
+              const ent = bill.entityId
+                ? entities.find((x) => x.id === bill.entityId)
+                : null;
+              return (
+                <KV
+                  k="Entity"
+                  v={
+                    ent ? (
+                      <Link
+                        href={`/entities/${ent.id}`}
+                        style={{ color: "var(--ink)", textDecoration: "none" }}
+                      >
+                        {ent.name}
+                      </Link>
+                    ) : (
+                      "—"
+                    )
+                  }
+                />
+              );
+            })()}
             <KV
               k="Total"
               v={formatMoney(bill.total, bill.currencyCode, { compact: true, paren: true })}

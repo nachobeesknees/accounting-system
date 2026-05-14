@@ -700,6 +700,10 @@ export const bills = pgTable("bills", {
   currencyCode: text("currency_code").notNull().default("USD"),
   notes: text("notes"),
   journalEntryId: text("journal_entry_id"),
+  /** Optional client this bill is on-behalf-of. Soft FK → customers.id. */
+  clientId: text("client_id"),
+  /** Optional entity this bill is on-behalf-of. Soft FK → entities.id. */
+  entityId: text("entity_id"),
   // Chargeback (rebill to client / entity) — see scripts/sync-schema.ts.
   chargebackClientId: text("chargeback_client_id"),
   chargebackEntityId: text("chargeback_entity_id"),
@@ -721,6 +725,10 @@ export const billLines = pgTable("bill_lines", {
   unitPrice: numeric("unit_price", { precision: 15, scale: 2 }).notNull(),
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
   accountId: text("account_id").notNull(),
+  /** Optional per-line client allocation. */
+  clientId: text("client_id"),
+  /** Optional per-line entity allocation. */
+  entityId: text("entity_id"),
   dimensions: jsonb("dimensions").notNull().default(sql`'{}'::jsonb`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

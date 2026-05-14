@@ -591,6 +591,8 @@ function mapBillLine(r: typeof schema.billLines.$inferSelect): BillLine {
     unitPrice: r.unitPrice,
     amount: r.amount,
     accountId: r.accountId,
+    clientId: r.clientId ?? null,
+    entityId: r.entityId ?? null,
     dimensions: asDimensionMap(r.dimensions),
   };
 }
@@ -669,6 +671,8 @@ function mapBill(r: typeof schema.bills.$inferSelect, lines: BillLine[]): Bill {
     currencyCode: r.currencyCode,
     notes: r.notes,
     journalEntryId: r.journalEntryId,
+    clientId: r.clientId ?? null,
+    entityId: r.entityId ?? null,
     chargebackClientId: r.chargebackClientId ?? null,
     chargebackEntityId: r.chargebackEntityId ?? null,
     chargebackType: (r.chargebackType ?? null) as Bill["chargebackType"],

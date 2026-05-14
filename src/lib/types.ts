@@ -556,6 +556,8 @@ export type BillLine = {
   unitPrice: string;
   amount: string;
   accountId: string;
+  clientId?: string | null;
+  entityId?: string | null;
   /** Read side always populates from DB JSONB (defaults to {}). */
   dimensions?: DimensionMap;
 };
@@ -584,6 +586,10 @@ export type Bill = {
   currencyCode: string;
   notes: string | null;
   journalEntryId: string | null;
+  /** Optional client this bill is on-behalf-of (different from chargeback). */
+  clientId?: string | null;
+  /** Optional entity this bill is on-behalf-of. */
+  entityId?: string | null;
   // Chargeback fields — see BillChargebackType. All optional; absent =
   // bill is an internal expense, not rebilled.
   chargebackClientId?: string | null;
