@@ -138,6 +138,7 @@ export const journalEntries = pgTable("journal_entries", {
   description: text("description"),
   reference: text("reference"),
   source: text("source").notNull().default("manual"),
+  /** draft | posted | void | template */
   status: text("status").notNull().default("draft"),
   postedAt: timestamp("posted_at", { withTimezone: true }),
   postedBy: text("posted_by"),
@@ -163,6 +164,23 @@ export const journalEntries = pgTable("journal_entries", {
    * at the firm-level consolidated view. Self-FK → journal_entries.id.
    */
   eliminationEntryId: text("elimination_entry_id"),
+  /**
+   * Recurring templates. When `isTemplate` is true, the entry is a
+   * blueprint — it never appears in the ledger and its status is
+   * always "template". Generated entries point back here via
+   * `recurringParentId` and start as drafts dated `recurringNextDate`.
+   */
+  isTemplate: boolean("is_template").notNull().default(false),
+  /** monthly | quarterly | annually | custom */
+  recurringFrequency: text("recurring_frequency"),
+  /** Day of month (1-28) on which generated entries are dated. */
+  recurringDayOfMonth: integer("recurring_day_of_month"),
+  /** Next entry-date to use when the user generates from this template. */
+  recurringNextDate: date("recurring_next_date"),
+  /** Optional cap; after this date no further entries are generated. */
+  recurringEndDate: date("recurring_end_date"),
+  /** Set on generated entries — points back to the source template. */
+  recurringParentId: text("recurring_parent_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

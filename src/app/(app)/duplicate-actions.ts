@@ -7,6 +7,7 @@ import {
   duplicateBill,
   duplicateInvoice,
   duplicateJournalEntry,
+  generateNextRecurringEntry,
 } from "@/lib/mutations";
 import { getSessionUser } from "@/lib/session";
 
@@ -59,6 +60,31 @@ export async function duplicateInvoiceAction(formData: FormData) {
     const msg =
       err instanceof Error ? err.message : "Failed to duplicate invoice.";
     redirect(`/invoices?error=${encodeURIComponent(msg)}`);
+  }
+}
+
+/**
+ * Generate the next journal entry from a recurring template. The new entry
+ * is a draft dated `template.recurringNextDate`; the template's
+ * `recurringNextDate` is advanced by its frequency. Lands on the new entry's
+ * detail page so the user can review and post.
+ */
+export async function generateNextRecurringEntryAction(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const templateId = String(formData.get("templateId") ?? "").trim();
+  if (!templateId) redirect("/journal?view=templates");
+
+  try {
+    const created = await generateNextRecurringEntry(user, templateId);
+    revalidatePath("/journal");
+    redirect(`/journal/${created.entryNumber}`);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const msg =
+      err instanceof Error ? err.message : "Failed to generate entry.";
+    redirect(`/journal?view=templates&error=${encodeURIComponent(msg)}`);
   }
 }
 

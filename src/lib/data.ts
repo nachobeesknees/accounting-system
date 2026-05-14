@@ -626,6 +626,13 @@ function mapJournalEntry(
     bypassControlWarning: r.bypassControlWarning ?? false,
     periodOverrideReason: r.periodOverrideReason ?? null,
     eliminationEntryId: r.eliminationEntryId ?? null,
+    isTemplate: r.isTemplate ?? false,
+    recurringFrequency:
+      (r.recurringFrequency as JournalEntry["recurringFrequency"]) ?? null,
+    recurringDayOfMonth: r.recurringDayOfMonth ?? null,
+    recurringNextDate: r.recurringNextDate ?? null,
+    recurringEndDate: r.recurringEndDate ?? null,
+    recurringParentId: r.recurringParentId ?? null,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }
@@ -1594,18 +1601,25 @@ export async function getJournalEntries(
   const effective =
     scope === undefined ? (await getEntityScope()) ?? "all" : scope;
   const db = getDb();
+  // Templates are blueprints, never part of the ledger — exclude from the
+  // regular list. Use getJournalEntryTemplates() for the Templates tab.
   const base = db
     .select()
     .from(schema.journalEntries)
     .orderBy(desc(schema.journalEntries.entryDate), desc(schema.journalEntries.entryNumber));
+  const notTemplate = eq(schema.journalEntries.isTemplate, false);
   // Scope by FIRM entity (which of our corporate entities issued the JE),
   // not by the legacy client-entity tag.
   const heads =
     effective === "all"
-      ? await base
+      ? await base.where(notTemplate)
       : effective == null
-        ? await base.where(isNull(schema.journalEntries.firmEntityId))
-        : await base.where(eq(schema.journalEntries.firmEntityId, effective));
+        ? await base.where(
+            and(notTemplate, isNull(schema.journalEntries.firmEntityId)),
+          )
+        : await base.where(
+            and(notTemplate, eq(schema.journalEntries.firmEntityId, effective)),
+          );
   if (heads.length === 0) return [];
   const ids = heads.map((h) => h.id);
   const lineRows = await db
@@ -1620,6 +1634,69 @@ export async function getJournalEntries(
     linesByEntry.set(mapped.journalEntryId, arr);
   }
   return heads.map((h) => mapJournalEntry(h, linesByEntry.get(h.id) ?? []));
+}
+
+/**
+ * Recurring journal entry templates. Returned in ascending recurringNextDate
+ * order so the next-due-soonest is first. Includes lines so the list page
+ * can preview totals and so generation can copy them verbatim.
+ */
+export async function getJournalEntryTemplates(
+  scope?: string | null | "all",
+): Promise<JournalEntry[]> {
+  const effective =
+    scope === undefined ? (await getEntityScope()) ?? "all" : scope;
+  const db = getDb();
+  const isTemplate = eq(schema.journalEntries.isTemplate, true);
+  const base = db
+    .select()
+    .from(schema.journalEntries)
+    .orderBy(
+      asc(schema.journalEntries.recurringNextDate),
+      desc(schema.journalEntries.entryNumber),
+    );
+  const heads =
+    effective === "all"
+      ? await base.where(isTemplate)
+      : effective == null
+        ? await base.where(
+            and(isTemplate, isNull(schema.journalEntries.firmEntityId)),
+          )
+        : await base.where(
+            and(isTemplate, eq(schema.journalEntries.firmEntityId, effective)),
+          );
+  if (heads.length === 0) return [];
+  const ids = heads.map((h) => h.id);
+  const lineRows = await db
+    .select()
+    .from(schema.journalLines)
+    .where(inArray(schema.journalLines.journalEntryId, ids));
+  const linesByEntry = new Map<string, JournalLine[]>();
+  for (const l of lineRows) {
+    const mapped = mapJournalLine(l);
+    const arr = linesByEntry.get(mapped.journalEntryId) ?? [];
+    arr.push(mapped);
+    linesByEntry.set(mapped.journalEntryId, arr);
+  }
+  return heads.map((h) => mapJournalEntry(h, linesByEntry.get(h.id) ?? []));
+}
+
+/**
+ * Count of templates whose recurringNextDate is on or before `today`. Used
+ * by the dashboard "Recurring entries due" card and the JE list banner.
+ */
+export async function getDueRecurringTemplateCount(
+  today: string,
+  scope?: string | null | "all",
+): Promise<number> {
+  const templates = await getJournalEntryTemplates(scope);
+  return templates.filter((t) => {
+    if (!t.recurringNextDate) return false;
+    if (t.recurringEndDate && t.recurringEndDate < t.recurringNextDate) {
+      return false;
+    }
+    return t.recurringNextDate <= today;
+  }).length;
 }
 
 /**

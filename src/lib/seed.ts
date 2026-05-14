@@ -82,6 +82,8 @@ export const ACCOUNTS: Account[] = [
   { id: id("a-5300"), code: "5300", name: "Utilities", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
   { id: id("a-5400"), code: "5400", name: "Professional Fees", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
   { id: id("a-5500"), code: "5500", name: "Depreciation", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-2150"), code: "2150", name: "Income Tax Payable", accountType: "liability", subType: "current_liability", normalBalance: "credit", isActive: true, currencyCode: "USD", entityId: null },
+  { id: id("a-5600"), code: "5600", name: "Income Tax Expense", accountType: "expense", subType: "operating", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: null },
 
   // ENT-001 (Pumpernickel Holdings LLC) entity-scoped chart — illustrative subset.
   { id: id("a-e001-1000"), code: "1000", name: "Cash — Pumpernickel Holdings", accountType: "asset", subType: "current_asset", normalBalance: "debit", isActive: true, currencyCode: "USD", entityId: "e-001" },
@@ -701,6 +703,48 @@ export const JOURNAL_ENTRIES: JournalEntry[] = [
       { id: "j-133-l2", journalEntryId: "j-133", lineNumber: 2, accountId: "a-1000", description: "Test", debit: "0.00", credit: "100.00" },
     ],
   },
+  // ---- Recurring journal entry templates ----
+  // Templates carry status="template" and never post; the JE list "Templates"
+  // tab spawns drafts from them via "Generate next entry". `recurringNextDate`
+  // is set to a day on or before DEMO_TODAY (2026-05-13) so both show up in
+  // the "due for posting" banner and dashboard card on first load.
+  {
+    id: id("j-tpl-dep"), entryNumber: "TPL-000001", entryDate: D("2026-05-01"),
+    fiscalPeriodId: null, description: "Monthly depreciation accrual", reference: "RECURRING",
+    source: "manual", status: "template", postedAt: null, postedBy: null,
+    voidedAt: null, voidReason: null, createdBy: "u-aldous",
+    createdAt: "2026-01-31T20:00:00Z", updatedAt: "2026-05-01T20:00:00Z",
+    entityId: null,
+    isTemplate: true,
+    recurringFrequency: "monthly",
+    recurringDayOfMonth: 1,
+    recurringNextDate: "2026-05-01",
+    recurringEndDate: null,
+    recurringParentId: null,
+    lines: [
+      { id: "j-tpl-dep-l1", journalEntryId: "j-tpl-dep", lineNumber: 1, accountId: "a-5500", description: "Monthly depreciation", debit: "1100.00", credit: "0.00" },
+      { id: "j-tpl-dep-l2", journalEntryId: "j-tpl-dep", lineNumber: 2, accountId: "a-1510", description: "Accumulated depreciation", debit: "0.00", credit: "1100.00" },
+    ],
+  },
+  {
+    id: id("j-tpl-tax"), entryNumber: "TPL-000002", entryDate: D("2026-04-01"),
+    fiscalPeriodId: null, description: "Quarterly income tax accrual", reference: "RECURRING",
+    source: "manual", status: "template", postedAt: null, postedBy: null,
+    voidedAt: null, voidReason: null, createdBy: "u-aldous",
+    createdAt: "2026-01-15T20:00:00Z", updatedAt: "2026-04-01T20:00:00Z",
+    entityId: null,
+    isTemplate: true,
+    recurringFrequency: "quarterly",
+    recurringDayOfMonth: 1,
+    recurringNextDate: "2026-04-15",
+    recurringEndDate: null,
+    recurringParentId: null,
+    lines: [
+      { id: "j-tpl-tax-l1", journalEntryId: "j-tpl-tax", lineNumber: 1, accountId: "a-5600", description: "Quarterly estimated income tax", debit: "18500.00", credit: "0.00" },
+      { id: "j-tpl-tax-l2", journalEntryId: "j-tpl-tax", lineNumber: 2, accountId: "a-2150", description: "Income tax payable", debit: "0.00", credit: "18500.00" },
+    ],
+  },
+
   // ENT-001 entity-scoped journal entries — Pumpernickel Holdings LLC's own books.
   {
     id: id("j-e001-200"), entryNumber: "JE-E001-000001", entryDate: D("2026-04-01"),

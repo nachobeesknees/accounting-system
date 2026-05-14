@@ -16,7 +16,11 @@ import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumCredits, sumDebits, toDecimalString } from "./money";
-import type { JournalEntry, SessionUser } from "./types";
+import type {
+  JournalEntry,
+  RecurringFrequency,
+  SessionUser,
+} from "./types";
 import { getJournalEntryById } from "./data";
 import { getEntityScope } from "./entity-scope";
 import { checkPeriodForPost } from "./periods";
@@ -74,13 +78,28 @@ function parseTrailingInt(s: string | undefined): number {
 
 export async function nextEntryNumber(): Promise<string> {
   const db = getDb();
+  // Templates have their own "TPL-XXXXXX" sequence and must not bump the
+  // "JE-XXXXXX" counter; exclude them here.
   const [row] = await db
     .select({ entryNumber: schema.journalEntries.entryNumber })
     .from(schema.journalEntries)
+    .where(eq(schema.journalEntries.isTemplate, false))
     .orderBy(desc(schema.journalEntries.entryNumber))
     .limit(1);
   const n = parseTrailingInt(row?.entryNumber) + 1;
   return `JE-${pad(n, 6)}`;
+}
+
+export async function nextTemplateNumber(): Promise<string> {
+  const db = getDb();
+  const [row] = await db
+    .select({ entryNumber: schema.journalEntries.entryNumber })
+    .from(schema.journalEntries)
+    .where(eq(schema.journalEntries.isTemplate, true))
+    .orderBy(desc(schema.journalEntries.entryNumber))
+    .limit(1);
+  const n = parseTrailingInt(row?.entryNumber) + 1;
+  return `TPL-${pad(n, 6)}`;
 }
 
 export async function nextInvoiceNumber(): Promise<string> {
@@ -129,7 +148,7 @@ export type CreateJournalEntryInput = {
   entityId?: string | null;
   /** Which firm corporate entity issued this entry (drives the topbar scope). */
   firmEntityId?: string | null;
-  status?: "draft" | "posted";
+  status?: "draft" | "posted" | "template";
   /** User confirmed past an AR/AP/Cash direct-posting warning. */
   bypassControlWarning?: boolean;
   /**
@@ -140,6 +159,13 @@ export type CreateJournalEntryInput = {
   /** When set, this JE is an elimination entry (consolidation adjustment). */
   eliminationEntryId?: string | null;
   lines: DraftJournalLine[];
+  /** When true, persisted as a recurring template (status forced to "template"). */
+  isTemplate?: boolean;
+  recurringFrequency?: RecurringFrequency | null;
+  recurringDayOfMonth?: number | null;
+  recurringNextDate?: string | null;
+  recurringEndDate?: string | null;
+  recurringParentId?: string | null;
 };
 
 export async function createJournalEntry(
@@ -168,19 +194,35 @@ export async function createJournalEntry(
     );
   }
 
+  const isTemplate = input.isTemplate === true;
+  if (isTemplate) {
+    if (!input.recurringFrequency) {
+      throw new Error("Recurring frequency is required for a template.");
+    }
+    if (!input.recurringNextDate) {
+      throw new Error("Recurring start date is required for a template.");
+    }
+  }
+
   const db = getDb();
   const id = uid("j");
-  const entryNumber = await nextEntryNumber();
-  const status = input.status ?? "draft";
+  const entryNumber = isTemplate
+    ? await nextTemplateNumber()
+    : await nextEntryNumber();
+  const status = isTemplate ? "template" : input.status ?? "draft";
   const now = new Date();
 
   // Period close enforcement (see src/lib/periods.ts). Locked periods always
   // block; closed periods require an override reason. Applied to drafts too
-  // so the warning fires at the same moment as on the form.
-  const result = await checkPeriodForPost(
-    input.entryDate,
-    input.periodOverrideReason,
-  );
+  // so the warning fires at the same moment as on the form. Templates skip
+  // this because they never hit the ledger themselves — the generated drafts
+  // will be checked when the user posts them.
+  const result = isTemplate
+    ? { overrideRecorded: null }
+    : await checkPeriodForPost(
+        input.entryDate,
+        input.periodOverrideReason,
+      );
   const overrideRecorded = result.overrideRecorded;
 
   await db.transaction(async (tx) => {
@@ -203,6 +245,12 @@ export async function createJournalEntry(
       bypassControlWarning: input.bypassControlWarning ?? false,
       periodOverrideReason: overrideRecorded,
       eliminationEntryId: input.eliminationEntryId ?? null,
+      isTemplate,
+      recurringFrequency: isTemplate ? input.recurringFrequency ?? null : null,
+      recurringDayOfMonth: isTemplate ? input.recurringDayOfMonth ?? null : null,
+      recurringNextDate: isTemplate ? input.recurringNextDate ?? null : null,
+      recurringEndDate: isTemplate ? input.recurringEndDate ?? null : null,
+      recurringParentId: input.recurringParentId ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -227,6 +275,142 @@ export async function createJournalEntry(
   const created = await getJournalEntryById(id);
   if (!created) throw new Error("Created entry not found after insert.");
   return created;
+}
+
+/**
+ * Advance a yyyy-mm-dd date by one recurring step. Day-of-month clamps to
+ * the last day of the target month (Feb only has 28/29 days; templates with
+ * day=31 would otherwise overflow into March). The 1-28 limit on
+ * `recurringDayOfMonth` already keeps the inputs safe, but the clamp keeps
+ * us defensive for legacy or hand-edited rows.
+ */
+export function advanceRecurringDate(
+  iso: string,
+  frequency: RecurringFrequency,
+  dayOfMonth?: number | null,
+): string {
+  const [yStr, mStr, dStr] = iso.split("-");
+  let y = parseInt(yStr, 10);
+  let m = parseInt(mStr, 10);
+  let monthsToAdd = 0;
+  switch (frequency) {
+    case "monthly":
+      monthsToAdd = 1;
+      break;
+    case "quarterly":
+      monthsToAdd = 3;
+      break;
+    case "annually":
+      monthsToAdd = 12;
+      break;
+    case "custom":
+      monthsToAdd = 1;
+      break;
+  }
+  m += monthsToAdd;
+  while (m > 12) {
+    m -= 12;
+    y += 1;
+  }
+  const desiredDay = dayOfMonth ?? parseInt(dStr, 10);
+  const lastDayOfMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const d = Math.min(desiredDay, lastDayOfMonth);
+  return `${pad(y, 4)}-${pad(m, 2)}-${pad(d, 2)}`;
+}
+
+/**
+ * Generate the next draft journal entry from a recurring template, then
+ * advance the template's `recurringNextDate`. The new entry copies header
+ * fields and lines verbatim, is dated `recurringNextDate`, and starts as
+ * status="draft" so the user can review before posting. Returns the new
+ * entry's id + entryNumber for redirecting.
+ */
+export async function generateNextRecurringEntry(
+  user: SessionUser,
+  templateId: string,
+): Promise<{ id: string; entryNumber: string }> {
+  const db = getDb();
+  const [tpl] = await db
+    .select()
+    .from(schema.journalEntries)
+    .where(eq(schema.journalEntries.id, templateId))
+    .limit(1);
+  if (!tpl) throw new Error("Template not found.");
+  if (!tpl.isTemplate) throw new Error("Source entry is not a template.");
+  if (!tpl.recurringFrequency || !tpl.recurringNextDate) {
+    throw new Error("Template is missing a frequency or next date.");
+  }
+  if (
+    tpl.recurringEndDate &&
+    tpl.recurringNextDate > tpl.recurringEndDate
+  ) {
+    throw new Error("Template has reached its end date.");
+  }
+
+  const tplLines = await db
+    .select()
+    .from(schema.journalLines)
+    .where(eq(schema.journalLines.journalEntryId, templateId))
+    .orderBy(schema.journalLines.lineNumber);
+  if (tplLines.length < 2) {
+    throw new Error("Template must have at least 2 lines.");
+  }
+
+  const id = uid("j");
+  const entryNumber = await nextEntryNumber();
+  const now = new Date();
+  const entryDate = tpl.recurringNextDate;
+  const frequency = tpl.recurringFrequency as RecurringFrequency;
+  const nextDate = advanceRecurringDate(
+    entryDate,
+    frequency,
+    tpl.recurringDayOfMonth ?? null,
+  );
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.journalEntries).values({
+      id,
+      entryNumber,
+      entryDate,
+      fiscalPeriodId: tpl.fiscalPeriodId,
+      description: tpl.description,
+      reference: tpl.reference,
+      source: tpl.source,
+      status: "draft",
+      postedAt: null,
+      postedBy: null,
+      voidedAt: null,
+      voidReason: null,
+      createdBy: user.userId,
+      entityId: tpl.entityId,
+      firmEntityId: tpl.firmEntityId,
+      isTemplate: false,
+      recurringParentId: tpl.id,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await tx.insert(schema.journalLines).values(
+      tplLines.map((l, i) => ({
+        id: `${id}-l${i + 1}`,
+        journalEntryId: id,
+        lineNumber: i + 1,
+        accountId: l.accountId,
+        description: l.description,
+        debit: l.debit,
+        credit: l.credit,
+        entityId: l.entityId,
+        firmEntityId: l.firmEntityId,
+        dimensions: l.dimensions,
+        createdAt: now,
+      })),
+    );
+    await tx
+      .update(schema.journalEntries)
+      .set({ recurringNextDate: nextDate, updatedAt: now })
+      .where(eq(schema.journalEntries.id, templateId));
+  });
+
+  return { id, entryNumber };
 }
 
 export async function postJournalEntry(
@@ -300,9 +484,12 @@ export async function voidJournalEntry(
       // Reversing entry mirrors lines with debit/credit swapped.
       const reversingId = uid("j");
       // Compute next entry number inside the txn to keep it monotonic.
+      // Exclude templates from the lookup — they live in the parallel
+      // "TPL-XXXXXX" sequence and would otherwise sort above "JE-".
       const [maxRow] = await tx
         .select({ entryNumber: schema.journalEntries.entryNumber })
         .from(schema.journalEntries)
+        .where(eq(schema.journalEntries.isTemplate, false))
         .orderBy(desc(schema.journalEntries.entryNumber))
         .limit(1);
       const n = parseTrailingInt(maxRow?.entryNumber) + 1;

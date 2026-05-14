@@ -217,6 +217,11 @@ export function NewEntryForm({
   const [firmEntityId, setFirmEntityId] = useState<string>("");
   const [fiscalPeriodId, setFiscalPeriodId] = useState<string>(periods[0]?.id ?? "");
   const [source, setSource] = useState<string>("manual");
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState<string>("monthly");
+  const [recurringDayOfMonth, setRecurringDayOfMonth] = useState<string>("1");
+  const [recurringStartDate, setRecurringStartDate] = useState<string>(today);
+  const [recurringEndDate, setRecurringEndDate] = useState<string>("");
 
   const debitTotal = useMemo(
     () => lines.reduce((s, l) => s + parseAmount(l.debit), 0),
@@ -712,39 +717,141 @@ export function NewEntryForm({
         </div>
       </div>
 
+      <div
+        className="rounded-md"
+        style={{
+          background: "var(--paper)",
+          border: "1px solid var(--line)",
+        }}
+      >
+        <label
+          className="flex items-center gap-2 px-3 py-2.5 cursor-pointer"
+          style={{
+            borderBottom: isRecurring ? "1px solid var(--line)" : "none",
+            fontSize: 12.5,
+            color: "var(--ink)",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={isRecurring}
+            onChange={(e) => setIsRecurring(e.target.checked)}
+            style={{ accentColor: "var(--ink)" }}
+          />
+          <span style={{ fontWeight: 500 }}>Recurring</span>
+          <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+            Save as a template. Generated entries land as drafts dated by the
+            schedule below — they won't post automatically.
+          </span>
+        </label>
+        {isRecurring && (
+          <div
+            className="grid gap-3 px-3 py-2.5"
+            style={{
+              gridTemplateColumns:
+                "minmax(140px,160px) minmax(120px,140px) minmax(150px,180px) minmax(150px,180px)",
+            }}
+          >
+            <label className="flex flex-col gap-1">
+              <span style={HEADER_LABEL}>Frequency</span>
+              <select
+                name="recurringFrequency"
+                value={recurringFrequency}
+                onChange={(e) => setRecurringFrequency(e.target.value)}
+                style={HEADER_INPUT}
+              >
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="annually">Annually</option>
+                <option value="custom">Custom (monthly)</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span style={HEADER_LABEL}>Day of month</span>
+              <input
+                type="number"
+                name="recurringDayOfMonth"
+                min={1}
+                max={28}
+                value={recurringDayOfMonth}
+                onChange={(e) => setRecurringDayOfMonth(e.target.value)}
+                style={HEADER_INPUT}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span style={HEADER_LABEL}>Start date</span>
+              <input
+                type="date"
+                name="recurringNextDate"
+                value={recurringStartDate}
+                onChange={(e) => setRecurringStartDate(e.target.value)}
+                style={HEADER_INPUT}
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span style={HEADER_LABEL}>End date (optional)</span>
+              <input
+                type="date"
+                name="recurringEndDate"
+                value={recurringEndDate}
+                onChange={(e) => setRecurringEndDate(e.target.value)}
+                style={HEADER_INPUT}
+              />
+            </label>
+          </div>
+        )}
+      </div>
+
       {/* Hidden action so we can re-trigger requestSubmit() from the
           confirmation step without losing which button was clicked. */}
       <input type="hidden" name="action" value="draft" />
 
       <div className="flex gap-2 items-center">
-        <Button
-          variant="secondary"
-          type="submit"
-          onClick={() => {
-            const a = formRef.current?.querySelector<HTMLInputElement>(
-              "input[name=action]",
-            );
-            if (a) a.value = "draft";
-          }}
-        >
-          Save as draft
-        </Button>
-        <Button
-          variant="primary"
-          type={controlSummary.length > 0 ? "button" : "submit"}
-          onClick={(e) => {
-            const a = formRef.current?.querySelector<HTMLInputElement>(
-              "input[name=action]",
-            );
-            if (a) a.value = "post";
-            if (controlSummary.length > 0) {
-              e.preventDefault();
-              setPendingPost(true);
-            }
-          }}
-        >
-          Save & post
-        </Button>
+        {isRecurring ? (
+          <Button
+            variant="primary"
+            type="submit"
+            onClick={() => {
+              const a = formRef.current?.querySelector<HTMLInputElement>(
+                "input[name=action]",
+              );
+              if (a) a.value = "template";
+            }}
+          >
+            Save template
+          </Button>
+        ) : (
+          <>
+            <Button
+              variant="secondary"
+              type="submit"
+              onClick={() => {
+                const a = formRef.current?.querySelector<HTMLInputElement>(
+                  "input[name=action]",
+                );
+                if (a) a.value = "draft";
+              }}
+            >
+              Save as draft
+            </Button>
+            <Button
+              variant="primary"
+              type={controlSummary.length > 0 ? "button" : "submit"}
+              onClick={(e) => {
+                const a = formRef.current?.querySelector<HTMLInputElement>(
+                  "input[name=action]",
+                );
+                if (a) a.value = "post";
+                if (controlSummary.length > 0) {
+                  e.preventDefault();
+                  setPendingPost(true);
+                }
+              }}
+            >
+              Save & post
+            </Button>
+          </>
+        )}
         <ButtonLink variant="ghost" href="/journal">
           Cancel
         </ButtonLink>
