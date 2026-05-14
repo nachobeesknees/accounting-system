@@ -209,6 +209,11 @@ const COLUMNS: ColumnSpec[] = [
   { table: "invoices", column: "recurring_parent_id", type: "text" },
   { table: "invoices", column: "billing_period_start", type: "date" },
   { table: "invoices", column: "billing_period_end", type: "date" },
+
+  // ---- Time entries → invoice link ----
+  // Stamped when a time entry is added as a line on an invoice (via the
+  // unbilled-time picker on /invoices/new). NULL = unbilled.
+  { table: "time_entries", column: "invoice_id", type: "text" },
 ];
 
 const TABLES = [
