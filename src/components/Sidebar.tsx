@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
 
 type Item = { href: string; label: string; count?: number };
 type Section = { heading: string; items: Item[] };
+
+// Sections the security module hides from low-trust roles. Anything in
+// SETTINGS_HEADINGS is gated behind `read.settings`. The list view of
+// users + audit log lives under /settings so it's covered automatically.
+const SETTINGS_HEADINGS = new Set<string>(["Admin"]);
 
 const SECTIONS: Section[] = [
   {
@@ -89,13 +93,19 @@ export function Sidebar({
   counts,
   urgentItems,
   user,
+  canSeeSettings,
 }: {
   counts?: Record<string, number>;
   urgentItems?: Record<string, boolean>;
   user?: { fullName: string; email: string; role: string };
+  /** Result of `hasPermission(session, "read.settings")`. Hides Admin section. */
+  canSeeSettings?: boolean;
 }) {
   const path = usePathname();
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
+  const sections = SECTIONS.filter(
+    (s) => canSeeSettings !== false || !SETTINGS_HEADINGS.has(s.heading),
+  );
 
   return (
     <aside
@@ -107,7 +117,7 @@ export function Sidebar({
       }}
     >
       <div className="flex-1 min-h-0">
-      {SECTIONS.map((sec) => (
+      {sections.map((sec) => (
         <div key={sec.heading} className="mt-2.5 first:mt-0">
           <div
             className="px-2.5 pt-1.5 pb-1 text-[10.5px] uppercase font-semibold"

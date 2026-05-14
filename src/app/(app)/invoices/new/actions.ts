@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/session";
 import { createInvoice, postInvoice, type DraftInvoiceLine } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
+import { PermissionError, requirePermission } from "@/lib/permissions";
 
 export type CreateInvoiceState = { error: string | null };
 
@@ -77,6 +78,14 @@ export async function createInvoiceAction(
 ): Promise<CreateInvoiceState> {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  try {
+    requirePermission(user, "invoice.create");
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      return { error: "You don't have permission to create invoices." };
+    }
+    throw err;
+  }
 
   const customerId = String(formData.get("customerId") ?? "");
   const invoiceDate = String(formData.get("invoiceDate") ?? "");

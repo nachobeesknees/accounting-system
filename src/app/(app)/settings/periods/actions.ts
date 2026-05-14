@@ -10,6 +10,7 @@ import {
   lockPeriod,
   reopenPeriod,
 } from "@/lib/periods";
+import { PermissionError, requirePermission, type Action } from "@/lib/permissions";
 
 function isRedirect(err: unknown): boolean {
   return (
@@ -29,14 +30,22 @@ function back(qs?: string): never {
   redirect(`/settings/periods${qs ? `?${qs}` : ""}`);
 }
 
-async function ensureAdmin() {
+async function ensureAdmin(action: Action) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  try {
+    requirePermission(user, action);
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      back(`error=${encodeURIComponent("You don't have permission for that action.")}`);
+    }
+    throw err;
+  }
   return user;
 }
 
 export async function seedPeriodsAction(_formData: FormData): Promise<void> {
-  await ensureAdmin();
+  await ensureAdmin("settings.write");
   const year = new Date().getUTCFullYear();
   await ensureAccountingPeriods(year);
   revalidatePath("/settings/periods");
@@ -44,7 +53,7 @@ export async function seedPeriodsAction(_formData: FormData): Promise<void> {
 }
 
 export async function closePeriodAction(formData: FormData): Promise<void> {
-  const user = await ensureAdmin();
+  const user = await ensureAdmin("period.close");
   const periodId = String(formData.get("periodId") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
   if (!periodId) back();
@@ -60,7 +69,7 @@ export async function closePeriodAction(formData: FormData): Promise<void> {
 }
 
 export async function lockPeriodAction(formData: FormData): Promise<void> {
-  const user = await ensureAdmin();
+  const user = await ensureAdmin("period.lock");
   const periodId = String(formData.get("periodId") ?? "");
   if (!periodId) back();
   try {
@@ -75,7 +84,10 @@ export async function lockPeriodAction(formData: FormData): Promise<void> {
 }
 
 export async function reopenPeriodAction(formData: FormData): Promise<void> {
-  const user = await ensureAdmin();
+  // Reopening a locked period requires super_admin (period.unlock).
+  // Reopening a soft-closed period is just period.reopen. We let the
+  // mutation layer enforce the difference; gate at the broader level.
+  const user = await ensureAdmin("period.reopen");
   const periodId = String(formData.get("periodId") ?? "");
   const reason = String(formData.get("reason") ?? "").trim();
   if (!periodId) back();

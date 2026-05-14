@@ -10,6 +10,27 @@ import {
   generateNextRecurringEntry,
 } from "@/lib/mutations";
 import { getSessionUser } from "@/lib/session";
+import { PermissionError, requirePermission, type Action } from "@/lib/permissions";
+
+function guard(
+  user: Awaited<ReturnType<typeof getSessionUser>>,
+  action: Action,
+  errorRedirect: string,
+): asserts user {
+  if (!user) redirect("/login");
+  try {
+    requirePermission(user, action);
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      redirect(
+        `${errorRedirect}?error=${encodeURIComponent(
+          "You don't have permission for that action.",
+        )}`,
+      );
+    }
+    throw err;
+  }
+}
 
 function isRedirectError(err: unknown): boolean {
   return (
@@ -27,7 +48,7 @@ function isRedirectError(err: unknown): boolean {
  */
 export async function duplicateJournalEntryAction(formData: FormData) {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  guard(user, "journal_entry.create", "/journal");
 
   const entryId = String(formData.get("entryId") ?? "").trim();
   if (!entryId) redirect("/journal");
@@ -46,7 +67,7 @@ export async function duplicateJournalEntryAction(formData: FormData) {
 
 export async function duplicateInvoiceAction(formData: FormData) {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  guard(user, "invoice.create", "/invoices");
 
   const invoiceId = String(formData.get("invoiceId") ?? "").trim();
   if (!invoiceId) redirect("/invoices");
@@ -71,7 +92,7 @@ export async function duplicateInvoiceAction(formData: FormData) {
  */
 export async function generateNextRecurringEntryAction(formData: FormData) {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  guard(user, "journal_entry.create", "/journal?view=templates");
 
   const templateId = String(formData.get("templateId") ?? "").trim();
   if (!templateId) redirect("/journal?view=templates");
@@ -90,7 +111,7 @@ export async function generateNextRecurringEntryAction(formData: FormData) {
 
 export async function duplicateBillAction(formData: FormData) {
   const user = await getSessionUser();
-  if (!user) redirect("/login");
+  guard(user, "bill.create", "/bills");
 
   const billId = String(formData.get("billId") ?? "").trim();
   if (!billId) redirect("/bills");

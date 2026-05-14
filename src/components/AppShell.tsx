@@ -11,6 +11,7 @@ import {
 } from "@/lib/data";
 import { parseAmount } from "@/lib/money";
 import { getEntityScope } from "@/lib/entity-scope";
+import { hasPermission } from "@/lib/permissions";
 import type { SessionUser } from "@/lib/types";
 
 export async function AppShell({
@@ -67,6 +68,7 @@ export async function AppShell({
           counts={counts}
           urgentItems={urgentItems}
           user={{ fullName: user.fullName, email: user.email, role: user.role }}
+          canSeeSettings={hasPermission(user, "read.settings")}
         />
       </div>
       <main

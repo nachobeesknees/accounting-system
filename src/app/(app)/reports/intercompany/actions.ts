@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getSessionUser } from "@/lib/session";
 import { generateIntercompanyElimination } from "@/lib/mutations";
+import { PermissionError, requirePermission } from "@/lib/permissions";
 
 /**
  * Server action: produce an elimination JE for the (entityA, entityB) pair.
@@ -13,6 +14,18 @@ import { generateIntercompanyElimination } from "@/lib/mutations";
 export async function generateEliminationAction(formData: FormData) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  try {
+    requirePermission(user, "intercompany.generate_elimination");
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      redirect(
+        `/reports/intercompany?error=${encodeURIComponent(
+          "You don't have permission to generate eliminations.",
+        )}`,
+      );
+    }
+    throw err;
+  }
 
   const entityAId = String(formData.get("entityAId") ?? "").trim();
   const entityBId = String(formData.get("entityBId") ?? "").trim();

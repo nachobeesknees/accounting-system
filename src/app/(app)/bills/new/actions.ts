@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { getSessionUser } from "@/lib/session";
+import { PermissionError, requirePermission } from "@/lib/permissions";
 import {
   approveBill,
   createBill,
@@ -92,6 +93,14 @@ export async function createBillAction(
 ): Promise<CreateBillState> {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  try {
+    requirePermission(user, "bill.create");
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      return { error: "You don't have permission to create bills." };
+    }
+    throw err;
+  }
 
   const vendorId = String(formData.get("vendorId") ?? "");
   const billDate = String(formData.get("billDate") ?? "");

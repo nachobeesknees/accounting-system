@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/session";
 import { getJournalEntryById } from "@/lib/data";
 import { postJournalEntry, voidJournalEntry } from "@/lib/mutations";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
+import { PermissionError, requirePermission, type Action } from "@/lib/permissions";
 
 function isRedirect(err: unknown): boolean {
   return (
@@ -22,9 +23,30 @@ function errorMessage(err: unknown): string {
   return "Unknown error";
 }
 
+function permissionGuard(
+  user: Awaited<ReturnType<typeof getSessionUser>>,
+  action: Action,
+  beforeTarget: string,
+): asserts user {
+  if (!user) redirect("/login");
+  try {
+    requirePermission(user, action);
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      redirect(
+        `${beforeTarget}?error=${encodeURIComponent(
+          "You don't have permission for that action.",
+        )}`,
+      );
+    }
+    throw err;
+  }
+}
+
 export async function postEntry(formData: FormData): Promise<void> {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  permissionGuard(user, "journal_entry.post", "/journal");
 
   const entryId = String(formData.get("entryId") ?? "");
   const periodOverrideReason = String(
@@ -56,6 +78,7 @@ export async function postEntry(formData: FormData): Promise<void> {
 export async function voidEntry(formData: FormData): Promise<void> {
   const user = await getSessionUser();
   if (!user) redirect("/login");
+  permissionGuard(user, "journal_entry.void", "/journal");
 
   const entryId = String(formData.get("entryId") ?? "");
   const reason = String(formData.get("reason") ?? "");

@@ -26,6 +26,7 @@ import { formatAmount, formatMoney } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
 import { parseAmount } from "@/lib/money";
 import { getSessionUser } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 import {
   ensureAccountingPeriods,
   getAccountingPeriods,
@@ -270,30 +271,42 @@ export default async function Page() {
             <ButtonLink variant="secondary" href="/reports">
               Reports
             </ButtonLink>
-            <ButtonLink variant="primary" href="/journal/new">
-              + New entry
-            </ButtonLink>
+            {hasPermission(user, "journal_entry.create") && (
+              <ButtonLink variant="primary" href="/journal/new">
+                + New entry
+              </ButtonLink>
+            )}
           </>
         }
       />
 
       <div className="px-6 my-3.5">
         <div className="flex flex-wrap gap-1.5">
-          <ButtonLink variant="secondary" href="/entities/new">
-            + New entity
-          </ButtonLink>
-          <ButtonLink variant="secondary" href="/time/new">
-            + Log time
-          </ButtonLink>
-          <ButtonLink variant="secondary" href="/invoices/new">
-            + New invoice
-          </ButtonLink>
-          <ButtonLink variant="secondary" href="/bills/new">
-            + New bill
-          </ButtonLink>
-          <ButtonLink variant="secondary" href="/contacts/new">
-            + New contact
-          </ButtonLink>
+          {hasPermission(user, "settings.write") && (
+            <ButtonLink variant="secondary" href="/entities/new">
+              + New entity
+            </ButtonLink>
+          )}
+          {hasPermission(user, "journal_entry.create") && (
+            <ButtonLink variant="secondary" href="/time/new">
+              + Log time
+            </ButtonLink>
+          )}
+          {hasPermission(user, "invoice.create") && (
+            <ButtonLink variant="secondary" href="/invoices/new">
+              + New invoice
+            </ButtonLink>
+          )}
+          {hasPermission(user, "bill.create") && (
+            <ButtonLink variant="secondary" href="/bills/new">
+              + New bill
+            </ButtonLink>
+          )}
+          {hasPermission(user, "settings.write") && (
+            <ButtonLink variant="secondary" href="/contacts/new">
+              + New contact
+            </ButtonLink>
+          )}
         </div>
       </div>
 

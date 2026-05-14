@@ -6,6 +6,7 @@ import { getSessionUser } from "@/lib/session";
 import { createJournalEntry } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
+import { PermissionError, hasPermission, requirePermission } from "@/lib/permissions";
 import type { RecurringFrequency } from "@/lib/types";
 
 export type CreateEntryState = { error: string | null };
@@ -82,6 +83,14 @@ export async function createEntry(
   if (!user) {
     redirect("/login");
   }
+  try {
+    requirePermission(user, "journal_entry.create");
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      return { error: "You don't have permission to create journal entries." };
+    }
+    throw err;
+  }
 
   const entryDate = String(formData.get("entryDate") ?? "");
   const description = String(formData.get("description") ?? "");
@@ -144,6 +153,13 @@ export async function createEntry(
       ? "posted"
       : "draft";
 
+  // Posting requires elevated permission; downgrade to draft for users
+  // who can create but can't post.
+  let effectiveStatus = status;
+  if (effectiveStatus === "posted" && !hasPermission(user, "journal_entry.post")) {
+    effectiveStatus = "draft";
+  }
+
   try {
     const created = await createJournalEntry(user, {
       entryDate,
@@ -152,7 +168,7 @@ export async function createEntry(
       source,
       fiscalPeriodId: fiscalPeriodId === "" ? null : fiscalPeriodId,
       firmEntityId: firmEntityId === "" ? null : firmEntityId,
-      status,
+      status: effectiveStatus,
       bypassControlWarning,
       periodOverrideReason:
         periodOverrideReason === "" ? null : periodOverrideReason,
