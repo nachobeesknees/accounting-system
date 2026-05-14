@@ -7,9 +7,19 @@ import { getSessionUser } from "@/lib/session";
 import {
   approveBill,
   createBill,
+  type CreateBillInput,
   type DraftBillLine,
 } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
+
+type ChargebackType = "cost" | "markup" | "fixed" | "included";
+
+function parseChargebackType(raw: string): ChargebackType | null {
+  if (raw === "cost" || raw === "markup" || raw === "fixed" || raw === "included") {
+    return raw;
+  }
+  return null;
+}
 
 export type CreateBillState = { error: string | null };
 
@@ -95,6 +105,52 @@ export async function createBillAction(
     return { error: "Bill must have at least one line." };
   }
 
+  // Chargeback fields — recipient ("none" | "client" | "entity") + method.
+  const recipient = String(formData.get("chargebackRecipient") ?? "none");
+  const chargebackTypeRaw = String(formData.get("chargebackType") ?? "");
+  const chargebackType = parseChargebackType(chargebackTypeRaw);
+  const chargebackClientId = String(formData.get("chargebackClientId") ?? "").trim();
+  const chargebackEntityId = String(formData.get("chargebackEntityId") ?? "").trim();
+  const markupPctRaw = String(formData.get("markupPct") ?? "").trim();
+  const rebillAmountRaw = String(formData.get("rebillAmount") ?? "").trim();
+  const chargebackNotes = String(formData.get("chargebackNotes") ?? "").trim();
+
+  const chargeback: Partial<CreateBillInput> = {};
+  if (recipient !== "none" && chargebackType) {
+    if (recipient === "client") {
+      if (!chargebackClientId) {
+        return { error: "Pick a client to rebill to." };
+      }
+      chargeback.chargebackClientId = chargebackClientId;
+      chargeback.chargebackEntityId = null;
+    } else if (recipient === "entity") {
+      if (!chargebackEntityId) {
+        return { error: "Pick an entity to rebill to." };
+      }
+      chargeback.chargebackEntityId = chargebackEntityId;
+      chargeback.chargebackClientId = null;
+    }
+    chargeback.chargebackType = chargebackType;
+    if (chargebackType === "markup") {
+      const pct = parseAmount(markupPctRaw);
+      if (!Number.isFinite(pct) || pct < 0) {
+        return { error: "Markup % must be a positive number." };
+      }
+      // Input is a percent (e.g. 15) — store as decimal (0.15).
+      chargeback.markupPct = pct / 100;
+    }
+    if (chargebackType === "fixed") {
+      const amt = parseAmount(rebillAmountRaw);
+      if (!Number.isFinite(amt) || amt <= 0) {
+        return { error: "Fixed rebill amount must be > 0." };
+      }
+      chargeback.rebillAmount = amt;
+    }
+    if (chargebackNotes !== "") {
+      chargeback.chargebackNotes = chargebackNotes;
+    }
+  }
+
   try {
     const created = await createBill(user, {
       vendorId,
@@ -103,6 +159,7 @@ export async function createBillAction(
       reference: reference === "" ? null : reference,
       notes: notes === "" ? null : notes,
       lines,
+      ...chargeback,
     });
 
     if (action === "approve") {

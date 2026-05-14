@@ -13,11 +13,17 @@ import {
   getAccounts,
   getBankAccounts,
   getBillById,
+  getCustomerById,
+  getCustomers,
+  getEntities,
+  getEntityById,
+  getInvoiceById,
   getJournalEntryById,
   getVendorById,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatMoney, parseAmount } from "@/lib/money";
+import { formatMoney, formatUSD, parseAmount } from "@/lib/money";
+import type { Bill } from "@/lib/types";
 
 import {
   approveBillAction,
@@ -25,6 +31,25 @@ import {
   voidBillAction,
 } from "./actions";
 import { Attachments } from "@/components/Attachments";
+import { BillChargebackPanel } from "./BillChargebackPanel";
+
+function computeRebill(bill: Bill): number | null {
+  const total = parseAmount(bill.total);
+  switch (bill.chargebackType) {
+    case "cost":
+      return total;
+    case "markup": {
+      const pct = bill.markupPct ? parseFloat(bill.markupPct) : 0;
+      return Math.round(total * (1 + pct) * 100) / 100;
+    }
+    case "fixed":
+      return bill.rebillAmount ? parseFloat(bill.rebillAmount) : null;
+    case "included":
+      return null;
+    default:
+      return null;
+  }
+}
 
 export default async function Page({
   params,
@@ -36,21 +61,51 @@ export default async function Page({
     approved?: string;
     voided?: string;
     error?: string;
+    cb?: string;
   }>;
 }) {
   const { id } = await params;
-  const { paid, approved, voided, error } = await searchParams;
+  const { paid, approved, voided, error, cb } = await searchParams;
   const bill = await getBillById(id);
   if (!bill) notFound();
 
-  const [vendor, journalEntry, accounts, bankAccounts] = await Promise.all([
+  const [
+    vendor,
+    journalEntry,
+    accounts,
+    bankAccounts,
+    customers,
+    entities,
+    chargebackClient,
+    chargebackEntity,
+    chargebackInvoice,
+  ] = await Promise.all([
     getVendorById(bill.vendorId),
     bill.journalEntryId
       ? getJournalEntryById(bill.journalEntryId)
       : Promise.resolve(undefined),
     getAccounts(),
     getBankAccounts(),
+    getCustomers(),
+    getEntities(),
+    bill.chargebackClientId
+      ? getCustomerById(bill.chargebackClientId)
+      : Promise.resolve(undefined),
+    bill.chargebackEntityId
+      ? getEntityById(bill.chargebackEntityId)
+      : Promise.resolve(undefined),
+    bill.chargebackInvoiceId
+      ? getInvoiceById(bill.chargebackInvoiceId)
+      : Promise.resolve(undefined),
   ]);
+  const activeCustomers = customers
+    .filter((c) => c.isActive)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const sortedEntities = entities
+    .slice()
+    .sort((a, b) => a.code.localeCompare(b.code));
+  const billTotal = parseAmount(bill.total);
+  const rebillPreview = computeRebill(bill);
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
   const activeBankAccounts = bankAccounts
     .filter((b) => b.isActive)
@@ -384,6 +439,94 @@ export default async function Page({
               </TR>
             </TBody>
           </Table>
+        </Card>
+
+        <Card title="Chargeback">
+          {cb === "saved" && (
+            <div
+              className="m-3.5 mb-0 rounded-md px-3 py-2 text-[12.5px]"
+              style={{
+                background: "var(--p-active-bg)",
+                color: "var(--p-active-fg)",
+                border: "1px solid var(--p-active-fg)",
+              }}
+            >
+              Chargeback saved.
+            </div>
+          )}
+          {cb === "cleared" && (
+            <div
+              className="m-3.5 mb-0 rounded-md px-3 py-2 text-[12.5px]"
+              style={{
+                background: "var(--rail)",
+                color: "var(--ink-2)",
+                border: "1px solid var(--line)",
+              }}
+            >
+              Chargeback cleared.
+            </div>
+          )}
+
+          {bill.chargebackInvoiceId && chargebackInvoice ? (
+            <div className="p-3.5 flex flex-col gap-2">
+              <div className="text-[12.5px]" style={{ color: "var(--ink-2)" }}>
+                Rebilled on invoice{" "}
+                <Link
+                  href={`/invoices/${chargebackInvoice.id}`}
+                  style={{
+                    color: "var(--ink)",
+                    fontFamily: "var(--font-mono)",
+                  }}
+                >
+                  {chargebackInvoice.invoiceNumber}
+                </Link>{" "}
+                →
+              </div>
+              <KVGrid>
+                <KV
+                  k="Recipient"
+                  v={
+                    chargebackEntity
+                      ? `${chargebackEntity.name}${chargebackClient ? ` · ${chargebackClient.name}` : ""}`
+                      : chargebackClient?.name ?? "—"
+                  }
+                />
+                <KV
+                  k="Method"
+                  v={
+                    bill.chargebackType === "markup"
+                      ? `Markup ${bill.markupPct ? (parseFloat(bill.markupPct) * 100).toString() : "0"}%`
+                      : bill.chargebackType === "fixed"
+                        ? "Fixed amount"
+                        : bill.chargebackType === "cost"
+                          ? "At cost"
+                          : bill.chargebackType === "included"
+                            ? "Included in annual fee"
+                            : "—"
+                  }
+                />
+                <KV
+                  k="Rebill amount"
+                  v={
+                    rebillPreview != null
+                      ? formatUSD(rebillPreview, { paren: true })
+                      : "—"
+                  }
+                  mono
+                />
+                {bill.chargebackNotes && (
+                  <KV k="Notes" v={bill.chargebackNotes} />
+                )}
+              </KVGrid>
+            </div>
+          ) : (
+            <BillChargebackPanel
+              bill={bill}
+              total={billTotal}
+              customers={activeCustomers}
+              entities={sortedEntities}
+            />
+          )}
         </Card>
 
         <Attachments

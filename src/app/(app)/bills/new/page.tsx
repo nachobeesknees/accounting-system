@@ -1,20 +1,33 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { ButtonLink } from "@/components/ui/Button";
 import { Empty } from "@/components/ui/Empty";
-import { getAccounts, getVendors } from "@/lib/data";
+import {
+  getAccounts,
+  getCustomers,
+  getEntities,
+  getVendors,
+} from "@/lib/data";
 
 import { NewBillForm } from "./NewBillForm";
 
 export default async function Page() {
-  const [vendorsAll, accountsAll] = await Promise.all([
+  const [vendorsAll, accountsAll, customersAll, entitiesAll] = await Promise.all([
     getVendors(),
     getAccounts(),
+    getCustomers(),
+    getEntities(),
   ]);
   const vendors = vendorsAll
     .filter((v) => v.isActive)
     .sort((a, b) => a.code.localeCompare(b.code));
   const expenseAccounts = accountsAll
     .filter((a) => a.accountType === "expense" && a.isActive)
+    .sort((a, b) => a.code.localeCompare(b.code));
+  const customers = customersAll
+    .filter((c) => c.isActive)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const entities = entitiesAll
+    .slice()
     .sort((a, b) => a.code.localeCompare(b.code));
 
   const today = new Date().toISOString().slice(0, 10);
@@ -63,6 +76,8 @@ export default async function Page() {
       <NewBillForm
         vendors={vendors}
         expenseAccounts={expenseAccounts}
+        customers={customers}
+        entities={entities}
         today={today}
         defaultDueDate={defaultDueDate}
       />

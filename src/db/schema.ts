@@ -630,6 +630,14 @@ export const bills = pgTable("bills", {
   currencyCode: text("currency_code").notNull().default("USD"),
   notes: text("notes"),
   journalEntryId: text("journal_entry_id"),
+  // Chargeback (rebill to client / entity) — see scripts/sync-schema.ts.
+  chargebackClientId: text("chargeback_client_id"),
+  chargebackEntityId: text("chargeback_entity_id"),
+  chargebackType: text("chargeback_type"),
+  markupPct: numeric("markup_pct", { precision: 7, scale: 4 }),
+  rebillAmount: numeric("rebill_amount", { precision: 15, scale: 2 }),
+  chargebackInvoiceId: text("chargeback_invoice_id"),
+  chargebackNotes: text("chargeback_notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

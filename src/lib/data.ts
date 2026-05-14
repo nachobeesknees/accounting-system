@@ -10,7 +10,7 @@
 
 import "server-only";
 
-import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumDebits, sumCredits } from "./money";
@@ -606,6 +606,13 @@ function mapBill(r: typeof schema.bills.$inferSelect, lines: BillLine[]): Bill {
     currencyCode: r.currencyCode,
     notes: r.notes,
     journalEntryId: r.journalEntryId,
+    chargebackClientId: r.chargebackClientId ?? null,
+    chargebackEntityId: r.chargebackEntityId ?? null,
+    chargebackType: (r.chargebackType ?? null) as Bill["chargebackType"],
+    markupPct: r.markupPct ?? null,
+    rebillAmount: r.rebillAmount ?? null,
+    chargebackInvoiceId: r.chargebackInvoiceId ?? null,
+    chargebackNotes: r.chargebackNotes ?? null,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }
@@ -1376,6 +1383,44 @@ export async function getBillById(id: string): Promise<Bill | undefined> {
 }
 
 /**
+ * Bills tagged to rebill to a specific client that haven't yet been rolled
+ * into a chargeback invoice. Used by the client detail "Pending
+ * chargebacks" card and the bulk-billback flow. Excludes "included" bills
+ * — those reference an annual fee and never get billed back separately.
+ */
+export async function getPendingChargebacksForClient(
+  clientId: string,
+): Promise<Bill[]> {
+  const db = getDb();
+  const heads = await db
+    .select()
+    .from(schema.bills)
+    .where(
+      and(
+        eq(schema.bills.chargebackClientId, clientId),
+        isNull(schema.bills.chargebackInvoiceId),
+      ),
+    )
+    .orderBy(desc(schema.bills.billDate));
+  if (heads.length === 0) return [];
+  const ids = heads.map((h) => h.id);
+  const lineRows = await db
+    .select()
+    .from(schema.billLines)
+    .where(inArray(schema.billLines.billId, ids));
+  const linesByBill = new Map<string, BillLine[]>();
+  for (const l of lineRows) {
+    const mapped = mapBillLine(l);
+    const arr = linesByBill.get(mapped.billId) ?? [];
+    arr.push(mapped);
+    linesByBill.set(mapped.billId, arr);
+  }
+  return heads
+    .map((h) => mapBill(h, linesByBill.get(h.id) ?? []))
+    .filter((b) => b.chargebackType && b.chargebackType !== "included");
+}
+
+/**
  * Journal-entry scope is symmetrical to getAccounts():
  *   - omitted / `"all"` → all entries (firm + every entity).
  *   - `null` → firm-level only (entityId IS NULL).
@@ -1767,6 +1812,319 @@ export async function getApAging(today: Date) {
     else buckets.d90 += bal;
   }
   return buckets;
+}
+
+// --------- Reporting v2: dated balances + monthly P&L ---------
+
+/**
+ * Signed-balance helper restricted to a date range. Used for income
+ * statement on a custom period.
+ *
+ *   debit-normal account net = sum(debit) - sum(credit)
+ *
+ * Returns Map of accountId → signed delta in the range. Caller decides
+ * whether to negate for credit-normal accounts.
+ */
+async function getSignedBalancesInRange(
+  start: string, // inclusive
+  end: string, // inclusive
+  scope: string | null | "all" = "all",
+): Promise<Map<string, number>> {
+  const db = getDb();
+  const q = db
+    .select({
+      accountId: schema.journalLines.accountId,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    );
+
+  const conds = [
+    eq(schema.journalEntries.status, "posted"),
+    gte(schema.journalEntries.entryDate, start),
+    lte(schema.journalEntries.entryDate, end),
+  ];
+  if (scope === null) conds.push(isNull(schema.journalEntries.firmEntityId));
+  else if (scope !== "all") conds.push(eq(schema.journalEntries.firmEntityId, scope));
+  const rows = await q.where(and(...conds));
+
+  const balances = new Map<string, number>();
+  for (const r of rows) {
+    const cur = balances.get(r.accountId) ?? 0;
+    balances.set(r.accountId, cur + parseAmount(r.debit) - parseAmount(r.credit));
+  }
+  return balances;
+}
+
+/**
+ * Signed-balance helper for everything posted on or before `asOf` — used
+ * by balance sheet as-of-date.
+ */
+async function getSignedBalancesAsOf(
+  asOf: string,
+  scope: string | null | "all" = "all",
+): Promise<Map<string, number>> {
+  const db = getDb();
+  const q = db
+    .select({
+      accountId: schema.journalLines.accountId,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    );
+
+  const conds = [
+    eq(schema.journalEntries.status, "posted"),
+    lte(schema.journalEntries.entryDate, asOf),
+  ];
+  if (scope === null) conds.push(isNull(schema.journalEntries.firmEntityId));
+  else if (scope !== "all") conds.push(eq(schema.journalEntries.firmEntityId, scope));
+  const rows = await q.where(and(...conds));
+
+  const balances = new Map<string, number>();
+  for (const r of rows) {
+    const cur = balances.get(r.accountId) ?? 0;
+    balances.set(r.accountId, cur + parseAmount(r.debit) - parseAmount(r.credit));
+  }
+  return balances;
+}
+
+export type KpisSummary = {
+  revenue: number;
+  expenses: number;
+  netIncome: number;
+  assets: number;
+  liabilities: number;
+  equity: number;
+  cash: number;
+};
+
+/**
+ * KPI snapshot as of a specific date. Revenue/expenses are inception-to-date
+ * (everything posted ≤ asOf); balance-sheet figures are also as-of `asOf`.
+ *
+ * If you need a period-over-period comparison (e.g. "this month vs last
+ * month"), call `getIncomeStatementForPeriod` for the deltas and this for
+ * the BS snapshot at each cutoff.
+ */
+export async function getKpisAsOf(
+  asOf: string,
+  scope?: string | null,
+): Promise<KpisSummary> {
+  const accounts = await getAccounts("all");
+  const balances = await getSignedBalancesAsOf(asOf, scope ?? "all");
+  let revenue = 0,
+    expenses = 0,
+    assets = 0,
+    liabilities = 0,
+    equity = 0,
+    cash = 0;
+  for (const a of accounts) {
+    const raw = balances.get(a.id) ?? 0;
+    if (a.accountType === "asset") assets += raw;
+    else if (a.accountType === "liability") liabilities += -raw;
+    else if (a.accountType === "equity") equity += -raw;
+    else if (a.accountType === "revenue") revenue += -raw;
+    else if (a.accountType === "expense") expenses += raw;
+    if (a.code === "1000") cash = a.normalBalance === "debit" ? raw : -raw;
+  }
+  return {
+    revenue,
+    expenses,
+    netIncome: revenue - expenses,
+    assets,
+    liabilities,
+    equity,
+    cash,
+  };
+}
+
+export type IncomeStatementRow = {
+  accountId: string;
+  code: string;
+  name: string;
+  accountType: "revenue" | "expense";
+  amount: number; // positive for revenue when earned, positive for expense when incurred
+};
+
+/**
+ * Income statement detail for a date range — one row per
+ * revenue/expense account that has activity in the range.
+ */
+export async function getIncomeStatementForPeriod(
+  start: string,
+  end: string,
+  scope?: string | null,
+): Promise<{ rows: IncomeStatementRow[]; revenue: number; expenses: number; netIncome: number }> {
+  const accounts = await getAccounts("all");
+  const balances = await getSignedBalancesInRange(start, end, scope ?? "all");
+  const rows: IncomeStatementRow[] = [];
+  let revenue = 0;
+  let expenses = 0;
+  for (const a of accounts) {
+    if (a.accountType !== "revenue" && a.accountType !== "expense") continue;
+    const raw = balances.get(a.id) ?? 0;
+    if (raw === 0) continue;
+    if (a.accountType === "revenue") {
+      const v = -raw; // credit-normal
+      rows.push({
+        accountId: a.id,
+        code: a.code,
+        name: a.name,
+        accountType: "revenue",
+        amount: v,
+      });
+      revenue += v;
+    } else {
+      const v = raw; // debit-normal
+      rows.push({
+        accountId: a.id,
+        code: a.code,
+        name: a.name,
+        accountType: "expense",
+        amount: v,
+      });
+      expenses += v;
+    }
+  }
+  rows.sort((r1, r2) => r1.code.localeCompare(r2.code));
+  return { rows, revenue, expenses, netIncome: revenue - expenses };
+}
+
+export type MonthlyIncomeStatement = {
+  year: number;
+  months: number[]; // 1..12
+  rows: Array<{
+    accountId: string;
+    code: string;
+    name: string;
+    accountType: "revenue" | "expense";
+    byMonth: number[]; // length 12
+    total: number;
+  }>;
+  revenueByMonth: number[];
+  expensesByMonth: number[];
+  netByMonth: number[];
+};
+
+/**
+ * 12-month P&L breakdown for a fiscal year. Returns one row per active
+ * revenue/expense account with per-month amounts (sign already flipped so
+ * revenue is positive and expenses positive).
+ */
+export async function getMonthlyIncomeStatement(
+  year: number,
+  scope?: string | null,
+): Promise<MonthlyIncomeStatement> {
+  const accounts = await getAccounts("all");
+  const accountIndex = new Map(accounts.map((a) => [a.id, a]));
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
+
+  // Pull every revenue/expense posting for the year in one query, then
+  // bucket in JS — twelve round-trips would be silly.
+  const db = getDb();
+  const start = `${year}-01-01`;
+  const end = `${year}-12-31`;
+  const conds = [
+    eq(schema.journalEntries.status, "posted"),
+    gte(schema.journalEntries.entryDate, start),
+    lte(schema.journalEntries.entryDate, end),
+  ];
+  if (scope === null) conds.push(isNull(schema.journalEntries.firmEntityId));
+  else if (scope && scope !== "all") {
+    conds.push(eq(schema.journalEntries.firmEntityId, scope));
+  }
+
+  const rows = await db
+    .select({
+      accountId: schema.journalLines.accountId,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+      entryDate: schema.journalEntries.entryDate,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .where(and(...conds));
+
+  type Bucket = { accountType: "revenue" | "expense"; byMonth: number[] };
+  const byAccount = new Map<string, Bucket>();
+
+  for (const r of rows) {
+    const a = accountIndex.get(r.accountId);
+    if (!a) continue;
+    if (a.accountType !== "revenue" && a.accountType !== "expense") continue;
+    const month = parseInt(r.entryDate.slice(5, 7), 10);
+    if (month < 1 || month > 12) continue;
+    const b =
+      byAccount.get(r.accountId) ??
+      ({ accountType: a.accountType, byMonth: Array(12).fill(0) } as Bucket);
+    const signed = parseAmount(r.debit) - parseAmount(r.credit);
+    // revenue credit-normal → flip; expense debit-normal → keep
+    const v = a.accountType === "revenue" ? -signed : signed;
+    b.byMonth[month - 1] += v;
+    byAccount.set(r.accountId, b);
+  }
+
+  const outRows = Array.from(byAccount.entries())
+    .map(([accountId, b]) => {
+      const a = accountIndex.get(accountId)!;
+      return {
+        accountId,
+        code: a.code,
+        name: a.name,
+        accountType: b.accountType,
+        byMonth: b.byMonth,
+        total: b.byMonth.reduce((s, v) => s + v, 0),
+      };
+    })
+    .filter((r) => r.total !== 0)
+    .sort((a, b) => a.code.localeCompare(b.code));
+
+  const revenueByMonth = Array(12).fill(0);
+  const expensesByMonth = Array(12).fill(0);
+  for (const r of outRows) {
+    for (let i = 0; i < 12; i++) {
+      if (r.accountType === "revenue") revenueByMonth[i] += r.byMonth[i];
+      else expensesByMonth[i] += r.byMonth[i];
+    }
+  }
+  const netByMonth = revenueByMonth.map((v, i) => v - expensesByMonth[i]);
+
+  return {
+    year,
+    months,
+    rows: outRows,
+    revenueByMonth,
+    expensesByMonth,
+    netByMonth,
+  };
+}
+
+/**
+ * Total budgeted amount per account for a fiscal year. Sums monthly
+ * budgets (month != null) and annual budgets (month == null) together so
+ * either input style works.
+ */
+export async function getBudgetByAccount(
+  fiscalYear: number,
+): Promise<Map<string, number>> {
+  const budgets = await getBudgets(fiscalYear);
+  const out = new Map<string, number>();
+  for (const b of budgets) {
+    out.set(b.accountId, (out.get(b.accountId) ?? 0) + parseAmount(b.amount));
+  }
+  return out;
 }
 
 // --------- Helpers (pure, no DB) ---------

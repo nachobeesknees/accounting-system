@@ -224,3 +224,59 @@ a:hover > .kpi-tile {
 .overflow-auto {
   -webkit-overflow-scrolling: touch;
 }
+
+/* Print: hide the chrome (sidebar/topbar), expand the main pane edge-to-edge,
+ * strip card borders/shadows so the report looks like a printed document.
+ * Tables should not be truncated — undo the nowrap+ellipsis defaults from
+ * the Table component when printing. */
+@media print {
+  :root {
+    --paper: #ffffff;
+    --rail: #ffffff;
+    --raised: #ffffff;
+    --hover: #ffffff;
+  }
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  .app-shell {
+    display: block !important;
+    height: auto !important;
+    grid-template-rows: none !important;
+    grid-template-columns: none !important;
+    grid-template-areas: none !important;
+  }
+  .app-shell > div[style*="grid-area: side"],
+  .app-shell > div[style*="grid-area: top"],
+  .app-shell aside,
+  .no-print {
+    display: none !important;
+  }
+  main {
+    overflow: visible !important;
+    height: auto !important;
+    background: #ffffff !important;
+  }
+  section {
+    border: none !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+  }
+  table {
+    width: 100% !important;
+    table-layout: auto !important;
+  }
+  table td, table th {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    max-width: none !important;
+  }
+  thead th {
+    position: static !important;
+  }
+  a[href]::after {
+    content: "" !important;
+  }
+}

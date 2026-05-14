@@ -8,9 +8,12 @@ import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { formatMoneyInput, formatUSD, parseAmount } from "@/lib/money";
-import type { Account, Vendor } from "@/lib/types";
+import type { Account, Customer, Entity, Vendor } from "@/lib/types";
 
 import { createBillAction, type CreateBillState } from "./actions";
+
+type Recipient = "none" | "client" | "entity";
+type CbMethod = "cost" | "markup" | "fixed" | "included";
 
 type Line = {
   description: string;
@@ -28,11 +31,15 @@ const INITIAL_STATE: CreateBillState = { error: null };
 export function NewBillForm({
   vendors,
   expenseAccounts,
+  customers,
+  entities,
   today,
   defaultDueDate,
 }: {
   vendors: Vendor[];
   expenseAccounts: Account[];
+  customers: Customer[];
+  entities: Entity[];
   today: string;
   defaultDueDate: string;
 }) {
@@ -41,6 +48,10 @@ export function NewBillForm({
   const [lines, setLines] = useState<Line[]>([
     blankLine(vendors[0]?.defaultExpenseAccountId ?? ""),
   ]);
+  const [recipient, setRecipient] = useState<Recipient>("none");
+  const [cbMethod, setCbMethod] = useState<CbMethod>("cost");
+  const [markupPct, setMarkupPct] = useState<string>("");
+  const [rebillAmount, setRebillAmount] = useState<string>("");
 
   const subtotal = useMemo(
     () =>
@@ -50,6 +61,32 @@ export function NewBillForm({
       ),
     [lines],
   );
+
+  const customerById = useMemo(
+    () => new Map(customers.map((c) => [c.id, c] as const)),
+    [customers],
+  );
+
+  const previewRebill = useMemo<string | null>(() => {
+    if (recipient === "none") return null;
+    switch (cbMethod) {
+      case "cost":
+        return `At cost: ${formatUSD(subtotal, { paren: true })}`;
+      case "markup": {
+        const pct = parseAmount(markupPct);
+        const amt = Math.round(subtotal * (1 + pct / 100) * 100) / 100;
+        return `With ${pct || 0}% markup: ${formatUSD(amt, { paren: true })}`;
+      }
+      case "fixed": {
+        const amt = parseAmount(rebillAmount);
+        return `Fixed: ${formatUSD(amt, { paren: true })}`;
+      }
+      case "included":
+        return "Included in annual fee — no separate invoice will be generated.";
+      default:
+        return null;
+    }
+  }, [recipient, cbMethod, subtotal, markupPct, rebillAmount]);
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -301,6 +338,178 @@ export function NewBillForm({
             </TR>
           </TBody>
         </Table>
+      </Card>
+
+      <Card title="Chargeback" bodyPadding>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-1">
+            <span
+              className="text-[11.5px]"
+              style={{ color: "var(--ink-3)" }}
+            >
+              Rebill to
+            </span>
+            <div className="flex gap-4 flex-wrap">
+              {(
+                [
+                  ["none", "None"],
+                  ["client", "Client"],
+                  ["entity", "Entity"],
+                ] as const
+              ).map(([val, label]) => (
+                <label
+                  key={val}
+                  className="flex items-center gap-1.5 text-[12.5px] cursor-pointer"
+                  style={{ color: "var(--ink-2)" }}
+                >
+                  <input
+                    type="radio"
+                    name="chargebackRecipient"
+                    value={val}
+                    checked={recipient === val}
+                    onChange={() => setRecipient(val)}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {recipient === "client" && (
+            <Row>
+              <SelectField
+                label="Client"
+                name="chargebackClientId"
+                required
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  — Select client —
+                </option>
+                {customers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </SelectField>
+              <div />
+            </Row>
+          )}
+
+          {recipient === "entity" && (
+            <Row>
+              <SelectField
+                label="Entity"
+                name="chargebackEntityId"
+                required
+                defaultValue=""
+              >
+                <option value="" disabled>
+                  — Select entity —
+                </option>
+                {entities.map((e) => {
+                  const owner = customerById.get(e.clientId);
+                  return (
+                    <option key={e.id} value={e.id}>
+                      {e.name}
+                      {owner ? ` · ${owner.name}` : ""}
+                    </option>
+                  );
+                })}
+              </SelectField>
+              <div />
+            </Row>
+          )}
+
+          {recipient !== "none" && (
+            <>
+              <div className="flex flex-col gap-1">
+                <span
+                  className="text-[11.5px]"
+                  style={{ color: "var(--ink-3)" }}
+                >
+                  Method
+                </span>
+                <div className="flex gap-4 flex-wrap">
+                  {(
+                    [
+                      ["cost", "At cost"],
+                      ["markup", "Markup %"],
+                      ["fixed", "Fixed amount"],
+                      ["included", "Included in annual fee"],
+                    ] as const
+                  ).map(([val, label]) => (
+                    <label
+                      key={val}
+                      className="flex items-center gap-1.5 text-[12.5px] cursor-pointer"
+                      style={{ color: "var(--ink-2)" }}
+                    >
+                      <input
+                        type="radio"
+                        name="chargebackType"
+                        value={val}
+                        checked={cbMethod === val}
+                        onChange={() => setCbMethod(val)}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {cbMethod === "markup" && (
+                <Row>
+                  <Field
+                    label="Markup % (e.g. 15 = 15%)"
+                    name="markupPct"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    mono
+                    value={markupPct}
+                    onChange={(e) => setMarkupPct(e.target.value)}
+                  />
+                  <div />
+                </Row>
+              )}
+
+              {cbMethod === "fixed" && (
+                <Row>
+                  <Field
+                    label="Fixed rebill amount"
+                    name="rebillAmount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    mono
+                    value={rebillAmount}
+                    onChange={(e) => setRebillAmount(e.target.value)}
+                  />
+                  <div />
+                </Row>
+              )}
+
+              {previewRebill && (
+                <div
+                  className="text-[12.5px] rounded-md px-3 py-2"
+                  style={{
+                    background: "var(--rail)",
+                    color: "var(--ink-2)",
+                    border: "1px solid var(--line)",
+                  }}
+                >
+                  {previewRebill}
+                </div>
+              )}
+
+              <TextareaField
+                label="Chargeback notes"
+                name="chargebackNotes"
+                placeholder="Optional context for the rebill"
+              />
+            </>
+          )}
+        </div>
       </Card>
 
       <div className="flex gap-2 items-center">

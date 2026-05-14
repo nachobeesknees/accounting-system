@@ -502,6 +502,15 @@ export type BillLine = {
   accountId: string;
 };
 
+/**
+ * Chargeback method when rebilling a vendor bill to a client/entity:
+ *   - 'cost'     bill amount passed through 1:1
+ *   - 'markup'   bill amount × (1 + markupPct/100)
+ *   - 'fixed'    rebillAmount overrides
+ *   - 'included' included in the entity's annual fee (no rebill, audit only)
+ */
+export type BillChargebackType = "cost" | "markup" | "fixed" | "included";
+
 export type Bill = {
   id: string;
   billNumber: string;
@@ -517,6 +526,16 @@ export type Bill = {
   currencyCode: string;
   notes: string | null;
   journalEntryId: string | null;
+  // Chargeback fields — see BillChargebackType. All optional; absent =
+  // bill is an internal expense, not rebilled.
+  chargebackClientId?: string | null;
+  chargebackEntityId?: string | null;
+  chargebackType?: BillChargebackType | null;
+  markupPct?: string | null;
+  rebillAmount?: string | null;
+  /** Set once this chargeback has been rebilled on a client invoice. */
+  chargebackInvoiceId?: string | null;
+  chargebackNotes?: string | null;
   lines: BillLine[];
 };
 

@@ -12,7 +12,7 @@
 
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { sumCredits, sumDebits, toDecimalString } from "./money";
@@ -2348,6 +2348,16 @@ export type CreateBillInput = {
   reference?: string | null;
   notes?: string | null;
   lines: DraftBillLine[];
+  // Optional chargeback config — if `chargebackType` is set the bill is
+  // marked as rebillable. "included" means just reference the client/entity
+  // (no rebill is generated); "cost", "markup", "fixed" produce a future
+  // invoice via `generateChargebackInvoice`.
+  chargebackClientId?: string | null;
+  chargebackEntityId?: string | null;
+  chargebackType?: "cost" | "markup" | "fixed" | "included" | null;
+  markupPct?: number | null;
+  rebillAmount?: number | null;
+  chargebackNotes?: string | null;
 };
 
 export async function createBill(_user: SessionUser, input: CreateBillInput) {
@@ -2384,6 +2394,14 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
       currencyCode,
       notes: input.notes ?? null,
       journalEntryId: null,
+      chargebackClientId: input.chargebackClientId ?? null,
+      chargebackEntityId: input.chargebackEntityId ?? null,
+      chargebackType: input.chargebackType ?? null,
+      markupPct:
+        input.markupPct != null ? input.markupPct.toFixed(4) : null,
+      rebillAmount:
+        input.rebillAmount != null ? toDecimalString(input.rebillAmount) : null,
+      chargebackNotes: input.chargebackNotes ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -2549,6 +2567,199 @@ export async function voidBill(user: SessionUser, billId: string, reason: string
     .update(schema.bills)
     .set({ status: "void", updatedAt: new Date() })
     .where(eq(schema.bills.id, billId));
+}
+
+// --------- Bill chargeback (rebill to client / entity) ---------
+
+export type SetBillChargebackInput = {
+  billId: string;
+  clientId?: string | null;
+  entityId?: string | null;
+  type: "cost" | "markup" | "fixed" | "included" | null;
+  markupPct?: number | null;
+  rebillAmount?: number | null;
+  notes?: string | null;
+};
+
+/**
+ * Configure (or clear) the chargeback on a bill.
+ *
+ *  - `type === null` clears the chargeback entirely.
+ *  - `cost` = rebill at bill total, no markup.
+ *  - `markup` = bill total × (1 + markupPct).
+ *  - `fixed` = override with a fixed rebill amount.
+ *  - `included` = reference only; bill is covered by an annual fee, no
+ *    new invoice will ever be generated.
+ *
+ * Once a chargeback invoice has been generated this mutation refuses to
+ * change anything — clear it through the invoice instead.
+ */
+export async function setBillChargeback(
+  _user: SessionUser,
+  input: SetBillChargebackInput,
+) {
+  const db = getDb();
+  const [bill] = await db
+    .select()
+    .from(schema.bills)
+    .where(eq(schema.bills.id, input.billId))
+    .limit(1);
+  if (!bill) throw new Error("Bill not found.");
+  if (bill.chargebackInvoiceId) {
+    throw new Error(
+      "This bill has already been billed back. Void the chargeback invoice to change it.",
+    );
+  }
+
+  if (input.type === null) {
+    await db
+      .update(schema.bills)
+      .set({
+        chargebackClientId: null,
+        chargebackEntityId: null,
+        chargebackType: null,
+        markupPct: null,
+        rebillAmount: null,
+        chargebackNotes: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.bills.id, input.billId));
+    return;
+  }
+
+  if (!input.clientId && !input.entityId) {
+    throw new Error("Chargeback needs a client or entity recipient.");
+  }
+  if (input.type === "markup" && (input.markupPct == null || input.markupPct < 0)) {
+    throw new Error("Markup % is required.");
+  }
+  if (input.type === "fixed" && (input.rebillAmount == null || input.rebillAmount < 0)) {
+    throw new Error("Fixed rebill amount is required.");
+  }
+
+  await db
+    .update(schema.bills)
+    .set({
+      chargebackClientId: input.clientId ?? null,
+      chargebackEntityId: input.entityId ?? null,
+      chargebackType: input.type,
+      markupPct:
+        input.type === "markup" && input.markupPct != null
+          ? input.markupPct.toFixed(4)
+          : null,
+      rebillAmount:
+        input.type === "fixed" && input.rebillAmount != null
+          ? toDecimalString(input.rebillAmount)
+          : null,
+      chargebackNotes: input.notes ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.bills.id, input.billId));
+}
+
+/**
+ * Compute what each bill in a chargeback batch would rebill at, given its
+ * `chargebackType`. Skips bills marked "included" (those reference an
+ * annual fee and never get a new invoice).
+ */
+function computeRebillAmount(bill: {
+  total: string;
+  chargebackType: string | null;
+  markupPct: string | null;
+  rebillAmount: string | null;
+}): number | null {
+  const total = parseFloat(bill.total);
+  switch (bill.chargebackType) {
+    case "cost":
+      return total;
+    case "markup": {
+      const pct = bill.markupPct ? parseFloat(bill.markupPct) : 0;
+      return Math.round(total * (1 + pct) * 100) / 100;
+    }
+    case "fixed":
+      return bill.rebillAmount ? parseFloat(bill.rebillAmount) : null;
+    case "included":
+      return null;
+    default:
+      return null;
+  }
+}
+
+export type GenerateChargebackInvoiceInput = {
+  clientId: string;
+  billIds: string[];
+  invoiceDate?: string; // defaults to today
+  dueDate?: string; // defaults to today + 30
+  notes?: string | null;
+};
+
+/**
+ * Roll a batch of rebillable bills (all targeting the same client) into a
+ * single new invoice, one line per bill. Marks each bill with the new
+ * invoice id so it doesn't get billed back twice.
+ */
+export async function generateChargebackInvoice(
+  user: SessionUser,
+  input: GenerateChargebackInvoiceInput,
+) {
+  if (input.billIds.length === 0) throw new Error("Pick at least one bill.");
+  const db = getDb();
+
+  const bills = await db
+    .select()
+    .from(schema.bills)
+    .where(inArray(schema.bills.id, input.billIds));
+  if (bills.length !== input.billIds.length) {
+    throw new Error("Some bills not found.");
+  }
+
+  const lines: DraftInvoiceLine[] = [];
+  for (const b of bills) {
+    if (b.chargebackInvoiceId) {
+      throw new Error(`Bill ${b.billNumber} is already billed back.`);
+    }
+    if (b.chargebackClientId !== input.clientId) {
+      throw new Error(`Bill ${b.billNumber} isn't tagged to this client.`);
+    }
+    if (b.chargebackType === "included" || b.chargebackType == null) {
+      throw new Error(`Bill ${b.billNumber} isn't set to rebill.`);
+    }
+    const amt = computeRebillAmount(b);
+    if (amt == null || amt <= 0) {
+      throw new Error(`Bill ${b.billNumber} has no rebillable amount.`);
+    }
+    lines.push({
+      description: `Reimbursable — ${b.billNumber}`,
+      quantity: 1,
+      unitPrice: amt,
+      accountId: SERVICE_REVENUE_ACCOUNT_ID,
+    });
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const due = (() => {
+    if (input.dueDate) return input.dueDate;
+    const d = new Date();
+    d.setDate(d.getDate() + 30);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  const created = await createInvoice(user, {
+    customerId: input.clientId,
+    invoiceDate: input.invoiceDate ?? today,
+    dueDate: due,
+    notes:
+      input.notes ??
+      `Pass-through of ${bills.length} vendor bill${bills.length === 1 ? "" : "s"}.`,
+    lines,
+  });
+
+  await db
+    .update(schema.bills)
+    .set({ chargebackInvoiceId: created.id, updatedAt: new Date() })
+    .where(inArray(schema.bills.id, input.billIds));
+
+  return created;
 }
 
 // --------- Bank accounts + signers ---------

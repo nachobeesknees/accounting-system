@@ -84,6 +84,24 @@ const COLUMNS: ColumnSpec[] = [
   { table: "offices", column: "registration_number", type: "text" },
   { table: "offices", column: "formation_date", type: "date" },
   { table: "offices", column: "address", type: "text" },
+
+  // ---- Vendor bill chargeback (rebill to client / entity) ----
+  // A bill can be charged back to a client or entity at cost, with a
+  // markup %, with a fixed rebill amount, or marked as already covered
+  // by an annual fee (no rebill, just metadata).
+  // chargeback_type: null = no chargeback
+  //                  'cost' = rebill at cost (1:1)
+  //                  'markup' = bill amount × (1 + markup_pct/100)
+  //                  'fixed' = rebill_amount (override)
+  //                  'included' = included in annual fee (no rebill)
+  { table: "bills", column: "chargeback_client_id", type: "text" },
+  { table: "bills", column: "chargeback_entity_id", type: "text" },
+  { table: "bills", column: "chargeback_type", type: "text" },
+  { table: "bills", column: "markup_pct", type: "numeric(7,4)" },
+  { table: "bills", column: "rebill_amount", type: "numeric(15,2)" },
+  /** The invoice created when this chargeback was rebilled. NULL = not yet billed. */
+  { table: "bills", column: "chargeback_invoice_id", type: "text" },
+  { table: "bills", column: "chargeback_notes", type: "text" },
 ];
 
 const TABLES = [

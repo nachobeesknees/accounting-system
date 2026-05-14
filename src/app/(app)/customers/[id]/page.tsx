@@ -15,12 +15,50 @@ import {
   getCustomerById,
   getEntitiesByClientId,
   getInvoices,
+  getPendingChargebacksForClient,
   getUserById,
   getUsers,
+  getVendors,
 } from "@/lib/data";
-import type { Customer } from "@/lib/types";
+import type { Bill, Customer } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
+import { PendingChargebacksCard } from "./PendingChargebacksCard";
+
+function computeRebill(bill: Bill): number | null {
+  const total = parseAmount(bill.total);
+  switch (bill.chargebackType) {
+    case "cost":
+      return total;
+    case "markup": {
+      const pct = bill.markupPct ? parseFloat(bill.markupPct) : 0;
+      return Math.round(total * (1 + pct) * 100) / 100;
+    }
+    case "fixed":
+      return bill.rebillAmount ? parseFloat(bill.rebillAmount) : null;
+    case "included":
+      return null;
+    default:
+      return null;
+  }
+}
+
+function methodLabel(bill: Bill): string {
+  switch (bill.chargebackType) {
+    case "cost":
+      return "At cost";
+    case "markup": {
+      const pct = bill.markupPct ? parseFloat(bill.markupPct) * 100 : 0;
+      return `Markup ${pct}%`;
+    }
+    case "fixed":
+      return "Fixed";
+    case "included":
+      return "Included";
+    default:
+      return "—";
+  }
+}
 import {
   addAssignmentAction,
   removeAssignmentAction,
@@ -50,15 +88,42 @@ export default async function Page({
 
   const assignedUserId = readAssignedUserId(customer);
 
-  const [allInvoices, entities, directAssets, users, assignedUser, assignments] =
-    await Promise.all([
-      getInvoices(),
-      getEntitiesByClientId(customer.id),
-      getAssetsByClientId(customer.id),
-      getUsers(),
-      assignedUserId ? getUserById(assignedUserId) : Promise.resolve(undefined),
-      getCustomerAssignments(customer.id),
-    ]);
+  const [
+    allInvoices,
+    entities,
+    directAssets,
+    users,
+    assignedUser,
+    assignments,
+    pendingChargebacks,
+    vendors,
+  ] = await Promise.all([
+    getInvoices(),
+    getEntitiesByClientId(customer.id),
+    getAssetsByClientId(customer.id),
+    getUsers(),
+    assignedUserId ? getUserById(assignedUserId) : Promise.resolve(undefined),
+    getCustomerAssignments(customer.id),
+    getPendingChargebacksForClient(customer.id),
+    getVendors(),
+  ]);
+  const vendorById = new Map(vendors.map((v) => [v.id, v] as const));
+  const chargebackRows = pendingChargebacks
+    .filter(
+      (b): b is Bill & {
+        chargebackType: "cost" | "markup" | "fixed" | "included";
+      } => b.chargebackType != null,
+    )
+    .map((b) => ({
+      id: b.id,
+      billNumber: b.billNumber,
+      billDate: b.billDate,
+      vendorId: b.vendorId,
+      vendorName: vendorById.get(b.vendorId)?.name ?? "—",
+      chargebackType: b.chargebackType,
+      methodLabel: methodLabel(b),
+      rebillAmount: computeRebill(b),
+    }));
   const userById = new Map(users.map((u) => [u.id, u] as const));
   const assignedUserIds = new Set(assignments.map((a) => a.userId));
   const customerInvoices = allInvoices
@@ -390,6 +455,15 @@ export default async function Page({
           )}
         </Card>
       </div>
+
+      {chargebackRows.length > 0 && (
+        <div className="px-6 mb-3.5">
+          <PendingChargebacksCard
+            customerId={customer.id}
+            rows={chargebackRows}
+          />
+        </div>
+      )}
 
       <div className="px-6 mb-8">
         <Card title="Invoices">
