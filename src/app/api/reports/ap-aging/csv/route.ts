@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { serializeCsv } from "@/lib/csv";
 import {
   DEMO_TODAY,
+  getBankAccounts,
   getBills,
   getCustomers,
   getEntities,
@@ -43,15 +44,42 @@ export async function GET(req: NextRequest): Promise<Response> {
     .filter(Boolean);
   const idSet = new Set(idFilter);
 
-  const [bills, vendors, customers, entities] = await Promise.all([
-    getBills(),
-    getVendors(),
-    getCustomers(),
-    getEntities(),
-  ]);
+  const [bills, vendors, customers, entities, bankAccounts] =
+    await Promise.all([
+      getBills(),
+      getVendors(),
+      getCustomers(),
+      getEntities(),
+      getBankAccounts(),
+    ]);
   const vendorsById = new Map(vendors.map((v) => [v.id, v] as const));
   const customersById = new Map(customers.map((c) => [c.id, c] as const));
   const entitiesById = new Map(entities.map((e) => [e.id, e] as const));
+  const activeBanks = bankAccounts.filter((b) => b.isActive);
+  const bankByEntity = new Map(
+    activeBanks
+      .filter((b) => b.entityId)
+      .map((b) => [b.entityId as string, b] as const),
+  );
+  const bankByClient = new Map(
+    activeBanks
+      .filter((b) => b.clientId && !b.entityId)
+      .map((b) => [b.clientId as string, b] as const),
+  );
+  const fallbackBank = activeBanks.find((b) => !b.entityId && !b.clientId)
+    ?? activeBanks[0];
+  function pickBank(bill: {
+    entityId?: string | null;
+    clientId?: string | null;
+  }) {
+    if (bill.entityId && bankByEntity.has(bill.entityId)) {
+      return bankByEntity.get(bill.entityId);
+    }
+    if (bill.clientId && bankByClient.has(bill.clientId)) {
+      return bankByClient.get(bill.clientId);
+    }
+    return fallbackBank;
+  }
 
   const today = DEMO_TODAY;
 
@@ -70,6 +98,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     const vendor = vendorsById.get(bill.vendorId);
     const client = bill.clientId ? customersById.get(bill.clientId) : null;
     const entity = bill.entityId ? entitiesById.get(bill.entityId) : null;
+    const bank = pickBank(bill);
 
     rows.push({
       "Bill #": bill.billNumber,
@@ -81,8 +110,9 @@ export async function GET(req: NextRequest): Promise<Response> {
       "Due date": bill.dueDate,
       "Days overdue": daysOverdue <= 0 ? "0" : String(daysOverdue),
       Bucket: BUCKET_LABEL[bucket],
-      "Balance due": formatAmount(balance, { paren: true }),
+      Amount: formatAmount(balance, { paren: true }),
       Currency: bill.currencyCode,
+      "Bank account": bank?.name ?? "",
       Status: bill.status,
     });
   }
@@ -97,8 +127,9 @@ export async function GET(req: NextRequest): Promise<Response> {
     "Due date",
     "Days overdue",
     "Bucket",
-    "Balance due",
+    "Amount",
     "Currency",
+    "Bank account",
     "Status",
   ];
   const csv = serializeCsv(headers, rows);
