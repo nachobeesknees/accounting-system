@@ -10,7 +10,7 @@
 
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumDebits, sumCredits } from "./money";
@@ -997,12 +997,18 @@ export async function getContacts(): Promise<Contact[]> {
   return rows.map(mapContact);
 }
 
+/**
+ * Look up a contact by either the internal id (e.g. `co-012`) or the
+ * user-facing code (e.g. `CT-EMP-002`). The detail page route uses the
+ * id, but bookmarks and copy/paste against the displayed code should
+ * still resolve.
+ */
 export async function getContactById(id: string): Promise<Contact | undefined> {
   const db = getDb();
   const [row] = await db
     .select()
     .from(schema.contacts)
-    .where(eq(schema.contacts.id, id))
+    .where(or(eq(schema.contacts.id, id), eq(schema.contacts.code, id)))
     .limit(1);
   return row ? mapContact(row) : undefined;
 }
