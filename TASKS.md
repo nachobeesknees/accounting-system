@@ -38,6 +38,7 @@ Agents: read this file before starting work. Check off items as you complete the
 - [x] Posting controls — AR/AP/Cash direct-posting warnings on the JE form. Inline yellow badge per controlled line + a pre-post confirmation. User can still post; entry is stamped with `bypassControlWarning=true` for the audit trail. Detection via account `subType` AND code-range (1000-1099 cash, 1100-1199 AR, 2000-2099 AP); helper at `src/lib/account-controls.ts`.
 - [x] Intercompany + eliminations — per-line "Counterpart entity" picker on JE form marks IC legs; `/reports/intercompany` shows the entity-pair matrix (due-from / due-to / net + reconcile flag); "Generate elimination" button posts a firm-level elimination JE flagged with `eliminationEntryId`. Elimination JEs are EXCLUDED from any single-entity scoped balance sheet / P&L view and INCLUDED at the firm-level consolidated view (standard consolidation accounting). JE detail page surfaces an "Intercompany" / "Elimination" pill and lists counterparts.
 - [x] Recurring journal entries — Recurring toggle on the JE form, Templates tab on /journal, "Generate next entry" creates a draft and advances the schedule, "Recurring due" card on the dashboard. Seeded with monthly depreciation + quarterly tax accrual templates.
+- [x] Real authentication + RBAC + audit log — Auth.js v5 + bcrypt credentials, /login styled to match app, middleware protecting /(app) routes, logout in sidebar, seed users (admin@thistlewood.com/Admin123!, accountant@thistlewood.com/Demo123!, viewer@thistlewood.com/Demo123!). `src/lib/permissions.ts` role→action matrix + `requirePermission()` wrapping period/journal/invoice/bill/contact mutations. Per-user entity scoping via `user_entity_access` (no rows = sees all; admin/super_admin bypass). Audit log writes on login/logout/login_failed, period close/lock, journal create/post/void, invoice/bill create/post/approve, contact create. /settings/users (admin only) — invite users, change role, activate/deactivate, reset password (one-time temp shown once), per-user entity access editor with read-only level. /settings/audit-log (super_admin only) — filter by date/user/action/resource, expandable JSON diff per row, paginated, CSV export.
 
 ---
 
@@ -50,7 +51,6 @@ Agents: read this file before starting work. Check off items as you complete the
 ## 📋 Pending
 
 ### Features
-- [ ] Real authentication — replace demo/cookie auth with proper login (user accounts, passwords or SSO)
 - [ ] Plaid bank account integration (Phase 2) — daily balance sync
 
 ### Quality / Polish

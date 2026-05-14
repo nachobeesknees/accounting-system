@@ -76,6 +76,8 @@ const SECTIONS: Section[] = [
       { href: "/settings", label: "Settings" },
       { href: "/settings/periods", label: "Accounting Periods" },
       { href: "/settings/dimensions", label: "Dimensions" },
+      { href: "/settings/users", label: "🔒 Users" },
+      { href: "/settings/audit-log", label: "🔒 Audit Log" },
     ],
   },
 ];
