@@ -63,7 +63,11 @@ export async function AppShell({
         />
       </div>
       <div className="app-shell-side" style={{ gridArea: "side" }}>
-        <Sidebar counts={counts} urgentItems={urgentItems} />
+        <Sidebar
+          counts={counts}
+          urgentItems={urgentItems}
+          user={{ fullName: user.fullName, email: user.email, role: user.role }}
+        />
       </div>
       <main
         style={{ gridArea: "main", overflow: "auto", background: "var(--paper)" }}
