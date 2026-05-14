@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Button } from "@/components/ui/Button";
+import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
+import { Field } from "@/components/ui/Field";
 import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { getAccounts, getJournalEntries } from "@/lib/data";
+import { DEMO_TODAY, getAccounts, getJournalEntries } from "@/lib/data";
 import { formatMoney, parseAmount } from "@/lib/money";
 
 function formatRowDate(iso: string): string {
@@ -18,51 +19,122 @@ function formatRowDate(iso: string): string {
   });
 }
 
+/**
+ * Build a /ledger href that mutates the current filter state. Pure
+ * server-side — each chip's "remove" link computes its own destination
+ * URL with the removed account dropped from the list. Lets the page
+ * stay a server component without a client picker.
+ */
+function buildLedgerHref(opts: {
+  accounts: string[];
+  from?: string;
+  to?: string;
+}): string {
+  const qs = new URLSearchParams();
+  if (opts.accounts.length) qs.set("accounts", opts.accounts.join(","));
+  if (opts.from) qs.set("from", opts.from);
+  if (opts.to) qs.set("to", opts.to);
+  const q = qs.toString();
+  return q ? `/ledger?${q}` : "/ledger";
+}
+
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ account?: string }>;
+  searchParams: Promise<{
+    /** Legacy single-account param — still honoured. */
+    account?: string;
+    /** Comma-separated list of account codes for multi-account view. */
+    accounts?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
   const params = await searchParams;
   const [accounts, allEntries] = await Promise.all([
     getAccounts(),
     getJournalEntries(),
   ]);
-  const defaultCode = accounts[0]?.code ?? "";
-  const selectedCode = params.account ?? defaultCode;
-  const account =
-    accounts.find((a) => a.code === selectedCode) ?? accounts[0];
 
+  // ---- Parse filter state ------------------------------------------------
+  // Backwards compat: `?account=1000` still works alongside the new
+  // `?accounts=1000,1100` syntax. The combined list dedups + drops
+  // anything we don't have a matching account row for.
+  const requestedCodes = new Set<string>();
+  if (params.account) requestedCodes.add(params.account);
+  if (params.accounts) {
+    for (const c of params.accounts.split(",")) {
+      const trimmed = c.trim();
+      if (trimmed) requestedCodes.add(trimmed);
+    }
+  }
+  // Default to the first account when no filter is set, so the page
+  // doesn't render empty on first visit.
+  if (requestedCodes.size === 0 && accounts[0]) {
+    requestedCodes.add(accounts[0].code);
+  }
+
+  const selectedAccounts = accounts.filter((a) => requestedCodes.has(a.code));
+  const selectedCodes = selectedAccounts.map((a) => a.code);
+  const selectedAccountIds = new Set(selectedAccounts.map((a) => a.id));
+
+  const from = params.from ?? "";
+  const to = params.to ?? "";
+
+  // ---- Build rows --------------------------------------------------------
   type Row = {
     key: string;
     date: string;
     entryNumber: string;
     description: string;
+    accountCode: string;
+    accountName: string;
     debit: number;
     credit: number;
     running: number;
   };
 
   const rows: Row[] = [];
-  let running = 0;
-  if (account) {
-    const sign = account.normalBalance === "debit" ? 1 : -1;
+  let totalDebit = 0;
+  let totalCredit = 0;
+  let netRunning = 0;
+
+  if (selectedAccounts.length > 0) {
+    // Per-account running balance keyed by account.id, so the running
+    // column makes sense even when multiple accounts are visible.
+    const runningByAccount = new Map<string, number>();
+    const signByAccount = new Map(
+      selectedAccounts.map((a) => [a.id, a.normalBalance === "debit" ? 1 : -1]),
+    );
+    const accountById = new Map(selectedAccounts.map((a) => [a.id, a]));
+
     const entries = allEntries
       .filter((e) => e.status === "posted")
+      .filter((e) => !from || e.entryDate >= from)
+      .filter((e) => !to || e.entryDate <= to)
       .slice()
       .sort((a, b) => a.entryDate.localeCompare(b.entryDate));
 
     for (const e of entries) {
       for (const line of e.lines) {
-        if (line.accountId !== account.id) continue;
+        if (!selectedAccountIds.has(line.accountId)) continue;
+        const a = accountById.get(line.accountId)!;
+        const sign = signByAccount.get(line.accountId) ?? 1;
         const debit = parseAmount(line.debit);
         const credit = parseAmount(line.credit);
-        running += (debit - credit) * sign;
+        const prev = runningByAccount.get(line.accountId) ?? 0;
+        const running = prev + (debit - credit) * sign;
+        runningByAccount.set(line.accountId, running);
+        totalDebit += debit;
+        totalCredit += credit;
+        netRunning += (debit - credit) * sign;
         rows.push({
           key: line.id,
           date: e.entryDate,
           entryNumber: e.entryNumber,
           description: line.description ?? e.description ?? "",
+          accountCode: a.code,
+          accountName: a.name,
           debit,
           credit,
           running,
@@ -71,67 +143,105 @@ export default async function Page({
     }
   }
 
-  const closing = running;
+  const todayIso = DEMO_TODAY.toISOString().slice(0, 10);
 
   return (
     <>
       <PageHeader
         title="General Ledger"
-        meta="All posted activity for the selected account"
+        meta={
+          selectedAccounts.length === 0
+            ? "Pick an account to view its activity"
+            : selectedAccounts.length === 1
+              ? `Activity for ${selectedAccounts[0].code} — ${selectedAccounts[0].name}`
+              : `Activity across ${selectedAccounts.length} accounts`
+        }
       />
 
       <div
-        className="px-6 py-2 flex items-end justify-between gap-4 flex-wrap"
+        className="px-6 py-3 flex flex-col gap-2"
         style={{
           background: "var(--rail)",
           borderBottom: "1px solid var(--line)",
         }}
       >
-        <form method="GET" className="flex items-end gap-2">
-          <SmartSelectField
-            label="Account"
-            name="account"
-            defaultValue={account?.code ?? ""}
-            options={accounts.map((a) => ({
-              value: a.code,
-              label: `${a.code} — ${a.name}`,
-              search: a.code,
-            }))}
+        {/* Filter form: pick another account to add, set date range. */}
+        <form method="GET" className="flex items-end gap-2 flex-wrap">
+          {/* Carry over existing selections + dates as hidden inputs so the
+              form submit appends rather than replaces. The "Add" submit
+              merges the picker value into the accounts list. */}
+          <input
+            type="hidden"
+            name="accounts"
+            value={selectedCodes.join(",")}
           />
+          <SmartSelectField
+            label="+ Add account"
+            name="account"
+            options={accounts
+              .filter((a) => !requestedCodes.has(a.code))
+              .map((a) => ({
+                value: a.code,
+                label: `${a.code} — ${a.name}`,
+                search: a.code,
+              }))}
+          />
+          <Field label="From" name="from" type="date" defaultValue={from} />
+          <Field label="To" name="to" type="date" defaultValue={to || todayIso} />
           <Button variant="primary" type="submit">
             Apply
           </Button>
+          <ButtonLink variant="ghost" href="/ledger">
+            Reset
+          </ButtonLink>
         </form>
 
-        {account && (
-          <div
-            className="text-[12.5px] flex gap-3 items-center"
-            style={{ color: "var(--ink-3)" }}
-          >
-            <span>
-              Normal balance:{" "}
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  color: "var(--ink)",
-                }}
-              >
-                {account.normalBalance}
-              </span>
+        {/* Selected accounts as removable chips */}
+        {selectedAccounts.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+            <span
+              className="text-[11px] uppercase tracking-wider"
+              style={{ color: "var(--ink-3)" }}
+            >
+              Accounts:
             </span>
-            <span style={{ color: "var(--ink-4)" }}>·</span>
-            <span>
-              Closing:{" "}
-              <span
-                style={{
-                  fontFamily: "var(--font-mono)",
-                  fontVariantNumeric: "tabular-nums",
-                  color: closing < 0 ? "var(--p-review-fg)" : "var(--ink)",
-                }}
-              >
-                {formatMoney(closing, "USD", { paren: true, compact: true })}
-              </span>
-            </span>
+            {selectedAccounts.map((a) => {
+              const remaining = selectedCodes.filter((c) => c !== a.code);
+              const removeHref = buildLedgerHref({
+                accounts: remaining,
+                from,
+                to,
+              });
+              return (
+                <span
+                  key={a.id}
+                  className="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[12px]"
+                  style={{
+                    background: "var(--p-formation-bg)",
+                    color: "var(--p-formation-fg)",
+                    border: "1px solid var(--p-formation-fg)",
+                  }}
+                >
+                  <span style={{ fontFamily: "var(--font-mono)" }}>
+                    {a.code}
+                  </span>
+                  <span style={{ opacity: 0.75 }}>{a.name}</span>
+                  <Link
+                    href={removeHref}
+                    aria-label={`Remove ${a.code}`}
+                    style={{
+                      color: "inherit",
+                      textDecoration: "none",
+                      marginLeft: 2,
+                      fontWeight: 600,
+                      opacity: 0.7,
+                    }}
+                  >
+                    ×
+                  </Link>
+                </span>
+              );
+            })}
           </div>
         )}
       </div>
@@ -139,7 +249,7 @@ export default async function Page({
       <div className="px-6 py-3.5 pb-8">
         <Card
           title={
-            account ? (
+            selectedAccounts.length === 1 ? (
               <span>
                 <span
                   style={{
@@ -147,10 +257,12 @@ export default async function Page({
                     color: "var(--ink)",
                   }}
                 >
-                  {account.code}
+                  {selectedAccounts[0].code}
                 </span>{" "}
-                — {account.name}
+                — {selectedAccounts[0].name}
               </span>
+            ) : selectedAccounts.length > 1 ? (
+              `${selectedAccounts.length} accounts`
             ) : (
               "Ledger"
             )
@@ -159,7 +271,11 @@ export default async function Page({
           {rows.length === 0 ? (
             <Empty
               title="No posted activity"
-              body="This account has no posted journal lines yet."
+              body={
+                selectedAccounts.length === 0
+                  ? "Pick at least one account above to see ledger activity."
+                  : "No posted journal lines match the current filters."
+              }
             />
           ) : (
             <Table>
@@ -167,10 +283,12 @@ export default async function Page({
                 <TR hover={false}>
                   <TH>Date</TH>
                   <TH>Entry #</TH>
+                  {/* Account column only adds value when filtering >1 account. */}
+                  {selectedAccounts.length > 1 && <TH>Account</TH>}
                   <TH>Description</TH>
                   <TH num>Debit</TH>
                   <TH num>Credit</TH>
-                  <TH num>Running balance</TH>
+                  <TH num>Running</TH>
                 </TR>
               </THead>
               <TBody>
@@ -188,10 +306,14 @@ export default async function Page({
                         {r.entryNumber}
                       </Link>
                     </TD>
+                    {selectedAccounts.length > 1 && (
+                      <TD mono style={{ color: "var(--ink-3)" }}>
+                        {r.accountCode}
+                      </TD>
+                    )}
                     <TD>{r.description}</TD>
                     {/* Per-line GL postings keep cents — accounting precision
-                        matters here, same as the JE detail page. The closing
-                        / opening totals above and below stay compact. */}
+                        matters here, same as the JE detail page. */}
                     <TD num>
                       {r.debit === 0 ? "—" : formatMoney(r.debit, "USD")}
                     </TD>
@@ -205,16 +327,25 @@ export default async function Page({
                 ))}
                 <TR total hover={false}>
                   <TD
-                    colSpan={5}
+                    colSpan={selectedAccounts.length > 1 ? 4 : 3}
                     style={{
                       fontWeight: 600,
                       color: "var(--ink)",
                     }}
                   >
-                    Closing balance
+                    Totals
                   </TD>
-                  <TD num neg={closing < 0}>
-                    {formatMoney(closing, "USD", { paren: true, compact: true })}
+                  <TD num>
+                    {formatMoney(totalDebit, "USD", { compact: true })}
+                  </TD>
+                  <TD num>
+                    {formatMoney(totalCredit, "USD", { compact: true })}
+                  </TD>
+                  <TD num neg={netRunning < 0}>
+                    {formatMoney(netRunning, "USD", {
+                      paren: true,
+                      compact: true,
+                    })}
                   </TD>
                 </TR>
               </TBody>

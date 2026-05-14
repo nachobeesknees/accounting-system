@@ -8,6 +8,7 @@ import { DEMO_TODAY, getKpis } from "@/lib/data";
 import { getCashForecast, type ForecastItem } from "@/lib/forecast";
 import { formatDate } from "@/lib/format";
 import { formatMoney } from "@/lib/money";
+import { DrillNumber } from "@/components/DrillNumber";
 
 const ALLOWED_HORIZONS = [4, 13, 26, 52] as const;
 type Horizon = (typeof ALLOWED_HORIZONS)[number];
@@ -108,6 +109,10 @@ export default async function Page({
 
       <div className="px-6 py-3.5 pb-8 flex flex-col gap-3.5">
         <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
+          {/* Drill targets:
+              - projected ending → cash GL (account 1000)
+              - inflows → /invoices (AR — the open invoices that feed inflows)
+              - outflows → /bills (AP — open bills + recurring) */}
           <Card title="Projected ending balance" bodyPadding>
             <div
               className="text-[20px] font-semibold"
@@ -120,7 +125,13 @@ export default async function Page({
                     : "var(--p-review-fg)",
               }}
             >
-              {formatMoney(projectedEnding, "USD", { paren: true , compact: true })}
+              <DrillNumber
+                value={projectedEnding}
+                href="/ledger?accounts=1000"
+                currencyCode="USD"
+                compact
+                paren
+              />
             </div>
             <div
               className="text-[11.5px] mt-1"
@@ -138,7 +149,12 @@ export default async function Page({
                 color: "var(--p-active-fg)",
               }}
             >
-              {formatMoney(totalInflows, "USD", { compact: true })}
+              <DrillNumber
+                value={totalInflows}
+                href="/invoices"
+                currencyCode="USD"
+                compact
+              />
             </div>
             <div
               className="text-[11.5px] mt-1"
@@ -156,7 +172,12 @@ export default async function Page({
                 color: "var(--p-review-fg)",
               }}
             >
-              {formatMoney(totalOutflows, "USD", { compact: true })}
+              <DrillNumber
+                value={totalOutflows}
+                href="/bills"
+                currencyCode="USD"
+                compact
+              />
             </div>
             <div
               className="text-[11.5px] mt-1"
@@ -190,15 +211,55 @@ export default async function Page({
                 {rows.map((r) => (
                   <TR key={r.weekStart} hover={false}>
                     <TD mono>{formatDate(r.weekStart)}</TD>
-                    <TD num>{formatMoney(r.inflowsFromInvoices, "USD", { compact: true })}</TD>
-                    <TD num>{formatMoney(r.inflowsFromEntityFees, "USD", { compact: true })}</TD>
-                    <TD num>{formatMoney(r.outflowsFromBills, "USD", { compact: true })}</TD>
-                    <TD num>{formatMoney(r.outflowsFromRecurring, "USD", { compact: true })}</TD>
+                    <TD num>
+                      <DrillNumber
+                        value={r.inflowsFromInvoices}
+                        href="/invoices"
+                        currencyCode="USD"
+                        compact
+                      />
+                    </TD>
+                    <TD num>
+                      <DrillNumber
+                        value={r.inflowsFromEntityFees}
+                        href="/fees"
+                        currencyCode="USD"
+                        compact
+                      />
+                    </TD>
+                    <TD num>
+                      <DrillNumber
+                        value={r.outflowsFromBills}
+                        href="/bills"
+                        currencyCode="USD"
+                        compact
+                      />
+                    </TD>
+                    <TD num>
+                      <DrillNumber
+                        value={r.outflowsFromRecurring}
+                        href="/cash-forecast/recurring"
+                        currencyCode="USD"
+                        compact
+                      />
+                    </TD>
                     <TD num neg={r.netDelta < 0}>
-                      {formatMoney(r.netDelta, "USD", { paren: true , compact: true })}
+                      <DrillNumber
+                        value={r.netDelta}
+                        href="/ledger?accounts=1000"
+                        currencyCode="USD"
+                        compact
+                        paren
+                      />
                     </TD>
                     <TD num neg={r.endingBalance < 0}>
-                      {formatMoney(r.endingBalance, "USD", { paren: true , compact: true })}
+                      <DrillNumber
+                        value={r.endingBalance}
+                        href="/ledger?accounts=1000"
+                        currencyCode="USD"
+                        compact
+                        paren
+                      />
                     </TD>
                   </TR>
                 ))}
@@ -226,10 +287,20 @@ export default async function Page({
               <TBody>
                 {sortedItems.map((it, idx) => {
                   const signed = it.isOutflow ? -it.amount : it.amount;
+                  // Per-item drill target: the existing item.href when set
+                  // (invoice/bill detail), otherwise fall back to a kind-
+                  // appropriate list page.
+                  const fallback =
+                    it.kind === "entity_fee"
+                      ? "/fees"
+                      : it.kind === "recurring"
+                        ? "/cash-forecast/recurring"
+                        : undefined;
+                  const drillHref = it.href ?? fallback;
                   return (
                     <TR
                       key={`${it.kind}-${it.date}-${idx}`}
-                      href={it.href}
+                      href={drillHref}
                     >
                       <TD mono>{formatDate(it.date)}</TD>
                       <TD>
@@ -239,7 +310,14 @@ export default async function Page({
                       </TD>
                       <TD>{it.description}</TD>
                       <TD num neg={it.isOutflow}>
-                        {formatMoney(signed, "USD", { paren: true , compact: true })}
+                        <DrillNumber
+                          value={signed}
+                          href={drillHref}
+                          currencyCode="USD"
+                          compact
+                          paren
+                          neg={it.isOutflow}
+                        />
                       </TD>
                     </TR>
                   );
