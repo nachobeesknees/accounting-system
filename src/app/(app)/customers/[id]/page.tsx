@@ -247,12 +247,12 @@ export default async function Page({
                     <input
                       type="number"
                       name="taxRatePct"
-                      step="0.0001"
+                      step="0.001"
                       min="0"
                       max="100"
                       defaultValue={(
                         parseFloat(customer.taxRate ?? "0") * 100
-                      ).toFixed(4).replace(/\.?0+$/, "") || "0"}
+                      ).toFixed(3).replace(/\.?0+$/, "") || "0"}
                       className="px-1.5 py-0.5 rounded-md outline-none"
                       style={{
                         background: "var(--paper)",

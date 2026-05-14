@@ -178,9 +178,9 @@ const COLUMNS: ColumnSpec[] = [
   // tax_amount to 0 regardless of rate. The customer row carries the
   // default; the invoice row snapshots it at create time so historical
   // numbers stay stable when the customer's default later changes.
-  { table: "customers", column: "tax_rate", type: "numeric(5,4)", notNull: true, default: "0" },
+  { table: "customers", column: "tax_rate", type: "numeric(6,5)", notNull: true, default: "0" },
   { table: "customers", column: "tax_exempt", type: "boolean", notNull: true, default: "false" },
-  { table: "invoices",  column: "tax_rate", type: "numeric(5,4)", notNull: true, default: "0" },
+  { table: "invoices",  column: "tax_rate", type: "numeric(6,5)", notNull: true, default: "0" },
   { table: "invoices",  column: "tax_exempt", type: "boolean", notNull: true, default: "false" },
 ];
 

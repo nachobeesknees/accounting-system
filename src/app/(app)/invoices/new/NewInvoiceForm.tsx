@@ -341,7 +341,7 @@ export function NewInvoiceForm({
                   if (c) {
                     const rate = parseFloat(c.taxRate ?? "0") || 0;
                     setTaxRatePct(
-                      (rate * 100).toFixed(4).replace(/\.?0+$/, "") || "0",
+                      (rate * 100).toFixed(3).replace(/\.?0+$/, "") || "0",
                     );
                     setTaxExempt(!!c.taxExempt);
                   }
@@ -384,7 +384,7 @@ export function NewInvoiceForm({
               <input
                 type="number"
                 name="taxRatePct"
-                step="0.0001"
+                step="0.001"
                 min="0"
                 max="100"
                 value={taxRatePct}

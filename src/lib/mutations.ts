@@ -2259,7 +2259,7 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
       dueDate: input.dueDate,
       status: "draft",
       subtotal: toDecimalString(subtotal),
-      taxRate: taxRate.toFixed(4),
+      taxRate: taxRate.toFixed(5),
       taxExempt,
       taxAmount: toDecimalString(taxAmount),
       total: toDecimalString(total),

@@ -155,7 +155,7 @@ export async function setCustomerTaxAction(formData: FormData): Promise<void> {
     await db
       .update(schema.customers)
       .set({
-        taxRate: taxRate.toFixed(4),
+        taxRate: taxRate.toFixed(5),
         taxExempt,
         updatedAt: new Date(),
       })

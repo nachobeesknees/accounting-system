@@ -572,10 +572,12 @@ export const customers = pgTable("customers", {
   assignedUserId: text("assigned_user_id"),
   /** Optional region (e.g. "North America"). Soft FK → regions.id. */
   regionId: text("region_id"),
-  /** Default sales-tax rate as a decimal (0.0875 = 8.75%). 0 means
-   *  "no tax." Snapshotted onto each invoice at create time so
-   *  historical totals don't drift if the rate later changes. */
-  taxRate: numeric("tax_rate", { precision: 5, scale: 4 }).notNull().default("0"),
+  /** Default sales-tax rate as a decimal (0.08875 = 8.875%). 0 means
+   *  "no tax." 5 decimals so 3-decimal-percent rates (e.g. NYC 8.875%
+   *  or LA Metro 9.5%) store without rounding. Snapshotted onto each
+   *  invoice at create time so historical totals don't drift if the
+   *  rate later changes. */
+  taxRate: numeric("tax_rate", { precision: 6, scale: 5 }).notNull().default("0"),
   /** Hard override: when true, every invoice for this client gets
    *  tax_amount=0 regardless of rate. */
   taxExempt: boolean("tax_exempt").notNull().default(false),
@@ -792,8 +794,8 @@ export const invoices = pgTable("invoices", {
   rejectedBy: text("rejected_by"),
   rejectionReason: text("rejection_reason"),
   subtotal: numeric("subtotal", { precision: 15, scale: 2 }).notNull().default("0"),
-  /** Snapshot of customer.taxRate at create time. */
-  taxRate: numeric("tax_rate", { precision: 5, scale: 4 }).notNull().default("0"),
+  /** Snapshot of customer.taxRate at create time (decimal, 5 places). */
+  taxRate: numeric("tax_rate", { precision: 6, scale: 5 }).notNull().default("0"),
   /** Snapshot of customer.taxExempt at create time. When true, taxAmount = 0. */
   taxExempt: boolean("tax_exempt").notNull().default(false),
   taxAmount: numeric("tax_amount", { precision: 15, scale: 2 }).notNull().default("0"),
