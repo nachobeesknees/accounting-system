@@ -11,6 +11,7 @@ import { DrillNumber, drillToAccount } from "@/components/DrillNumber";
 import {
   DEMO_TODAY,
   accountsByType,
+  getBaseCurrency,
   getBudgetByAccount,
   getIncomeStatementForPeriod,
   getKpisAsOf,
@@ -21,7 +22,7 @@ import {
   type KpisSummary,
 } from "@/lib/data";
 import { getEntityScope } from "@/lib/entity-scope";
-import { formatUSD } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import {
   parseCompare,
   parsePreset,
@@ -74,21 +75,25 @@ function AccountRow({
   account,
   value,
   extras,
+  compact,
 }: {
   account: Account;
   value: number;
   extras?: Array<{ key: string; value: string; neg?: boolean; num?: boolean }>;
+  compact?: boolean;
 }) {
-  // Drill from any report cell straight into the journal filtered to this
-  // account. The journal page reads `?account=` and shows only entries
-  // that touch it.
   const drillHref = drillToAccount(account.id);
   return (
     <TR>
       <TD mono>{account.code}</TD>
       <TD>{account.name}</TD>
       <TD num neg={value < 0}>
-        <DrillNumber value={value} href={drillHref} currencyCode={null} />
+        <DrillNumber
+          value={value}
+          href={drillHref}
+          currencyCode={null}
+          compact={compact}
+        />
       </TD>
       {extras?.map((e) => (
         <TD key={e.key} num={e.num ?? true} neg={e.neg}>
@@ -219,18 +224,23 @@ export default async function Page({
     to?: string;
     compare?: string;
     year?: string;
+    cents?: string;
   }>;
 }) {
   const params = await searchParams;
   const tab: TabId = isTab(params.tab) ? params.tab : "balance";
   const preset = parsePreset(params.preset);
-  const compare = parseCompare(params.compare) as CompareMode;
+  const compareMode = parseCompare(params.compare) as CompareMode;
   const period = resolvePeriod(preset, DEMO_TODAY, params.from, params.to);
   const scope = await getEntityScope();
   const fiscalYear = parseInt(
     params.year ?? String(DEMO_TODAY.getUTCFullYear()),
     10,
   );
+  const showCents = params.cents === "1";
+  const compact = !showCents;
+  const base = await getBaseCurrency();
+  const baseCode = base?.code ?? "USD";
 
   return (
     <>
@@ -277,41 +287,94 @@ export default async function Page({
 
       <div className="px-6 py-3.5 flex flex-col gap-3.5">
         {/* Controls — hidden in print */}
-        {tab !== "trial" && (
-          <div className="flex flex-wrap items-center gap-3 no-print">
-            {tab === "monthly" ? (
-              <YearPicker year={fiscalYear} current={fiscalYear} />
-            ) : (
-              <>
-                <PeriodPicker />
-                <CompareSelect
-                  allowedModes={
-                    tab === "balance"
-                      ? ["none", "prior_period", "prior_year"]
-                      : ["none", "prior_period", "prior_year", "budget"]
-                  }
-                />
-              </>
-            )}
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-3 no-print">
+          {tab === "monthly" ? (
+            <YearPicker year={fiscalYear} current={fiscalYear} />
+          ) : tab !== "trial" ? (
+            <>
+              <PeriodPicker />
+              <CompareSelect
+                allowedModes={
+                  tab === "balance"
+                    ? ["none", "prior_period", "prior_year"]
+                    : ["none", "prior_period", "prior_year", "budget"]
+                }
+              />
+            </>
+          ) : null}
+          {tab !== "trial" && (
+            <ShowCentsToggle tab={tab} params={params} showCents={showCents} />
+          )}
+        </div>
 
         {tab === "balance" && (
-          <BalanceSheetCard period={period} compare={compare} scope={scope} />
+          <BalanceSheetCard
+            period={period}
+            compare={compareMode}
+            scope={scope}
+            compact={compact}
+            baseCode={baseCode}
+          />
         )}
         {tab === "income" && (
           <IncomeStatementCard
             period={period}
-            compare={compare}
+            compare={compareMode}
             scope={scope}
+            compact={compact}
+            baseCode={baseCode}
           />
         )}
         {tab === "monthly" && (
-          <MonthlyIncomeCard year={fiscalYear} scope={scope} />
+          <MonthlyIncomeCard
+            year={fiscalYear}
+            scope={scope}
+            compact={compact}
+            baseCode={baseCode}
+          />
         )}
-        {tab === "trial" && <TrialBalanceCard />}
+        {tab === "trial" && <TrialBalanceCard baseCode={baseCode} /> }
       </div>
     </>
+  );
+}
+
+function ShowCentsToggle({
+  tab,
+  params,
+  showCents,
+}: {
+  tab: TabId;
+  params: { preset?: string; from?: string; to?: string; compare?: string; year?: string };
+  showCents: boolean;
+}) {
+  // Linked toggle: clicking sets/clears ?cents=1 while preserving all other
+  // params. Server component → no client state, just a styled anchor.
+  const ps = new URLSearchParams();
+  ps.set("tab", tab);
+  if (params.preset) ps.set("preset", params.preset);
+  if (params.from) ps.set("from", params.from);
+  if (params.to) ps.set("to", params.to);
+  if (params.compare) ps.set("compare", params.compare);
+  if (params.year) ps.set("year", params.year);
+  if (!showCents) ps.set("cents", "1");
+  const href = `/reports?${ps.toString()}`;
+  return (
+    <a
+      href={href}
+      className="inline-flex items-center gap-1.5 text-[12px]"
+      style={{
+        color: showCents ? "var(--ink)" : "var(--ink-3)",
+        textDecoration: "none",
+        padding: "4px 8px",
+        borderRadius: 6,
+        border: "1px solid var(--line-2)",
+        background: showCents ? "var(--p-active-bg)" : "var(--raised)",
+      }}
+    >
+      <span style={{ fontSize: 11.5 }}>{showCents ? "☑" : "☐"}</span>
+      <span>Show cents</span>
+    </a>
   );
 }
 
@@ -335,11 +398,17 @@ async function BalanceSheetCard({
   period,
   compare,
   scope,
+  compact,
+  baseCode,
 }: {
   period: { start: string; end: string; label: string };
   compare: CompareMode;
   scope: string | null;
+  compact: boolean;
+  baseCode: string;
 }) {
+  const fmt = (n: number) =>
+    formatMoney(n, "USD", { paren: true, compact, hideCurrency: true });
   const asOf = period.end;
   const [kpis, byType] = await Promise.all([
     getKpisAsOf(asOf, scope),
@@ -389,19 +458,19 @@ async function BalanceSheetCard({
     const prev = cmpBalances.get(accountId) ?? 0;
     const d = curr - prev;
     return [
-      { key: "cmp", value: formatUSD(prev, { paren: true }), neg: prev < 0 },
-      { key: "delta", value: formatUSD(d, { paren: true }), neg: d < 0 },
+      { key: "cmp", value: fmt(prev), neg: prev < 0 },
+      { key: "delta", value: fmt(d), neg: d < 0 },
     ];
   }
 
   function totalCells(curr: number, prev: number) {
     const cells: Array<{ key: string; value: string; neg?: boolean }> = [
-      { key: "curr", value: formatUSD(curr, { paren: true }), neg: curr < 0 },
+      { key: "curr", value: fmt(curr), neg: curr < 0 },
     ];
     if (showCmp) {
       const d = curr - prev;
-      cells.push({ key: "cmp", value: formatUSD(prev, { paren: true }), neg: prev < 0 });
-      cells.push({ key: "delta", value: formatUSD(d, { paren: true }), neg: d < 0 });
+      cells.push({ key: "cmp", value: fmt(prev), neg: prev < 0 });
+      cells.push({ key: "delta", value: fmt(d), neg: d < 0 });
     }
     return cells;
   }
@@ -414,7 +483,7 @@ async function BalanceSheetCard({
   const cmpEquity = (cmpKpis?.equity ?? 0) + (cmpKpis?.netIncome ?? 0);
 
   return (
-    <Card title="Balance Sheet">
+    <Card title={`Balance Sheet · ${baseCode}`}>
       <Table>
         <THead>
           <SectionHeading
@@ -429,6 +498,7 @@ async function BalanceSheetCard({
               account={a}
               value={balances.get(a.id) ?? 0}
               extras={rowExtras(a.id, balances.get(a.id) ?? 0)}
+              compact={compact}
             />
           ))}
           <TotalRow label="Total Assets" cells={totalCells(totalAssets, cmpAssets)} />
@@ -446,6 +516,7 @@ async function BalanceSheetCard({
               account={a}
               value={balances.get(a.id) ?? 0}
               extras={rowExtras(a.id, balances.get(a.id) ?? 0)}
+              compact={compact}
             />
           ))}
           <TotalRow label="Total Liabilities" cells={totalCells(totalLiab, cmpLiab)} />
@@ -463,26 +534,23 @@ async function BalanceSheetCard({
               account={a}
               value={balances.get(a.id) ?? 0}
               extras={rowExtras(a.id, balances.get(a.id) ?? 0)}
+              compact={compact}
             />
           ))}
           <TR>
             <TD mono>—</TD>
             <TD>Current Year Earnings</TD>
-            <TD num neg={kpis.netIncome < 0}>
-              {formatUSD(kpis.netIncome, { paren: true })}
-            </TD>
+            <TD num neg={kpis.netIncome < 0}>{fmt(kpis.netIncome)}</TD>
             {showCmp && (
               <>
                 <TD num neg={(cmpKpis?.netIncome ?? 0) < 0}>
-                  {formatUSD(cmpKpis?.netIncome ?? 0, { paren: true })}
+                  {fmt(cmpKpis?.netIncome ?? 0)}
                 </TD>
                 <TD
                   num
                   neg={kpis.netIncome - (cmpKpis?.netIncome ?? 0) < 0}
                 >
-                  {formatUSD(kpis.netIncome - (cmpKpis?.netIncome ?? 0), {
-                    paren: true,
-                  })}
+                  {fmt(kpis.netIncome - (cmpKpis?.netIncome ?? 0))}
                 </TD>
               </>
             )}
@@ -495,28 +563,14 @@ async function BalanceSheetCard({
             cells={
               showCmp
                 ? [
-                    {
-                      key: "curr",
-                      value: formatUSD(totalLiab + totalEquity, { paren: true }),
-                    },
-                    {
-                      key: "cmp",
-                      value: formatUSD(cmpLiab + cmpEquity, { paren: true }),
-                    },
+                    { key: "curr", value: fmt(totalLiab + totalEquity) },
+                    { key: "cmp", value: fmt(cmpLiab + cmpEquity) },
                     {
                       key: "delta",
-                      value: formatUSD(
-                        totalLiab + totalEquity - (cmpLiab + cmpEquity),
-                        { paren: true },
-                      ),
+                      value: fmt(totalLiab + totalEquity - (cmpLiab + cmpEquity)),
                     },
                   ]
-                : [
-                    {
-                      key: "curr",
-                      value: formatUSD(totalLiab + totalEquity, { paren: true }),
-                    },
-                  ]
+                : [{ key: "curr", value: fmt(totalLiab + totalEquity) }]
             }
           />
         </TBody>
@@ -549,11 +603,17 @@ async function IncomeStatementCard({
   period,
   compare,
   scope,
+  compact,
+  baseCode,
 }: {
   period: { start: string; end: string; label: string };
   compare: CompareMode;
   scope: string | null;
+  compact: boolean;
+  baseCode: string;
 }) {
+  const fmt = (n: number) =>
+    formatMoney(n, "USD", { paren: true, compact, hideCurrency: true });
   const { rows, revenue, expenses, netIncome } =
     await getIncomeStatementForPeriod(period.start, period.end, scope);
 
@@ -612,8 +672,8 @@ async function IncomeStatementCard({
     const extras: Array<{ key: string; value: string; neg?: boolean; num?: boolean }> =
       hasCmp
         ? [
-            { key: "cmp", value: formatUSD(cmp, { paren: true }), neg: cmp < 0 },
-            { key: "delta", value: formatUSD(d, { paren: true }), neg: d < 0 },
+            { key: "cmp", value: fmt(cmp), neg: cmp < 0 },
+            { key: "delta", value: fmt(d), neg: d < 0 },
             { key: "deltaPct", value: pctChange(r.amount, cmp), neg: d < 0 },
           ]
         : [];
@@ -625,18 +685,19 @@ async function IncomeStatementCard({
         }
         value={r.amount}
         extras={extras}
+        compact={compact}
       />
     );
   }
 
   function totalCells(curr: number, prev: number) {
     const cells: Array<{ key: string; value: string; neg?: boolean }> = [
-      { key: "curr", value: formatUSD(curr, { paren: true }), neg: curr < 0 },
+      { key: "curr", value: fmt(curr), neg: curr < 0 },
     ];
     if (hasCmp) {
       const d = curr - prev;
-      cells.push({ key: "cmp", value: formatUSD(prev, { paren: true }), neg: prev < 0 });
-      cells.push({ key: "delta", value: formatUSD(d, { paren: true }), neg: d < 0 });
+      cells.push({ key: "cmp", value: fmt(prev), neg: prev < 0 });
+      cells.push({ key: "delta", value: fmt(d), neg: d < 0 });
       cells.push({ key: "deltaPct", value: pctChange(curr, prev), neg: d < 0 });
     }
     return cells;
@@ -646,7 +707,7 @@ async function IncomeStatementCard({
   const expenseRows = rows.filter((r) => r.accountType === "expense");
 
   return (
-    <Card title={`Income Statement — ${period.label}`}>
+    <Card title={`Income Statement · ${baseCode} — ${period.label}`}>
       <Table>
         <THead>
           <SectionHeading
@@ -672,17 +733,12 @@ async function IncomeStatementCard({
             cells={
               hasCmp
                 ? [
-                    { key: "curr", value: formatUSD(netIncome, { paren: true }) },
-                    { key: "cmp", value: formatUSD(cmpNet, { paren: true }) },
-                    {
-                      key: "delta",
-                      value: formatUSD(netIncome - cmpNet, { paren: true }),
-                    },
+                    { key: "curr", value: fmt(netIncome) },
+                    { key: "cmp", value: fmt(cmpNet) },
+                    { key: "delta", value: fmt(netIncome - cmpNet) },
                     { key: "deltaPct", value: pctChange(netIncome, cmpNet) },
                   ]
-                : [
-                    { key: "curr", value: formatUSD(netIncome, { paren: true }) },
-                  ]
+                : [{ key: "curr", value: fmt(netIncome) }]
             }
           />
         </TBody>
@@ -696,14 +752,20 @@ async function IncomeStatementCard({
 async function MonthlyIncomeCard({
   year,
   scope,
+  compact,
+  baseCode,
 }: {
   year: number;
   scope: string | null;
+  compact: boolean;
+  baseCode: string;
 }) {
   const m = await getMonthlyIncomeStatement(year, scope);
+  const fmt = (n: number) =>
+    formatMoney(n, "USD", { paren: true, compact, hideCurrency: true });
 
   return (
-    <Card title={`Monthly Income Statement — ${year}`}>
+    <Card title={`Monthly Income Statement · ${baseCode} — ${year}`}>
       <Table>
         <THead>
           <TR hover={false}>
@@ -731,12 +793,10 @@ async function MonthlyIncomeCard({
               <TD>{r.name}</TD>
               {r.byMonth.map((v, i) => (
                 <TD key={i} num neg={v < 0}>
-                  {v === 0 ? "—" : formatUSD(v, { paren: true })}
+                  {v === 0 ? "—" : fmt(v)}
                 </TD>
               ))}
-              <TD num neg={r.total < 0}>
-                {formatUSD(r.total, { paren: true })}
-              </TD>
+              <TD num neg={r.total < 0}>{fmt(r.total)}</TD>
             </TR>
           ))}
           <TR total hover={false}>
@@ -744,14 +804,10 @@ async function MonthlyIncomeCard({
               Total Revenue
             </TD>
             {m.revenueByMonth.map((v, i) => (
-              <TD key={i} num neg={v < 0}>
-                {formatUSD(v, { paren: true })}
-              </TD>
+              <TD key={i} num neg={v < 0}>{fmt(v)}</TD>
             ))}
             <TD num neg={m.revenueByMonth.reduce((s, v) => s + v, 0) < 0}>
-              {formatUSD(m.revenueByMonth.reduce((s, v) => s + v, 0), {
-                paren: true,
-              })}
+              {fmt(m.revenueByMonth.reduce((s, v) => s + v, 0))}
             </TD>
           </TR>
           <TR total hover={false}>
@@ -759,14 +815,10 @@ async function MonthlyIncomeCard({
               Total Expenses
             </TD>
             {m.expensesByMonth.map((v, i) => (
-              <TD key={i} num neg={v < 0}>
-                {formatUSD(v, { paren: true })}
-              </TD>
+              <TD key={i} num neg={v < 0}>{fmt(v)}</TD>
             ))}
             <TD num neg={m.expensesByMonth.reduce((s, v) => s + v, 0) < 0}>
-              {formatUSD(m.expensesByMonth.reduce((s, v) => s + v, 0), {
-                paren: true,
-              })}
+              {fmt(m.expensesByMonth.reduce((s, v) => s + v, 0))}
             </TD>
           </TR>
           <TR total hover={false}>
@@ -790,7 +842,7 @@ async function MonthlyIncomeCard({
                   background: "var(--p-formation-bg)",
                 }}
               >
-                {formatUSD(v, { paren: true })}
+                {fmt(v)}
               </TD>
             ))}
             <TD
@@ -801,9 +853,7 @@ async function MonthlyIncomeCard({
                 background: "var(--p-formation-bg)",
               }}
             >
-              {formatUSD(m.netByMonth.reduce((s, v) => s + v, 0), {
-                paren: true,
-              })}
+              {fmt(m.netByMonth.reduce((s, v) => s + v, 0))}
             </TD>
           </TR>
         </TBody>
@@ -814,7 +864,7 @@ async function MonthlyIncomeCard({
 
 // ------- Trial Balance -------
 
-async function TrialBalanceCard() {
+async function TrialBalanceCard({ baseCode }: { baseCode: string }) {
   const trial = await getTrialBalance();
   const trialDebits = trial.reduce((s, r) => s + r.debit, 0);
   const trialCredits = trial.reduce((s, r) => s + r.credit, 0);
@@ -822,7 +872,7 @@ async function TrialBalanceCard() {
 
   return (
     <Card
-      title="Trial Balance"
+      title={`Trial Balance · ${baseCode}`}
       actions={
         trialBalanced ? (
           <Pill variant="active">Balanced</Pill>
@@ -836,8 +886,8 @@ async function TrialBalanceCard() {
           <TR hover={false}>
             <TH>Code</TH>
             <TH>Account</TH>
-            <TH num>Debit</TH>
-            <TH num>Credit</TH>
+            <TH num>Debit ({baseCode})</TH>
+            <TH num>Credit ({baseCode})</TH>
           </TR>
         </THead>
         <TBody>
@@ -869,8 +919,8 @@ async function TrialBalanceCard() {
             <TD colSpan={2} style={{ fontWeight: 600, color: "var(--ink)" }}>
               Totals
             </TD>
-            <TD num>{formatUSD(trialDebits)}</TD>
-            <TD num>{formatUSD(trialCredits)}</TD>
+            <TD num>{formatMoney(trialDebits, "USD", { hideCurrency: true })}</TD>
+            <TD num>{formatMoney(trialCredits, "USD", { hideCurrency: true })}</TD>
           </TR>
         </TBody>
       </Table>

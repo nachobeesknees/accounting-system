@@ -18,7 +18,7 @@ import {
   getSignersByBankAccountId,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import type { SigningAuthority } from "@/lib/types";
 import { CustomFields } from "@/components/CustomFields";
 import { Attachments } from "@/components/Attachments";
@@ -231,7 +231,7 @@ export default async function Page({
                 }}
               >
                 {bank.currentBalance
-                  ? formatUSD(parseAmount(bank.currentBalance), { paren: true })
+                  ? formatMoney(parseAmount(bank.currentBalance), "USD", { compact: true, paren: true })
                   : "—"}
               </div>
               <div style={{ color: "var(--ink-3)" }}>

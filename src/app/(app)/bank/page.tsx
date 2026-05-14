@@ -42,7 +42,7 @@ export default async function Page() {
     }
   }
   const formatBase = (n: number) =>
-    `${baseSymbol}${formatAmount(n, { paren: true })}`;
+    `${baseSymbol}${formatAmount(n, { paren: true, compact: true })}`;
 
   return (
     <>
@@ -79,7 +79,7 @@ export default async function Page() {
                   <TH>Owner</TH>
                   <TH>As of</TH>
                   <TH num>Native balance</TH>
-                  <TH num>In {baseCode}</TH>
+                  <TH num>{baseCode}</TH>
                   <TH>Status</TH>
                 </TR>
               </THead>
@@ -116,7 +116,7 @@ export default async function Page() {
                       </TD>
                       <TD num>
                         {b.currentBalance
-                          ? `${b.currencyCode} ${formatAmount(parseAmount(b.currentBalance), { paren: true })}`
+                          ? `${b.currencyCode} ${formatAmount(parseAmount(b.currentBalance), { paren: true, compact: true })}`
                           : "—"}
                       </TD>
                       <TD num>

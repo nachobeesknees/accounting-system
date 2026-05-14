@@ -217,9 +217,7 @@ export default async function Page({
                 >
                   {formatMoney(
                     parseAmount(latest.value),
-                    latest.currencyCode || asset.currencyCode,
-                    { paren: true },
-                  )}
+                    latest.currencyCode || asset.currencyCode, { compact: true, paren: true },)}
                 </div>
                 <div style={{ color: "var(--ink-3)" }}>
                   {formatDate(latest.snapshotDate)}
@@ -308,9 +306,7 @@ export default async function Page({
                     <TD num>
                       {formatMoney(
                         parseAmount(s.value),
-                        s.currencyCode || asset.currencyCode,
-                        { paren: true },
-                      )}
+                        s.currencyCode || asset.currencyCode, { compact: true, paren: true },)}
                     </TD>
                     <TD style={{ color: "var(--ink-3)" }}>{s.source ?? "—"}</TD>
                     <TD style={{ color: "var(--ink-3)" }}>{s.notes ?? "—"}</TD>

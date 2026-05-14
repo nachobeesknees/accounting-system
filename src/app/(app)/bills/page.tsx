@@ -9,7 +9,7 @@ import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getBills, getVendors } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
 import type { Bill, Vendor } from "@/lib/types";
 
@@ -134,8 +134,8 @@ export default async function Page({
                   <TH>Vendor</TH>
                   <TH>Date</TH>
                   <TH>Due</TH>
-                  <TH num>Total</TH>
-                  <TH num>Balance</TH>
+                  <TH num>Total (USD)</TH>
+                  <TH num>Balance (USD)</TH>
                   <TH>Status</TH>
                 </TR>
               </THead>
@@ -162,6 +162,7 @@ export default async function Page({
                           value={bill.total}
                           href={`/bills/${bill.id}`}
                           currencyCode={null}
+                          compact
                         />
                       </TD>
                       <TD num neg={isOverdue}>
@@ -169,6 +170,7 @@ export default async function Page({
                           value={bal}
                           href={`/bills/${bill.id}`}
                           currencyCode={null}
+                          compact
                           neg={isOverdue || bal < 0}
                         />
                       </TD>
@@ -185,8 +187,8 @@ export default async function Page({
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD>{""}</TD>
-                  <TD num>{formatUSD(totalSum, { paren: true })}</TD>
-                  <TD num>{formatUSD(balanceSum, { paren: true })}</TD>
+                  <TD num>{formatMoney(totalSum, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
+                  <TD num>{formatMoney(balanceSum, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                   <TD>{""}</TD>
                 </TR>
               </TBody>

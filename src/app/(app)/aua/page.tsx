@@ -120,7 +120,7 @@ export default async function Page() {
     byKind.set(a.kind, (byKind.get(a.kind) ?? 0) + converted);
   }
   const formatBase = (n: number) =>
-    `${baseSymbol}${formatAmount(n, { paren: true })}`;
+    `${baseSymbol}${formatAmount(n, { paren: true, compact: true })}`;
 
   const sortedClients = customers
     .map((c) => ({ client: c, total: byClient.get(c.id) ?? 0 }))
@@ -285,7 +285,7 @@ export default async function Page() {
                   <TH>Class</TH>
                   <TH>Latest snapshot</TH>
                   <TH num>Native value</TH>
-                  <TH num>In {baseCode}</TH>
+                  <TH num>{baseCode}</TH>
                 </TR>
               </THead>
               <TBody>
@@ -341,16 +341,16 @@ export default async function Page() {
                         {snap ? formatDate(snap.snapshotDate) : "No snapshot"}
                       </TD>
                       <TD num>
-                        {snap ? `${ccy} ${formatAmount(nativeValue, { paren: true })}` : "—"}
+                        {snap ? `${ccy} ${formatAmount(nativeValue, { paren: true, compact: true })}` : "—"}
                       </TD>
-                      <TD num>{snap ? formatBase(baseValue) : "—"}</TD>
+                      <TD num>{snap ? formatAmount(baseValue, { paren: true, compact: true }) : "—"}</TD>
                     </TR>
                   );
                 })}
                 <TR total hover={false}>
                   <TD colSpan={5}>Total AUA</TD>
                   <TD num>{""}</TD>
-                  <TD num>{formatBase(totalAua)}</TD>
+                  <TD num>{formatAmount(totalAua, { paren: true, compact: true })}</TD>
                 </TR>
               </TBody>
             </Table>

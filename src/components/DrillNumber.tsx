@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { formatAmount, formatMoney, formatUSD } from "@/lib/money";
+import { formatAmount, formatMoney } from "@/lib/money";
 
 /**
  * Every money figure in the app should be drillable — clicking a balance
@@ -21,6 +21,7 @@ export function DrillNumber({
   href,
   currencyCode,
   paren = true,
+  compact = false,
   mono = true,
   neg,
   title,
@@ -30,10 +31,18 @@ export function DrillNumber({
 }: {
   value: number | string;
   href?: string;
-  /** When provided renders as `XYZ 1,234.56`; otherwise plain `1,234.56`. */
+  /**
+   * Currency to render alongside the number:
+   *   - `string` (e.g. `"USD"`) → `USD 1,234.56`
+   *   - `null` → plain `1,234.56` (no currency; caller is responsible for
+   *     showing it elsewhere, e.g. in the column header)
+   *   - `undefined` → plain `1,234.56` (numeric-only)
+   */
   currencyCode?: string | null;
   /** Render negatives in parens. Defaults to true (accounting convention). */
   paren?: boolean;
+  /** Drop cents for amounts ≥ $1,000 and strip trailing `.00` for amounts < $1,000. */
+  compact?: boolean;
   mono?: boolean;
   /** Force red color (overrides automatic negative coloring). */
   neg?: boolean;
@@ -45,11 +54,9 @@ export function DrillNumber({
   const n = typeof value === "string" ? parseFloat(value.replace(/,/g, "")) : value;
   const isNegative = neg ?? (Number.isFinite(n) && n < 0);
   const text =
-    currencyCode === undefined
-      ? formatAmount(value, { paren })
-      : currencyCode === null
-        ? formatUSD(value, { paren })
-        : formatMoney(value, currencyCode, { paren });
+    currencyCode == null
+      ? formatAmount(value, { paren, compact })
+      : formatMoney(value, currencyCode, { paren, compact });
 
   const numberStyle: React.CSSProperties = {
     fontVariantNumeric: "tabular-nums",

@@ -21,7 +21,7 @@ import {
   getLatestFxRates,
   getVendors,
 } from "@/lib/data";
-import { formatAmount, formatUSD } from "@/lib/money";
+import { formatAmount, formatMoney } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
 import { parseAmount } from "@/lib/money";
 import { getSessionUser } from "@/lib/session";
@@ -315,26 +315,26 @@ export default async function Page() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 px-6 my-3.5">
         <Tile
-          label="Total Assets"
-          value={formatUSD(kpis.assets, { paren: true })}
+          label={`Total Assets (${baseCode})`}
+          value={formatMoney(kpis.assets, baseCode, { paren: true, compact: true, hideCurrency: true })}
           sub="All asset accounts"
           href="/reports"
         />
         <Tile
-          label="Total Liabilities"
-          value={formatUSD(kpis.liabilities, { paren: true })}
+          label={`Total Liabilities (${baseCode})`}
+          value={formatMoney(kpis.liabilities, baseCode, { paren: true, compact: true, hideCurrency: true })}
           sub="All liability accounts"
           href="/reports"
         />
         <Tile
-          label="Net Income (YTD)"
-          value={formatUSD(kpis.netIncome, { paren: true })}
+          label={`Net Income YTD (${baseCode})`}
+          value={formatMoney(kpis.netIncome, baseCode, { paren: true, compact: true, hideCurrency: true })}
           sub="Revenue minus expense"
           href="/reports"
         />
         <Tile
-          label="Cash Balance"
-          value={formatUSD(kpis.cash, { paren: true })}
+          label={`Cash Balance (${baseCode})`}
+          value={formatMoney(kpis.cash, baseCode, { paren: true, compact: true, hideCurrency: true })}
           sub="Account 1000 — Cash"
           href="/bank"
         />
@@ -375,11 +375,10 @@ export default async function Page() {
                     </TD>
                     <TD mono>{r.ccy}</TD>
                     <TD num neg={r.netNative < 0}>
-                      {formatAmount(r.netNative, { paren: true })}
+                      {formatAmount(r.netNative, { paren: true, compact: true })}
                     </TD>
                     <TD num neg={r.netBase < 0}>
-                      {baseSymbol}
-                      {formatAmount(r.netBase, { paren: true })}
+                      {formatAmount(r.netBase, { paren: true, compact: true })}
                     </TD>
                   </TR>
                 ))}

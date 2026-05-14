@@ -23,7 +23,7 @@ import {
   getVendorById,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatMoney, formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import type { Bill } from "@/lib/types";
 
 import {
@@ -291,12 +291,12 @@ export default async function Page({
             />
             <KV
               k="Total"
-              v={formatMoney(bill.total, bill.currencyCode, { paren: true })}
+              v={formatMoney(bill.total, bill.currencyCode, { compact: true, paren: true })}
               mono
             />
             <KV
               k="Amount paid"
-              v={formatMoney(bill.amountPaid, bill.currencyCode, { paren: true })}
+              v={formatMoney(bill.amountPaid, bill.currencyCode, { compact: true, paren: true })}
               mono
             />
             <KV
@@ -309,7 +309,7 @@ export default async function Page({
                       : undefined,
                   }}
                 >
-                  {formatMoney(balance, bill.currencyCode, { paren: true })}
+                  {formatMoney(balance, bill.currencyCode, { compact: true, paren: true })}
                 </span>
               }
               mono
@@ -447,8 +447,8 @@ export default async function Page({
                       )}
                     </TD>
                     <TD num>{line.quantity}</TD>
-                    <TD num>{formatMoney(line.unitPrice, bill.currencyCode, { paren: true })}</TD>
-                    <TD num>{formatMoney(line.amount, bill.currencyCode, { paren: true })}</TD>
+                    <TD num>{formatMoney(line.unitPrice, bill.currencyCode, { compact: true, paren: true })}</TD>
+                    <TD num>{formatMoney(line.amount, bill.currencyCode, { compact: true, paren: true })}</TD>
                   </TR>
                 );
               })}
@@ -458,7 +458,7 @@ export default async function Page({
                 <TD>Subtotal</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD num>{formatMoney(bill.subtotal, bill.currencyCode, { paren: true })}</TD>
+                <TD num>{formatMoney(bill.subtotal, bill.currencyCode, { compact: true, paren: true })}</TD>
               </TR>
               <TR total hover={false}>
                 <TD>{""}</TD>
@@ -466,7 +466,7 @@ export default async function Page({
                 <TD>Tax</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD num>{formatMoney(bill.taxAmount, bill.currencyCode, { paren: true })}</TD>
+                <TD num>{formatMoney(bill.taxAmount, bill.currencyCode, { compact: true, paren: true })}</TD>
               </TR>
               <TR total hover={false}>
                 <TD>{""}</TD>
@@ -474,7 +474,7 @@ export default async function Page({
                 <TD>Total</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD num>{formatMoney(bill.total, bill.currencyCode, { paren: true })}</TD>
+                <TD num>{formatMoney(bill.total, bill.currencyCode, { compact: true, paren: true })}</TD>
               </TR>
             </TBody>
           </Table>
@@ -548,7 +548,7 @@ export default async function Page({
                   k="Rebill amount"
                   v={
                     rebillPreview != null
-                      ? formatUSD(rebillPreview, { paren: true })
+                      ? formatMoney(rebillPreview, "USD", { paren: true , compact: true })
                       : "—"
                   }
                   mono

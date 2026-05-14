@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import type { Bill, BillChargebackType, Customer, Entity } from "@/lib/types";
 
 import { setBillChargebackAction } from "./actions";
@@ -57,15 +57,15 @@ export function BillChargebackPanel({
     if (recipient === "none") return null;
     switch (method) {
       case "cost":
-        return `At cost: ${formatUSD(total, { paren: true })}`;
+        return `At cost: ${formatMoney(total, "USD", { paren: true , compact: true })}`;
       case "markup": {
         const pct = parseAmount(markupPct);
         const amt = Math.round(total * (1 + pct / 100) * 100) / 100;
-        return `With ${pct || 0}% markup: ${formatUSD(amt, { paren: true })}`;
+        return `With ${pct || 0}% markup: ${formatMoney(amt, "USD", { paren: true , compact: true })}`;
       }
       case "fixed": {
         const amt = parseAmount(rebillAmount);
-        return `Fixed: ${formatUSD(amt, { paren: true })}`;
+        return `Fixed: ${formatMoney(amt, "USD", { paren: true , compact: true })}`;
       }
       case "included":
         return "Included in annual fee — no separate invoice will be generated.";

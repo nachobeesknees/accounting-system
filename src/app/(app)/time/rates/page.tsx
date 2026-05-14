@@ -8,7 +8,7 @@ import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getEmployeeRates, getUsers } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import { createRateAction, deleteRateAction } from "./actions";
 
 export default async function Page({
@@ -78,9 +78,9 @@ export default async function Page({
                     <TR key={r.id}>
                       <TD>{u?.fullName ?? "—"}</TD>
                       <TD style={{ color: "var(--ink-3)" }}>{r.role}</TD>
-                      <TD num>{formatUSD(r.billableRate, { paren: true })}</TD>
+                      <TD num>{formatMoney(r.billableRate, "USD", { paren: true , compact: true })}</TD>
                       <TD num>
-                        {r.costRate ? formatUSD(r.costRate, { paren: true }) : "—"}
+                        {r.costRate ? formatMoney(r.costRate, "USD", { paren: true , compact: true }) : "—"}
                       </TD>
                       <TD>{formatDate(r.effectiveDate)}</TD>
                       <TD>

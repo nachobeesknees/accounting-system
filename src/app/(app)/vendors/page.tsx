@@ -8,7 +8,7 @@ import { IconUsers } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getAccounts, getBills, getVendors } from "@/lib/data";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import type { Vendor } from "@/lib/types";
 
 function filterVendors(vendors: Vendor[], q: string): Vendor[] {
@@ -111,7 +111,7 @@ export default async function Page({
                   <TH>Email</TH>
                   <TH>Default expense acct</TH>
                   <TH num>Terms</TH>
-                  <TH num>Balance</TH>
+                  <TH num>Balance (USD)</TH>
                   <TH>Status</TH>
                 </TR>
               </THead>
@@ -138,7 +138,7 @@ export default async function Page({
                       </TD>
                       <TD mono>{acct?.code ?? "—"}</TD>
                       <TD num>{`Net ${v.paymentTerms}`}</TD>
-                      <TD num>{formatUSD(balance, { paren: true })}</TD>
+                      <TD num>{formatMoney(balance, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                       <TD>
                         <Pill variant={statusVariant(statusKey)}>
                           {statusLabel(statusKey)}
@@ -153,7 +153,7 @@ export default async function Page({
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD>{""}</TD>
-                  <TD num>{formatUSD(balanceTotal, { paren: true })}</TD>
+                  <TD num>{formatMoney(balanceTotal, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                   <TD>{""}</TD>
                 </TR>
               </TBody>

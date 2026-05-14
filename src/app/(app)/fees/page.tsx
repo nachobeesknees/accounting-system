@@ -13,7 +13,7 @@ import {
   getEntityFees,
   getFeeSchedules,
 } from "@/lib/data";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import type { EntityKind } from "@/lib/types";
 
 const KIND_LABEL: Record<EntityKind, string> = {
@@ -105,7 +105,7 @@ export default async function Page({
                     color: "var(--ink)",
                   }}
                 >
-                  {formatUSD(totalBilled, { paren: true })}
+                  {formatMoney(totalBilled, "USD", { paren: true , compact: true })}
                 </span>
                 {" · "}Unbilled:{" "}
                 <span
@@ -115,7 +115,7 @@ export default async function Page({
                     color: "var(--ink)",
                   }}
                 >
-                  {formatUSD(totalUnbilled, { paren: true })}
+                  {formatMoney(totalUnbilled, "USD", { paren: true , compact: true })}
                 </span>
               </span>
             }
@@ -139,7 +139,7 @@ export default async function Page({
                     <TH>Entity</TH>
                     <TH>Client</TH>
                     <TH>Schedule</TH>
-                    <TH num>Annual fee</TH>
+                    <TH num>Annual fee (USD)</TH>
                     <TH num>Included hrs</TH>
                     <TH>Status</TH>
                   </TR>
@@ -175,7 +175,7 @@ export default async function Page({
                         <TD style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
                           {sched?.name ?? "Custom"}
                         </TD>
-                        <TD num>{formatUSD(f.annualFee, { paren: true })}</TD>
+                        <TD num>{formatMoney(f.annualFee, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                         <TD num>{parseFloat(f.includedHours).toFixed(0)}</TD>
                         <TD>
                           <Pill variant={statusVariant(f.status)}>
@@ -188,13 +188,11 @@ export default async function Page({
                   <TR total hover={false}>
                     <TD colSpan={4}>Totals</TD>
                     <TD num>
-                      {formatUSD(
+                      {formatMoney(
                         assignments.reduce(
                           (s, f) => s + parseAmount(f.annualFee),
                           0,
-                        ),
-                        { paren: true },
-                      )}
+                        ), "USD", { compact: true, paren: true, hideCurrency: true },)}
                     </TD>
                     <TD num>
                       {assignments
@@ -229,7 +227,7 @@ export default async function Page({
                     <TH>Name</TH>
                     <TH>Kind</TH>
                     <TH num>Year</TH>
-                    <TH num>Annual fee</TH>
+                    <TH num>Annual fee (USD)</TH>
                     <TH num>Hours included</TH>
                     <TH>Status</TH>
                   </TR>
@@ -249,7 +247,7 @@ export default async function Page({
                         {KIND_LABEL[s.entityKind]}
                       </TD>
                       <TD num>{s.applicableYear ?? "—"}</TD>
-                      <TD num>{formatUSD(s.annualFee, { paren: true })}</TD>
+                      <TD num>{formatMoney(s.annualFee, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                       <TD num>{parseFloat(s.includedHours).toFixed(0)}</TD>
                       <TD>
                         <Pill variant={statusVariant(s.isActive ? "active" : "inactive")}>

@@ -8,7 +8,7 @@ import { Field, SelectField } from "@/components/ui/Field";
 import { Empty } from "@/components/ui/Empty";
 import { IconBookOpen } from "@/components/ui/Icon";
 import { getJournalEntries, totalDebits } from "@/lib/data";
-import { formatUSD } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import type { JournalEntry } from "@/lib/types";
 import { DrillNumber } from "@/components/DrillNumber";
 
@@ -201,7 +201,7 @@ export default async function Page({
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD>{""}</TD>
-                  <TD num>{formatUSD(grandTotal)}</TD>
+                  <TD num>{formatMoney(grandTotal, "USD")}</TD>
                 </TR>
               </TBody>
             </Table>

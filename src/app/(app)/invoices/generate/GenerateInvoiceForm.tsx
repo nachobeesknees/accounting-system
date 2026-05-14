@@ -12,7 +12,7 @@ import {
   TextareaField,
 } from "@/components/ui/Field";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import type { Customer, Entity, EntityFee } from "@/lib/types";
 import { generateInvoiceAction, type GenerateState } from "./actions";
 
@@ -222,13 +222,13 @@ export function GenerateInvoiceForm({
                     </span>
                   </TD>
                   <TD num>{fee.billingYear}</TD>
-                  <TD num>{formatUSD(fee.annualFee)}</TD>
+                  <TD num>{formatMoney(fee.annualFee, "USD")}</TD>
                 </TR>
               ))}
               <TR total hover={false}>
                 <TD>Total fees</TD>
                 <TD>{""}</TD>
-                <TD num>{formatUSD(feesTotal)}</TD>
+                <TD num>{formatMoney(feesTotal, "USD")}</TD>
               </TR>
             </TBody>
           </Table>
@@ -288,7 +288,7 @@ export function GenerateInvoiceForm({
                       />
                     </TD>
                     <TD>{opt.label}</TD>
-                    <TD num>{formatUSD(unit)}</TD>
+                    <TD num>{formatMoney(unit, "USD")}</TD>
                     <TD num>
                       <input
                         type="number"
@@ -319,7 +319,7 @@ export function GenerateInvoiceForm({
                           color: row.enabled ? "var(--ink-2)" : "var(--ink-4)",
                         }}
                       >
-                        {formatUSD(amount)}
+                        {formatMoney(amount, "USD")}
                       </span>
                     </TD>
                   </TR>
@@ -330,7 +330,7 @@ export function GenerateInvoiceForm({
                 <TD>Add-ons total</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD num>{formatUSD(addonsTotal)}</TD>
+                <TD num>{formatMoney(addonsTotal, "USD")}</TD>
               </TR>
             </TBody>
           </Table>
@@ -342,15 +342,15 @@ export function GenerateInvoiceForm({
           <TBody>
             <TR hover={false}>
               <TD>Annual fees total</TD>
-              <TD num>{formatUSD(feesTotal)}</TD>
+              <TD num>{formatMoney(feesTotal, "USD")}</TD>
             </TR>
             <TR hover={false}>
               <TD>Add-ons total</TD>
-              <TD num>{formatUSD(addonsTotal)}</TD>
+              <TD num>{formatMoney(addonsTotal, "USD")}</TD>
             </TR>
             <TR total hover={false}>
               <TD>Grand total</TD>
-              <TD num>{formatUSD(grandTotal)}</TD>
+              <TD num>{formatMoney(grandTotal, "USD")}</TD>
             </TR>
           </TBody>
         </Table>

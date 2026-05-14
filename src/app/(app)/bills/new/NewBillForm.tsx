@@ -7,7 +7,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { formatMoneyInput, formatUSD, parseAmount } from "@/lib/money";
+import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
 import type {
   Account,
   Customer,
@@ -87,15 +87,15 @@ export function NewBillForm({
     if (recipient === "none") return null;
     switch (cbMethod) {
       case "cost":
-        return `At cost: ${formatUSD(subtotal, { paren: true })}`;
+        return `At cost: ${formatMoney(subtotal, "USD", { paren: true })}`;
       case "markup": {
         const pct = parseAmount(markupPct);
         const amt = Math.round(subtotal * (1 + pct / 100) * 100) / 100;
-        return `With ${pct || 0}% markup: ${formatUSD(amt, { paren: true })}`;
+        return `With ${pct || 0}% markup: ${formatMoney(amt, "USD", { paren: true })}`;
       }
       case "fixed": {
         const amt = parseAmount(rebillAmount);
-        return `Fixed: ${formatUSD(amt, { paren: true })}`;
+        return `Fixed: ${formatMoney(amt, "USD", { paren: true })}`;
       }
       case "included":
         return "Included in annual fee — no separate invoice will be generated.";
@@ -347,7 +347,7 @@ export function NewBillForm({
                     />
                   </TD>
                   <TD num mono>
-                    {formatUSD(amount, { paren: true })}
+                    {formatMoney(amount, "USD", { paren: true })}
                   </TD>
                   <TD>
                     <button
@@ -378,7 +378,7 @@ export function NewBillForm({
               <TD>{""}</TD>
               <TD>Subtotal</TD>
               <TD num mono>
-                {formatUSD(subtotal, { paren: true })}
+                {formatMoney(subtotal, "USD", { paren: true })}
               </TD>
               <TD>{""}</TD>
             </TR>

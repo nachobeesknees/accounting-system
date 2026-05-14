@@ -24,7 +24,7 @@ import {
 } from "@/lib/data";
 import type { Bill, Customer } from "@/lib/types";
 import { formatDate } from "@/lib/format";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import { PendingChargebacksCard } from "./PendingChargebacksCard";
 
 function computeRebill(bill: Bill): number | null {
@@ -123,8 +123,7 @@ export default async function Page({
     regionsByGroup.set(key, arr);
   }
   const orderedRegionGroupIds = regionGroups.map((g) => g.id);
-  const customerRegionId =
-    (customer as { regionId?: string | null }).regionId ?? null;
+  const customerRegionId = (customer as { regionId?: string | null }).regionId ?? null;
   const vendorById = new Map(vendors.map((v) => [v.id, v] as const));
   const chargebackRows = pendingChargebacks
     .filter(
@@ -283,17 +282,17 @@ export default async function Page({
           <KVGrid>
             <KV
               k="Total invoiced"
-              v={formatUSD(totalInvoiced, { paren: true })}
+              v={formatMoney(totalInvoiced, "USD", { paren: true , compact: true })}
               mono
             />
             <KV
               k="Total paid"
-              v={formatUSD(totalPaid, { paren: true })}
+              v={formatMoney(totalPaid, "USD", { paren: true , compact: true })}
               mono
             />
             <KV
               k="Outstanding balance"
-              v={formatUSD(outstanding, { paren: true })}
+              v={formatMoney(outstanding, "USD", { paren: true , compact: true })}
               mono
             />
             <KV
@@ -563,9 +562,9 @@ export default async function Page({
                       </TD>
                       <TD>{formatDate(inv.invoiceDate)}</TD>
                       <TD>{formatDate(inv.dueDate)}</TD>
-                      <TD num>{formatUSD(inv.total, { paren: true })}</TD>
+                      <TD num>{formatMoney(inv.total, "USD", { paren: true , compact: true })}</TD>
                       <TD num neg={isOverdue}>
-                        {formatUSD(bal, { paren: true })}
+                        {formatMoney(bal, "USD", { paren: true , compact: true })}
                       </TD>
                       <TD>
                         <Pill variant={statusVariant(inv.status)}>

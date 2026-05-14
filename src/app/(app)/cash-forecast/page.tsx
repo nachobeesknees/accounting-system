@@ -7,7 +7,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { DEMO_TODAY, getKpis } from "@/lib/data";
 import { getCashForecast, type ForecastItem } from "@/lib/forecast";
 import { formatDate } from "@/lib/format";
-import { formatUSD } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 
 const ALLOWED_HORIZONS = [4, 13, 26, 52] as const;
 type Horizon = (typeof ALLOWED_HORIZONS)[number];
@@ -74,7 +74,7 @@ export default async function Page({
     <>
       <PageHeader
         title="Cash Forecast"
-        meta={`Starting balance ${formatUSD(kpis.cash)} · ${weeks}-week horizon`}
+        meta={`Starting balance ${formatMoney(kpis.cash, "USD", { compact: true })} · ${weeks}-week horizon`}
         actions={
           <ButtonLink href="/cash-forecast/recurring" variant="secondary">
             Recurring payments
@@ -120,7 +120,7 @@ export default async function Page({
                     : "var(--p-review-fg)",
               }}
             >
-              {formatUSD(projectedEnding, { paren: true })}
+              {formatMoney(projectedEnding, "USD", { paren: true , compact: true })}
             </div>
             <div
               className="text-[11.5px] mt-1"
@@ -138,7 +138,7 @@ export default async function Page({
                 color: "var(--p-active-fg)",
               }}
             >
-              {formatUSD(totalInflows)}
+              {formatMoney(totalInflows, "USD", { compact: true })}
             </div>
             <div
               className="text-[11.5px] mt-1"
@@ -156,7 +156,7 @@ export default async function Page({
                 color: "var(--p-review-fg)",
               }}
             >
-              {formatUSD(totalOutflows)}
+              {formatMoney(totalOutflows, "USD", { compact: true })}
             </div>
             <div
               className="text-[11.5px] mt-1"
@@ -190,15 +190,15 @@ export default async function Page({
                 {rows.map((r) => (
                   <TR key={r.weekStart} hover={false}>
                     <TD mono>{formatDate(r.weekStart)}</TD>
-                    <TD num>{formatUSD(r.inflowsFromInvoices)}</TD>
-                    <TD num>{formatUSD(r.inflowsFromEntityFees)}</TD>
-                    <TD num>{formatUSD(r.outflowsFromBills)}</TD>
-                    <TD num>{formatUSD(r.outflowsFromRecurring)}</TD>
+                    <TD num>{formatMoney(r.inflowsFromInvoices, "USD", { compact: true })}</TD>
+                    <TD num>{formatMoney(r.inflowsFromEntityFees, "USD", { compact: true })}</TD>
+                    <TD num>{formatMoney(r.outflowsFromBills, "USD", { compact: true })}</TD>
+                    <TD num>{formatMoney(r.outflowsFromRecurring, "USD", { compact: true })}</TD>
                     <TD num neg={r.netDelta < 0}>
-                      {formatUSD(r.netDelta, { paren: true })}
+                      {formatMoney(r.netDelta, "USD", { paren: true , compact: true })}
                     </TD>
                     <TD num neg={r.endingBalance < 0}>
-                      {formatUSD(r.endingBalance, { paren: true })}
+                      {formatMoney(r.endingBalance, "USD", { paren: true , compact: true })}
                     </TD>
                   </TR>
                 ))}
@@ -239,7 +239,7 @@ export default async function Page({
                       </TD>
                       <TD>{it.description}</TD>
                       <TD num neg={it.isOutflow}>
-                        {formatUSD(signed, { paren: true })}
+                        {formatMoney(signed, "USD", { paren: true , compact: true })}
                       </TD>
                     </TR>
                   );
