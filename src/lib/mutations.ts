@@ -1664,6 +1664,9 @@ export async function createVendor(
     address?: string | null;
     paymentTerms: number;
     defaultExpenseAccountId?: string | null;
+    invoiceNumberPrefix?: string | null;
+    invoiceNumberPattern?: string | null;
+    invoiceNumberLastUsed?: string | null;
   },
 ) {
   const db = getDb();
@@ -1689,9 +1692,33 @@ export async function createVendor(
       defaultExpenseAccountId: input.defaultExpenseAccountId ?? null,
       isActive: true,
       notes: null,
+      invoiceNumberPrefix: input.invoiceNumberPrefix ?? null,
+      invoiceNumberPattern: input.invoiceNumberPattern ?? null,
+      invoiceNumberLastUsed: input.invoiceNumberLastUsed ?? null,
     })
     .returning();
   return created;
+}
+
+export async function updateVendorInvoiceNumberRule(
+  _user: SessionUser,
+  vendorId: string,
+  rule: {
+    invoiceNumberPrefix?: string | null;
+    invoiceNumberPattern?: string | null;
+    invoiceNumberLastUsed?: string | null;
+  },
+) {
+  const db = getDb();
+  await db
+    .update(schema.vendors)
+    .set({
+      invoiceNumberPrefix: rule.invoiceNumberPrefix ?? null,
+      invoiceNumberPattern: rule.invoiceNumberPattern ?? null,
+      invoiceNumberLastUsed: rule.invoiceNumberLastUsed ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.vendors.id, vendorId));
 }
 
 // --------- Customer assignment ---------
@@ -2360,6 +2387,12 @@ export type CreateBillInput = {
   billDate: string;
   dueDate: string;
   reference?: string | null;
+  /**
+   * The vendor's own invoice number — informational, separate from our
+   * internal bill_number. When set we also bump the vendor's
+   * invoice_number_last_used so future suggestions roll forward.
+   */
+  vendorInvoiceNumber?: string | null;
   notes?: string | null;
   /** Who the bill is on-behalf-of (separate from chargeback rebill target). */
   clientId?: string | null;
@@ -2395,11 +2428,15 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
   // non-USD scope picks up that firm's ccy.
   const { currencyCode } = await getFirmIssuingCurrency();
 
+  const vendorInvoiceNumber =
+    input.vendorInvoiceNumber?.trim() ? input.vendorInvoiceNumber.trim() : null;
+
   await db.transaction(async (tx) => {
     await tx.insert(schema.bills).values({
       id,
       billNumber,
       vendorId: input.vendorId,
+      vendorInvoiceNumber,
       billDate: input.billDate,
       dueDate: input.dueDate,
       status: "draft",
@@ -2440,6 +2477,15 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
         createdAt: now,
       })),
     );
+    if (vendorInvoiceNumber) {
+      await tx
+        .update(schema.vendors)
+        .set({
+          invoiceNumberLastUsed: vendorInvoiceNumber,
+          updatedAt: now,
+        })
+        .where(eq(schema.vendors.id, input.vendorId));
+    }
   });
   return { id, billNumber };
 }
@@ -3311,4 +3357,256 @@ export async function setPeriodStatus(
     .returning();
   if (!updated) throw new Error("Period not found.");
   return updated;
+}
+
+// --------- Duplicate / clone ---------
+
+/**
+ * Duplicate a journal entry. The copy is always a fresh draft: status,
+ * post/void stamps, journal links, and approval state are dropped. The new
+ * entry gets the next sequential entry number and today's date. Returns the
+ * created entry's id + entryNumber.
+ */
+export async function duplicateJournalEntry(
+  user: SessionUser,
+  sourceId: string,
+): Promise<{ id: string; entryNumber: string }> {
+  const db = getDb();
+  const [src] = await db
+    .select()
+    .from(schema.journalEntries)
+    .where(eq(schema.journalEntries.id, sourceId))
+    .limit(1);
+  if (!src) throw new Error("Source entry not found.");
+
+  const srcLines = await db
+    .select()
+    .from(schema.journalLines)
+    .where(eq(schema.journalLines.journalEntryId, sourceId))
+    .orderBy(schema.journalLines.lineNumber);
+
+  const id = uid("j");
+  const entryNumber = await nextEntryNumber();
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.journalEntries).values({
+      id,
+      entryNumber,
+      entryDate: today,
+      fiscalPeriodId: src.fiscalPeriodId,
+      description: src.description,
+      reference: src.reference,
+      source: src.source,
+      status: "draft",
+      postedAt: null,
+      postedBy: null,
+      voidedAt: null,
+      voidReason: null,
+      createdBy: user.userId,
+      entityId: src.entityId,
+      firmEntityId: src.firmEntityId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (srcLines.length > 0) {
+      await tx.insert(schema.journalLines).values(
+        srcLines.map((l, i) => ({
+          id: `${id}-l${i + 1}`,
+          journalEntryId: id,
+          lineNumber: i + 1,
+          accountId: l.accountId,
+          description: l.description,
+          debit: l.debit,
+          credit: l.credit,
+          entityId: l.entityId,
+          firmEntityId: l.firmEntityId,
+          dimensions: l.dimensions,
+          createdAt: now,
+        })),
+      );
+    }
+  });
+
+  return { id, entryNumber };
+}
+
+/**
+ * Duplicate an invoice into a new draft. The clone keeps customer, lines,
+ * notes (header notes only — append-only invoice_notes log is not copied),
+ * and dimensions; it always gets a fresh invoice number and today's date,
+ * with the due date offset by the original payment term gap.
+ */
+export async function duplicateInvoice(
+  _user: SessionUser,
+  sourceId: string,
+): Promise<{ id: string; invoiceNumber: string }> {
+  const db = getDb();
+  const [src] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, sourceId))
+    .limit(1);
+  if (!src) throw new Error("Source invoice not found.");
+
+  const srcLines = await db
+    .select()
+    .from(schema.invoiceLines)
+    .where(eq(schema.invoiceLines.invoiceId, sourceId))
+    .orderBy(schema.invoiceLines.lineNumber);
+
+  const id = uid("i");
+  const invoiceNumber = await nextInvoiceNumber();
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+
+  // Preserve the original gap between invoice date and due date so a
+  // duplicated Net-30 stays Net-30.
+  const gapMs =
+    new Date(`${src.dueDate}T00:00:00Z`).getTime() -
+    new Date(`${src.invoiceDate}T00:00:00Z`).getTime();
+  const dueDate = new Date(
+    new Date(`${today}T00:00:00Z`).getTime() + Math.max(0, gapMs),
+  )
+    .toISOString()
+    .slice(0, 10);
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.invoices).values({
+      id,
+      invoiceNumber,
+      customerId: src.customerId,
+      entityId: src.entityId,
+      clientId: src.clientId,
+      invoiceDate: today,
+      dueDate,
+      status: "draft",
+      cfoApprovedAt: null,
+      cfoApprovedBy: null,
+      assignedApprovedAt: null,
+      assignedApprovedBy: null,
+      rejectedAt: null,
+      rejectedBy: null,
+      rejectionReason: null,
+      subtotal: src.subtotal,
+      taxAmount: src.taxAmount,
+      total: src.total,
+      amountPaid: "0.00",
+      balanceDue: src.total,
+      currencyCode: src.currencyCode,
+      expectedPaymentDate: null,
+      notes: src.notes,
+      journalEntryId: null,
+      firmEntityId: src.firmEntityId,
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (srcLines.length > 0) {
+      await tx.insert(schema.invoiceLines).values(
+        srcLines.map((l, i) => ({
+          id: `${id}-l${i + 1}`,
+          invoiceId: id,
+          lineNumber: i + 1,
+          description: l.description,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          amount: l.amount,
+          accountId: l.accountId,
+          dimensions: l.dimensions,
+          createdAt: now,
+        })),
+      );
+    }
+  });
+
+  return { id, invoiceNumber };
+}
+
+/**
+ * Duplicate a bill into a new draft. The vendor invoice number reference
+ * is intentionally NOT carried over — the user must enter a fresh one. The
+ * bill number itself is auto-generated.
+ */
+export async function duplicateBill(
+  _user: SessionUser,
+  sourceId: string,
+): Promise<{ id: string; billNumber: string }> {
+  const db = getDb();
+  const [src] = await db
+    .select()
+    .from(schema.bills)
+    .where(eq(schema.bills.id, sourceId))
+    .limit(1);
+  if (!src) throw new Error("Source bill not found.");
+
+  const srcLines = await db
+    .select()
+    .from(schema.billLines)
+    .where(eq(schema.billLines.billId, sourceId))
+    .orderBy(schema.billLines.lineNumber);
+
+  const id = uid("b");
+  const billNumber = await nextBillNumber();
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+
+  const gapMs =
+    new Date(`${src.dueDate}T00:00:00Z`).getTime() -
+    new Date(`${src.billDate}T00:00:00Z`).getTime();
+  const dueDate = new Date(
+    new Date(`${today}T00:00:00Z`).getTime() + Math.max(0, gapMs),
+  )
+    .toISOString()
+    .slice(0, 10);
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.bills).values({
+      id,
+      billNumber,
+      vendorId: src.vendorId,
+      billDate: today,
+      dueDate,
+      status: "draft",
+      subtotal: src.subtotal,
+      taxAmount: src.taxAmount,
+      total: src.total,
+      amountPaid: "0.00",
+      balanceDue: src.total,
+      currencyCode: src.currencyCode,
+      notes: src.notes,
+      journalEntryId: null,
+      clientId: src.clientId,
+      entityId: src.entityId,
+      chargebackClientId: src.chargebackClientId,
+      chargebackEntityId: src.chargebackEntityId,
+      chargebackType: src.chargebackType,
+      markupPct: src.markupPct,
+      rebillAmount: src.rebillAmount,
+      chargebackInvoiceId: null,
+      chargebackNotes: src.chargebackNotes,
+      createdAt: now,
+      updatedAt: now,
+    });
+    if (srcLines.length > 0) {
+      await tx.insert(schema.billLines).values(
+        srcLines.map((l, i) => ({
+          id: `${id}-l${i + 1}`,
+          billId: id,
+          lineNumber: i + 1,
+          description: l.description,
+          quantity: l.quantity,
+          unitPrice: l.unitPrice,
+          amount: l.amount,
+          accountId: l.accountId,
+          clientId: l.clientId,
+          entityId: l.entityId,
+          dimensions: l.dimensions,
+          createdAt: now,
+        })),
+      );
+    }
+  });
+
+  return { id, billNumber };
 }

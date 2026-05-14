@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
 import { EntityScopePicker } from "./EntityScopePicker";
+import { GlobalSearchTrigger } from "./GlobalSearchTrigger";
 import { SidebarToggle } from "./SidebarToggle";
 import { setEntityScope } from "@/lib/entity-scope";
 import type { SessionUser } from "@/lib/types";
@@ -56,6 +57,7 @@ export function Topbar({
       </div>
 
       <div className="flex items-center gap-2">
+        <GlobalSearchTrigger />
         <EntityScopePicker
           entities={entities}
           current={currentEntityId}

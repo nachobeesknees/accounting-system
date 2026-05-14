@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { GlobalSearch } from "./GlobalSearch";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 import {
@@ -69,6 +70,7 @@ export async function AppShell({
       >
         {children}
       </main>
+      <GlobalSearch />
     </div>
   );
 }
