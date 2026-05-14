@@ -4,6 +4,8 @@ import {
   getCurrencies,
   getCustomers,
   getEntities,
+  getRegionGroups,
+  getRegions,
 } from "@/lib/data";
 import { NewEntityForm } from "./NewEntityForm";
 
@@ -23,12 +25,15 @@ export default async function Page({
   searchParams: Promise<{ client?: string }>;
 }) {
   const params = await searchParams;
-  const [customers, entities, currencies, base] = await Promise.all([
-    getCustomers(),
-    getEntities(),
-    getCurrencies(),
-    getBaseCurrency(),
-  ]);
+  const [customers, entities, currencies, base, regions, regionGroups] =
+    await Promise.all([
+      getCustomers(),
+      getEntities(),
+      getCurrencies(),
+      getBaseCurrency(),
+      getRegions(),
+      getRegionGroups(),
+    ]);
   const nextCode = nextEntityCode(entities.map((e) => e.code));
 
   return (
@@ -37,6 +42,8 @@ export default async function Page({
       <NewEntityForm
         customers={customers}
         currencies={currencies}
+        regions={regions}
+        regionGroups={regionGroups}
         nextCode={nextCode}
         defaultClientId={params.client}
         defaultCurrency={base?.code ?? "USD"}

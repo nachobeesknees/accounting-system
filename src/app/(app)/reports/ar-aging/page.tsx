@@ -9,6 +9,7 @@ import {
   SmartSelect,
   type SmartSelectOption,
 } from "@/components/ui/SmartSelect";
+import { DrillNumber } from "@/components/DrillNumber";
 import {
   DEMO_TODAY,
   getAllCustomerAssignments,
@@ -313,12 +314,14 @@ export default async function Page({
                       .filter((s): s is string => !!s)
                       .join(", ")
                   : "";
+                const clientInvoicesHref = `/invoices?customer=${encodeURIComponent(r.clientId)}`;
                 return (
                   <TR key={r.clientId} hover={false}>
                     <TD>
                       <Link
-                        href={`/customers/${r.clientId}`}
+                        href={clientInvoicesHref}
                         style={{ color: "var(--ink)", textDecoration: "none" }}
+                        title="Show this client's invoices"
                       >
                         {r.clientName}
                       </Link>
@@ -328,27 +331,36 @@ export default async function Page({
                         {assignedNames || "—"}
                       </span>
                     </TD>
-                    {BUCKET_HEADERS.map((h) => (
-                      <TD
-                        key={h.key}
-                        num
-                        neg={h.key === "d90p" && r.buckets[h.key] > 0}
-                      >
-                        {r.buckets[h.key] === 0
-                          ? "—"
-                          : formatMoney(r.buckets[h.key], "USD", {
-                              compact: true,
-                              paren: true,
-                              hideCurrency: true,
-                            })}
-                      </TD>
-                    ))}
+                    {BUCKET_HEADERS.map((h) => {
+                      const v = r.buckets[h.key];
+                      const href = `/invoices?customer=${encodeURIComponent(r.clientId)}&bucket=${h.key}`;
+                      return (
+                        <TD
+                          key={h.key}
+                          num
+                          neg={h.key === "d90p" && v > 0}
+                        >
+                          {v === 0 ? (
+                            "—"
+                          ) : (
+                            <DrillNumber
+                              value={v}
+                              href={href}
+                              currencyCode={null}
+                              compact
+                              neg={h.key === "d90p" && v > 0}
+                            />
+                          )}
+                        </TD>
+                      );
+                    })}
                     <TD num>
-                      {formatMoney(r.total, "USD", {
-                        compact: true,
-                        paren: true,
-                        hideCurrency: true,
-                      })}
+                      <DrillNumber
+                        value={r.total}
+                        href={clientInvoicesHref}
+                        currencyCode={null}
+                        compact
+                      />
                     </TD>
                   </TR>
                 );
@@ -358,19 +370,21 @@ export default async function Page({
                 <TD>{""}</TD>
                 {BUCKET_HEADERS.map((h) => (
                   <TD key={h.key} num>
-                    {formatMoney(totals[h.key], "USD", {
-                      compact: true,
-                      paren: true,
-                      hideCurrency: true,
-                    })}
+                    <DrillNumber
+                      value={totals[h.key]}
+                      href={`/invoices?bucket=${h.key}`}
+                      currencyCode={null}
+                      compact
+                    />
                   </TD>
                 ))}
                 <TD num>
-                  {formatMoney(totalReceivable, "USD", {
-                    compact: true,
-                    paren: true,
-                    hideCurrency: true,
-                  })}
+                  <DrillNumber
+                    value={totalReceivable}
+                    href="/invoices"
+                    currencyCode={null}
+                    compact
+                  />
                 </TD>
               </TR>
             </TBody>

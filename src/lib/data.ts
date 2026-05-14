@@ -2247,6 +2247,7 @@ async function getSignedBalancesInRange(
   start: string, // inclusive
   end: string, // inclusive
   scope: string | null | "all" = "all",
+  entityIds?: string[],
 ): Promise<Map<string, number>> {
   const db = getDb();
   const q = db
@@ -2266,7 +2267,13 @@ async function getSignedBalancesInRange(
     gte(schema.journalEntries.entryDate, start),
     lte(schema.journalEntries.entryDate, end),
   ];
-  if (scope === null) {
+  if (entityIds !== undefined) {
+    // Region scope: restrict to entries posted on any entity in the set.
+    // An empty set yields zero rows by design.
+    if (entityIds.length === 0) return new Map();
+    conds.push(inArray(schema.journalEntries.firmEntityId, entityIds));
+    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  } else if (scope === null) {
     conds.push(isNull(schema.journalEntries.firmEntityId));
     conds.push(isNull(schema.journalEntries.eliminationEntryId));
   } else if (scope !== "all") {
@@ -2290,6 +2297,7 @@ async function getSignedBalancesInRange(
 export async function getSignedBalancesAsOf(
   asOf: string,
   scope: string | null | "all" = "all",
+  entityIds?: string[],
 ): Promise<Map<string, number>> {
   const db = getDb();
   const q = db
@@ -2308,7 +2316,11 @@ export async function getSignedBalancesAsOf(
     eq(schema.journalEntries.status, "posted"),
     lte(schema.journalEntries.entryDate, asOf),
   ];
-  if (scope === null) {
+  if (entityIds !== undefined) {
+    if (entityIds.length === 0) return new Map();
+    conds.push(inArray(schema.journalEntries.firmEntityId, entityIds));
+    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  } else if (scope === null) {
     conds.push(isNull(schema.journalEntries.firmEntityId));
     conds.push(isNull(schema.journalEntries.eliminationEntryId));
   } else if (scope !== "all") {
@@ -2346,9 +2358,10 @@ export type KpisSummary = {
 export async function getKpisAsOf(
   asOf: string,
   scope?: string | null,
+  entityIds?: string[],
 ): Promise<KpisSummary> {
   const accounts = await getAccounts("all");
-  const balances = await getSignedBalancesAsOf(asOf, scope ?? "all");
+  const balances = await getSignedBalancesAsOf(asOf, scope ?? "all", entityIds);
   let revenue = 0,
     expenses = 0,
     assets = 0,
@@ -2391,9 +2404,15 @@ export async function getIncomeStatementForPeriod(
   start: string,
   end: string,
   scope?: string | null,
+  entityIds?: string[],
 ): Promise<{ rows: IncomeStatementRow[]; revenue: number; expenses: number; netIncome: number }> {
   const accounts = await getAccounts("all");
-  const balances = await getSignedBalancesInRange(start, end, scope ?? "all");
+  const balances = await getSignedBalancesInRange(
+    start,
+    end,
+    scope ?? "all",
+    entityIds,
+  );
   const rows: IncomeStatementRow[] = [];
   let revenue = 0;
   let expenses = 0;
@@ -2451,6 +2470,7 @@ export type MonthlyIncomeStatement = {
 export async function getMonthlyIncomeStatement(
   year: number,
   scope?: string | null,
+  entityIds?: string[],
 ): Promise<MonthlyIncomeStatement> {
   const accounts = await getAccounts("all");
   const accountIndex = new Map(accounts.map((a) => [a.id, a]));
@@ -2466,7 +2486,21 @@ export async function getMonthlyIncomeStatement(
     gte(schema.journalEntries.entryDate, start),
     lte(schema.journalEntries.entryDate, end),
   ];
-  if (scope === null) {
+  if (entityIds !== undefined) {
+    if (entityIds.length === 0) {
+      // Region scope with no entities: return a zero-filled report.
+      return {
+        year,
+        months,
+        rows: [],
+        revenueByMonth: Array(12).fill(0),
+        expensesByMonth: Array(12).fill(0),
+        netByMonth: Array(12).fill(0),
+      };
+    }
+    conds.push(inArray(schema.journalEntries.firmEntityId, entityIds));
+    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  } else if (scope === null) {
     conds.push(isNull(schema.journalEntries.firmEntityId));
     conds.push(isNull(schema.journalEntries.eliminationEntryId));
   } else if (scope && scope !== "all") {

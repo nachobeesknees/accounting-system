@@ -24,6 +24,8 @@ export async function createOfficeAction(formData: FormData) {
   const address = String(formData.get("address") ?? "").trim();
   const currencyCode = String(formData.get("currencyCode") ?? "USD").trim();
   const notes = String(formData.get("notes") ?? "").trim();
+  const regionIdRaw = String(formData.get("regionId") ?? "").trim();
+  const regionId = regionIdRaw === "" ? null : regionIdRaw;
 
   if (!code || !name) {
     redirect("/offices?error=" + encodeURIComponent("Code and name are required."));
@@ -36,6 +38,7 @@ export async function createOfficeAction(formData: FormData) {
       address: address || null,
       currencyCode: currencyCode || "USD",
       notes: notes || null,
+      regionId,
     });
   } catch (err) {
     if (isRedirect(err)) throw err;

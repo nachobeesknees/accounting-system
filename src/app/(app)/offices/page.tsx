@@ -250,6 +250,35 @@ export default async function Page({
                     className="text-[11.5px]"
                     style={{ color: "var(--ink-3)" }}
                   >
+                    Region
+                  </span>
+                  <SmartSelect
+                    name="regionId"
+                    defaultValue=""
+                    options={[
+                      ...(regionsByGroup.get(null) ?? []).map<SmartSelectOption>(
+                        (r) => ({ value: r.id, label: r.name }),
+                      ),
+                      ...orderedGroupIds.flatMap<SmartSelectOption>((gid) => {
+                        const g = groupById.get(gid);
+                        const rs = regionsByGroup.get(gid) ?? [];
+                        if (!g) return [];
+                        return rs.map((r) => ({
+                          value: r.id,
+                          label: r.name,
+                          group: g.name,
+                        }));
+                      }),
+                    ]}
+                    emptyLabel="— None —"
+                    clearable
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span
+                    className="text-[11.5px]"
+                    style={{ color: "var(--ink-3)" }}
+                  >
                     Status
                   </span>
                   <SmartSelect
@@ -261,7 +290,10 @@ export default async function Page({
                     ]}
                   />
                 </div>
+              </Row>
+              <Row>
                 <Field label="Notes" name="notes" />
+                <div />
               </Row>
               <div className="flex justify-end">
                 <Button variant="primary" type="submit">

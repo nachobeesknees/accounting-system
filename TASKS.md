@@ -43,6 +43,8 @@ Agents: read this file before starting work. Check off items as you complete the
 - [x] Ownership % on entities and bank accounts — `ownership_percent numeric(5,2)` added to both tables. Editable on create/edit forms (0–100 with decimals), shown as a yellow "X% owned" badge when partial on list pages and inline on bank account detail.
 - [x] AUA "as of date" — `/aua` accepts `?asOf=YYYY-MM-DD` and uses the latest snapshot ≤ that date per asset for the rollup. Date picker defaults to today. Each asset carries a nullable `valuation_date` column (editable on the asset form and on create).
 - [x] Price list on invoices — already wired up via the collapsible "Pull from price list" widget on `/invoices/new` (checkboxes, batch-append lines with description + unit price). Fixed selection to respect the active firm entity scope (office) so users invoicing from "Office NY" see the NY price list instead of whichever office happened to sort first.
+- [x] Drill-down everywhere — Financial Statements rows pass `{account,from,to}` to `/journal`; AR/AP aging bucket totals + per-customer/vendor rows link to filtered invoice/bill lists (`?bucket=`); dashboard KPI tiles route to the right tab; invoice/bill lists support `?bucket=` (current/d30/d60/d90/d90p); `/journal` honors `?from=`, `?to=`, `?entityId=`, `?region=`, `?customer=`.
+- [x] Regions surfaced everywhere — Region picker on entity/customer/office create forms; Region filter on invoice/bill/journal lists; Region scope selector on `/reports` financials (BS/IS/Monthly) via `inArray(firmEntityId, ids)` plumbed through `getSignedBalances{InRange,AsOf}`, `getKpisAsOf`, `getIncomeStatementForPeriod`, `getMonthlyIncomeStatement`.
 
 ---
 

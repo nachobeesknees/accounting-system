@@ -419,19 +419,19 @@ export default async function Page() {
           label={`Total Assets (${baseCode})`}
           value={formatMoney(kpis.assets, baseCode, { paren: true, compact: true, hideCurrency: true })}
           sub="All asset accounts"
-          href="/reports"
+          href="/reports?tab=balance"
         />
         <Tile
           label={`Total Liabilities (${baseCode})`}
           value={formatMoney(kpis.liabilities, baseCode, { paren: true, compact: true, hideCurrency: true })}
           sub="All liability accounts"
-          href="/reports"
+          href="/reports?tab=balance"
         />
         <Tile
           label={`Net Income YTD (${baseCode})`}
           value={formatMoney(kpis.netIncome, baseCode, { paren: true, compact: true, hideCurrency: true })}
           sub="Revenue minus expense"
-          href="/reports"
+          href="/reports?tab=income"
         />
         <Tile
           label={`Cash Balance (${baseCode})`}
@@ -540,14 +540,26 @@ export default async function Page() {
               </TR>
             </THead>
             <TBody>
-              <AgingRow label="Current" amount={ar.current} href="/invoices" />
-              <AgingRow label="1–30 days" amount={ar.d30} href="/invoices" />
-              <AgingRow label="31–60 days" amount={ar.d60} href="/invoices" />
+              <AgingRow
+                label="Current"
+                amount={ar.current}
+                href="/invoices?bucket=current"
+              />
+              <AgingRow
+                label="1–30 days"
+                amount={ar.d30}
+                href="/invoices?bucket=d30"
+              />
+              <AgingRow
+                label="31–60 days"
+                amount={ar.d60}
+                href="/invoices?bucket=d60"
+              />
               <AgingRow
                 label="60+ days"
                 amount={ar.d90}
                 neg
-                href="/invoices?status=overdue"
+                href="/invoices?bucket=d90"
               />
             </TBody>
           </Table>
@@ -572,10 +584,27 @@ export default async function Page() {
               </TR>
             </THead>
             <TBody>
-              <AgingRow label="Current" amount={ap.current} href="/bills" />
-              <AgingRow label="1–30 days" amount={ap.d30} href="/bills" />
-              <AgingRow label="31–60 days" amount={ap.d60} href="/bills" />
-              <AgingRow label="60+ days" amount={ap.d90} neg href="/bills" />
+              <AgingRow
+                label="Current"
+                amount={ap.current}
+                href="/bills?bucket=current"
+              />
+              <AgingRow
+                label="1–30 days"
+                amount={ap.d30}
+                href="/bills?bucket=d30"
+              />
+              <AgingRow
+                label="31–60 days"
+                amount={ap.d60}
+                href="/bills?bucket=d60"
+              />
+              <AgingRow
+                label="60+ days"
+                amount={ap.d90}
+                neg
+                href="/bills?bucket=d90"
+              />
             </TBody>
           </Table>
         </Card>

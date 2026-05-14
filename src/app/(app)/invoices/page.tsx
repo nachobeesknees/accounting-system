@@ -8,12 +8,40 @@ import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { IconReceipt } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { getCustomers, getInvoices } from "@/lib/data";
+import {
+  DEMO_TODAY,
+  getCustomers,
+  getInvoices,
+  getRegions,
+} from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
 import { duplicateInvoiceAction } from "../duplicate-actions";
 import type { Customer, Invoice } from "@/lib/types";
+
+type Bucket = "current" | "d30" | "d60" | "d90" | "d90p";
+
+const VALID_BUCKETS: ReadonlySet<string> = new Set([
+  "current",
+  "d30",
+  "d60",
+  "d90",
+  "d90p",
+]);
+
+function bucketFor(daysOverdue: number): Bucket {
+  if (daysOverdue <= 0) return "current";
+  if (daysOverdue <= 30) return "d30";
+  if (daysOverdue <= 60) return "d60";
+  if (daysOverdue <= 90) return "d90";
+  return "d90p";
+}
+
+function daysBetween(from: Date, to: Date): number {
+  const ms = to.getTime() - from.getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+}
 
 function filterInvoices(
   invoices: Invoice[],
@@ -21,11 +49,25 @@ function filterInvoices(
   q: string,
   status: string,
   customer: string,
+  bucket: string,
+  today: Date,
+  customerIdsInRegion: Set<string> | null,
 ): Invoice[] {
   const needle = q.trim().toLowerCase();
   return invoices.filter((inv) => {
     if (status && inv.status !== status) return false;
     if (customer && inv.customerId !== customer) return false;
+    if (customerIdsInRegion && !customerIdsInRegion.has(inv.customerId)) {
+      return false;
+    }
+    if (bucket && VALID_BUCKETS.has(bucket)) {
+      const bal = parseAmount(inv.balanceDue);
+      if (bal <= 0) return false;
+      if (inv.status === "void" || inv.status === "paid") return false;
+      const due = new Date(`${inv.dueDate}T00:00:00Z`);
+      const daysOverdue = daysBetween(due, today);
+      if (bucketFor(daysOverdue) !== bucket) return false;
+    }
     if (needle) {
       const cust = customersById.get(inv.customerId);
       const hay = `${inv.invoiceNumber} ${cust?.name ?? ""} ${cust?.code ?? ""}`.toLowerCase();
@@ -35,27 +77,62 @@ function filterInvoices(
   });
 }
 
+const BUCKET_LABEL: Record<Bucket, string> = {
+  current: "Current",
+  d30: "1–30 days overdue",
+  d60: "31–60 days overdue",
+  d90: "61–90 days overdue",
+  d90p: "90+ days overdue",
+};
+
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; customer?: string; q?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    customer?: string;
+    q?: string;
+    bucket?: string;
+    region?: string;
+  }>;
 }) {
   const params = await searchParams;
   const q = params.q ?? "";
   const status = params.status ?? "";
   const customerId = params.customer ?? "";
+  const bucket = params.bucket ?? "";
+  const regionId = params.region ?? "";
 
-  const [allInvoices, allCustomers] = await Promise.all([
+  const [allInvoices, allCustomers, allRegions] = await Promise.all([
     getInvoices(),
     getCustomers(),
+    getRegions(),
   ]);
   const customersById = new Map(allCustomers.map((c) => [c.id, c] as const));
-  const rows = filterInvoices(allInvoices, customersById, q, status, customerId)
+  const customerIdsInRegion = regionId
+    ? new Set(
+        allCustomers
+          .filter((c) => (c.regionId ?? null) === regionId)
+          .map((c) => c.id),
+      )
+    : null;
+  const rows = filterInvoices(
+    allInvoices,
+    customersById,
+    q,
+    status,
+    customerId,
+    bucket,
+    DEMO_TODAY,
+    customerIdsInRegion,
+  )
     .slice()
     .sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate));
   const customers = allCustomers
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name));
+  const activeBucketLabel =
+    bucket && VALID_BUCKETS.has(bucket) ? BUCKET_LABEL[bucket as Bucket] : null;
 
   const totalSum = rows.reduce((s, inv) => s + parseAmount(inv.total), 0);
   const balanceSum = rows.reduce((s, inv) => s + parseAmount(inv.balanceDue), 0);
@@ -112,6 +189,25 @@ export default async function Page({
             emptyLabel="All"
             clearable
           />
+          <SelectField label="Aging bucket" name="bucket" defaultValue={bucket}>
+            <option value="">All</option>
+            <option value="current">Current (not overdue)</option>
+            <option value="d30">1–30 days overdue</option>
+            <option value="d60">31–60 days overdue</option>
+            <option value="d90">61–90 days overdue</option>
+            <option value="d90p">90+ days overdue</option>
+          </SelectField>
+          <SmartSelectField
+            label="Region"
+            name="region"
+            defaultValue={regionId}
+            options={allRegions.map((r) => ({
+              value: r.id,
+              label: r.name,
+            }))}
+            emptyLabel="All"
+            clearable
+          />
           <Button variant="primary" type="submit">
             Apply
           </Button>
@@ -120,6 +216,19 @@ export default async function Page({
           </ButtonLink>
         </form>
       </div>
+      {activeBucketLabel && (
+        <div
+          className="px-6 py-1 text-[11.5px]"
+          style={{
+            background: "var(--rail)",
+            color: "var(--ink-3)",
+            borderBottom: "1px solid var(--line)",
+          }}
+        >
+          Showing only invoices in the <strong>{activeBucketLabel}</strong> bucket
+          (open balance, not paid/void).
+        </div>
+      )}
 
       <div className="px-6 py-3.5 pb-8">
         <Card title="Invoices">

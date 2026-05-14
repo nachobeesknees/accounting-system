@@ -14,14 +14,17 @@ import {
   accountsByType,
   getBaseCurrency,
   getBudgetByAccount,
+  getEntities,
   getIncomeStatementForPeriod,
   getKpisAsOf,
   getMonthlyIncomeStatement,
+  getRegions,
   getSignedBalancesAsOf,
   getTrialBalance,
   type IncomeStatementRow,
   type KpisSummary,
 } from "@/lib/data";
+import { SmartSelect } from "@/components/ui/SmartSelect";
 import { getEntityScope } from "@/lib/entity-scope";
 import { formatMoney } from "@/lib/money";
 import {
@@ -77,13 +80,20 @@ function AccountRow({
   value,
   extras,
   compact,
+  drillStart,
+  drillEnd,
 }: {
   account: Account;
   value: number;
   extras?: Array<{ key: string; value: string; neg?: boolean; num?: boolean }>;
   compact?: boolean;
+  drillStart?: string;
+  drillEnd?: string;
 }) {
-  const drillHref = drillToAccount(account.id);
+  const drillHref = drillToAccount(account.id, {
+    start: drillStart,
+    end: drillEnd,
+  });
   return (
     <TR>
       <TD mono>{account.code}</TD>
@@ -169,6 +179,7 @@ export default async function Page({
     compare?: string;
     year?: string;
     cents?: string;
+    region?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -185,6 +196,22 @@ export default async function Page({
   const compact = !showCents;
   const base = await getBaseCurrency();
   const baseCode = base?.code ?? "USD";
+  // Region scope: narrows to entries whose firmEntity sits in the chosen
+  // region. Supersedes the topbar single-entity scope when set so the user
+  // can compare entire territories.
+  const regionId = (params.region ?? "").trim();
+  const [regions, allEntities] = await Promise.all([
+    getRegions(),
+    getEntities(),
+  ]);
+  const entityIdsInRegion = regionId
+    ? allEntities
+        .filter((e) => (e.regionId ?? null) === regionId)
+        .map((e) => e.id)
+    : undefined;
+  const regionName = regionId
+    ? regions.find((r) => r.id === regionId)?.name ?? null
+    : null;
 
   return (
     <>
@@ -249,13 +276,36 @@ export default async function Page({
           {tab !== "trial" && (
             <ShowCentsToggle tab={tab} params={params} showCents={showCents} />
           )}
+          <RegionFilter
+            tab={tab}
+            params={params}
+            regions={regions}
+            current={regionId}
+          />
         </div>
+        {regionName && (
+          <div
+            className="px-3 py-1.5 rounded-md text-[11.5px]"
+            style={{
+              background: "var(--rail)",
+              color: "var(--ink-3)",
+              border: "1px solid var(--line)",
+              alignSelf: "flex-start",
+            }}
+          >
+            Scoped to <strong style={{ color: "var(--ink-2)" }}>{regionName}</strong>{" "}
+            ({entityIdsInRegion?.length ?? 0} entit
+            {(entityIdsInRegion?.length ?? 0) === 1 ? "y" : "ies"}). Firm-level
+            entries with no entity are excluded.
+          </div>
+        )}
 
         {tab === "balance" && (
           <BalanceSheetCard
             period={period}
             compare={compareMode}
             scope={scope}
+            entityIdsInRegion={entityIdsInRegion}
             compact={compact}
             baseCode={baseCode}
           />
@@ -265,6 +315,7 @@ export default async function Page({
             period={period}
             compare={compareMode}
             scope={scope}
+            entityIdsInRegion={entityIdsInRegion}
             compact={compact}
             baseCode={baseCode}
           />
@@ -273,6 +324,7 @@ export default async function Page({
           <MonthlyIncomeCard
             year={fiscalYear}
             scope={scope}
+            entityIdsInRegion={entityIdsInRegion}
             compact={compact}
             baseCode={baseCode}
           />
@@ -289,7 +341,14 @@ function ShowCentsToggle({
   showCents,
 }: {
   tab: TabId;
-  params: { preset?: string; from?: string; to?: string; compare?: string; year?: string };
+  params: {
+    preset?: string;
+    from?: string;
+    to?: string;
+    compare?: string;
+    year?: string;
+    region?: string;
+  };
   showCents: boolean;
 }) {
   // Linked toggle: clicking sets/clears ?cents=1 while preserving all other
@@ -301,6 +360,7 @@ function ShowCentsToggle({
   if (params.to) ps.set("to", params.to);
   if (params.compare) ps.set("compare", params.compare);
   if (params.year) ps.set("year", params.year);
+  if (params.region) ps.set("region", params.region);
   if (!showCents) ps.set("cents", "1");
   const href = `/reports?${ps.toString()}`;
   return (
@@ -322,9 +382,80 @@ function ShowCentsToggle({
   );
 }
 
+function RegionFilter({
+  tab,
+  params,
+  regions,
+  current,
+}: {
+  tab: TabId;
+  params: {
+    preset?: string;
+    from?: string;
+    to?: string;
+    compare?: string;
+    year?: string;
+    cents?: string;
+  };
+  regions: import("@/lib/types").Region[];
+  current: string;
+}) {
+  // Client-side `<form>` wrapping a native select would force the user to
+  // hit Apply; SmartSelect doesn't auto-submit on selection either. Easiest
+  // path: render a tiny form with a SmartSelect and a hidden Apply that the
+  // user can hit Enter on. Hidden fields preserve the rest of the URL.
+  return (
+    <form method="GET" className="flex items-center gap-2">
+      <input type="hidden" name="tab" value={tab} />
+      {params.preset && (
+        <input type="hidden" name="preset" value={params.preset} />
+      )}
+      {params.from && <input type="hidden" name="from" value={params.from} />}
+      {params.to && <input type="hidden" name="to" value={params.to} />}
+      {params.compare && (
+        <input type="hidden" name="compare" value={params.compare} />
+      )}
+      {params.year && <input type="hidden" name="year" value={params.year} />}
+      {params.cents && <input type="hidden" name="cents" value={params.cents} />}
+      <span className="text-[11.5px]" style={{ color: "var(--ink-3)" }}>
+        Region
+      </span>
+      <SmartSelect
+        name="region"
+        defaultValue={current}
+        options={regions.map((r) => ({ value: r.id, label: r.name }))}
+        emptyLabel="All regions"
+        clearable
+        triggerStyle={{ minWidth: 160 }}
+      />
+      <button
+        type="submit"
+        className="text-[11.5px]"
+        style={{
+          background: "var(--raised)",
+          border: "1px solid var(--line-2)",
+          color: "var(--ink-2)",
+          borderRadius: 6,
+          padding: "3px 8px",
+          cursor: "pointer",
+        }}
+      >
+        Apply
+      </button>
+    </form>
+  );
+}
+
 function tabHref(
   next: TabId,
-  current: { preset?: string; from?: string; to?: string; compare?: string; year?: string },
+  current: {
+    preset?: string;
+    from?: string;
+    to?: string;
+    compare?: string;
+    year?: string;
+    region?: string;
+  },
 ): string {
   const ps = new URLSearchParams();
   ps.set("tab", next);
@@ -333,6 +464,7 @@ function tabHref(
   if (current.to) ps.set("to", current.to);
   if (current.compare) ps.set("compare", current.compare);
   if (current.year) ps.set("year", current.year);
+  if (current.region) ps.set("region", current.region);
   return `/reports?${ps.toString()}`;
 }
 
@@ -342,12 +474,14 @@ async function BalanceSheetCard({
   period,
   compare,
   scope,
+  entityIdsInRegion,
   compact,
   baseCode,
 }: {
   period: { start: string; end: string; label: string };
   compare: CompareMode;
   scope: string | null;
+  entityIdsInRegion?: string[];
   compact: boolean;
   baseCode: string;
 }) {
@@ -355,7 +489,7 @@ async function BalanceSheetCard({
     formatMoney(n, "USD", { paren: true, compact, hideCurrency: true });
   const asOf = period.end;
   const [kpis, byType] = await Promise.all([
-    getKpisAsOf(asOf, scope),
+    getKpisAsOf(asOf, scope, entityIdsInRegion),
     accountsByType(),
   ]);
   // For account-level current balances at asOf we re-query with the same
@@ -364,20 +498,20 @@ async function BalanceSheetCard({
   // results plus the trial-balance numbers. For the per-account display
   // we use the typed accounts and getKpisAsOf totals; per-account rows
   // pull from the trial-balance helper which uses entity scope already.
-  const balances = await currentBalancesAsOf(asOf, scope);
+  const balances = await currentBalancesAsOf(asOf, scope, entityIdsInRegion);
 
   let cmpKpis: KpisSummary | null = null;
   let cmpBalances: Map<string, number> | null = null;
   let cmpLabel = "";
   if (compare === "prior_period") {
     const p = priorPeriod(period.start, period.end);
-    cmpKpis = await getKpisAsOf(p.end, scope);
-    cmpBalances = await currentBalancesAsOf(p.end, scope);
+    cmpKpis = await getKpisAsOf(p.end, scope, entityIdsInRegion);
+    cmpBalances = await currentBalancesAsOf(p.end, scope, entityIdsInRegion);
     cmpLabel = `As of ${p.end}`;
   } else if (compare === "prior_year") {
     const p = priorYearPeriod(period.start, period.end);
-    cmpKpis = await getKpisAsOf(p.end, scope);
-    cmpBalances = await currentBalancesAsOf(p.end, scope);
+    cmpKpis = await getKpisAsOf(p.end, scope, entityIdsInRegion);
+    cmpBalances = await currentBalancesAsOf(p.end, scope, entityIdsInRegion);
     cmpLabel = `As of ${p.end}`;
   }
 
@@ -443,6 +577,7 @@ async function BalanceSheetCard({
               value={balances.get(a.id) ?? 0}
               extras={rowExtras(a.id, balances.get(a.id) ?? 0)}
               compact={compact}
+              drillEnd={asOf}
             />
           ))}
           <TotalRow label="Total Assets" cells={totalCells(totalAssets, cmpAssets)} />
@@ -461,6 +596,7 @@ async function BalanceSheetCard({
               value={balances.get(a.id) ?? 0}
               extras={rowExtras(a.id, balances.get(a.id) ?? 0)}
               compact={compact}
+              drillEnd={asOf}
             />
           ))}
           <TotalRow label="Total Liabilities" cells={totalCells(totalLiab, cmpLiab)} />
@@ -479,6 +615,7 @@ async function BalanceSheetCard({
               value={balances.get(a.id) ?? 0}
               extras={rowExtras(a.id, balances.get(a.id) ?? 0)}
               compact={compact}
+              drillEnd={asOf}
             />
           ))}
           <TR>
@@ -534,11 +671,12 @@ async function BalanceSheetCard({
 async function currentBalancesAsOf(
   asOf: string,
   scope: string | null,
+  entityIds?: string[],
 ): Promise<Map<string, number>> {
   // Signed balances are debit - credit per account, scoped to the active
   // firm and filtered to entries dated on or before `asOf`. Callers flip
   // the sign for credit-normal accounts at render time.
-  return getSignedBalancesAsOf(asOf, scope ?? "all");
+  return getSignedBalancesAsOf(asOf, scope ?? "all", entityIds);
 }
 
 // ------- Income Statement -------
@@ -547,19 +685,26 @@ async function IncomeStatementCard({
   period,
   compare,
   scope,
+  entityIdsInRegion,
   compact,
   baseCode,
 }: {
   period: { start: string; end: string; label: string };
   compare: CompareMode;
   scope: string | null;
+  entityIdsInRegion?: string[];
   compact: boolean;
   baseCode: string;
 }) {
   const fmt = (n: number) =>
     formatMoney(n, "USD", { paren: true, compact, hideCurrency: true });
   const { rows, revenue, expenses, netIncome } =
-    await getIncomeStatementForPeriod(period.start, period.end, scope);
+    await getIncomeStatementForPeriod(
+      period.start,
+      period.end,
+      scope,
+      entityIdsInRegion,
+    );
 
   let cmpMap: Map<string, number> | null = null;
   let cmpLabel = "";
@@ -570,7 +715,12 @@ async function IncomeStatementCard({
 
   if (compare === "prior_period") {
     const p = priorPeriod(period.start, period.end);
-    const r = await getIncomeStatementForPeriod(p.start, p.end, scope);
+    const r = await getIncomeStatementForPeriod(
+      p.start,
+      p.end,
+      scope,
+      entityIdsInRegion,
+    );
     cmpMap = new Map(r.rows.map((x) => [x.accountId, x.amount]));
     cmpRevenue = r.revenue;
     cmpExpenses = r.expenses;
@@ -579,7 +729,12 @@ async function IncomeStatementCard({
     hasCmp = true;
   } else if (compare === "prior_year") {
     const p = priorYearPeriod(period.start, period.end);
-    const r = await getIncomeStatementForPeriod(p.start, p.end, scope);
+    const r = await getIncomeStatementForPeriod(
+      p.start,
+      p.end,
+      scope,
+      entityIdsInRegion,
+    );
     cmpMap = new Map(r.rows.map((x) => [x.accountId, x.amount]));
     cmpRevenue = r.revenue;
     cmpExpenses = r.expenses;
@@ -630,6 +785,8 @@ async function IncomeStatementCard({
         value={r.amount}
         extras={extras}
         compact={compact}
+        drillStart={period.start}
+        drillEnd={period.end}
       />
     );
   }
@@ -696,15 +853,17 @@ async function IncomeStatementCard({
 async function MonthlyIncomeCard({
   year,
   scope,
+  entityIdsInRegion,
   compact,
   baseCode,
 }: {
   year: number;
   scope: string | null;
+  entityIdsInRegion?: string[];
   compact: boolean;
   baseCode: string;
 }) {
-  const m = await getMonthlyIncomeStatement(year, scope);
+  const m = await getMonthlyIncomeStatement(year, scope, entityIdsInRegion);
   const fmt = (n: number) =>
     formatMoney(n, "USD", { paren: true, compact, hideCurrency: true });
 

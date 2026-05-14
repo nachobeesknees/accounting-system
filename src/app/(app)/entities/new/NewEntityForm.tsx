@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { createEntityAction, type CreateEntityState } from "./actions";
-import type { Currency, Customer } from "@/lib/types";
+import type { Currency, Customer, Region, RegionGroup } from "@/lib/types";
 
 const initial: CreateEntityState = { error: null };
 
@@ -25,17 +25,22 @@ const KIND_OPTIONS = [
 export function NewEntityForm({
   customers,
   currencies,
+  regions,
+  regionGroups,
   nextCode,
   defaultClientId,
   defaultCurrency,
 }: {
   customers: Customer[];
   currencies: Currency[];
+  regions: Region[];
+  regionGroups: RegionGroup[];
   nextCode: string;
   defaultClientId?: string;
   defaultCurrency: string;
 }) {
   const [state, action] = useActionState(createEntityAction, initial);
+  const groupById = new Map(regionGroups.map((g) => [g.id, g.name] as const));
 
   return (
     <form action={action}>
@@ -143,6 +148,21 @@ export function NewEntityForm({
                 placeholder="100"
                 help="Client's beneficial ownership (0–100). Leave blank if unspecified."
               />
+            </Row>
+            <Row>
+              <SmartSelectField
+                label="Region"
+                name="regionId"
+                defaultValue=""
+                options={regions.map((r) => ({
+                  value: r.id,
+                  label: r.name,
+                  group: r.groupId ? groupById.get(r.groupId) : undefined,
+                }))}
+                emptyLabel="— None —"
+                clearable
+              />
+              <div />
             </Row>
             <TextareaField label="Notes" name="notes" placeholder="Optional notes" />
           </div>

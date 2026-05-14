@@ -1751,6 +1751,7 @@ export type CreateOfficeInput = {
   address?: string | null;
   currencyCode?: string;
   notes?: string | null;
+  regionId?: string | null;
 };
 
 export async function createOffice(_user: SessionUser, input: CreateOfficeInput) {
@@ -1770,6 +1771,7 @@ export async function createOffice(_user: SessionUser, input: CreateOfficeInput)
       name: input.name,
       address: input.address ?? null,
       currencyCode: input.currencyCode ?? "USD",
+      regionId: input.regionId ?? null,
       isActive: true,
       notes: input.notes ?? null,
     })
@@ -2026,6 +2028,7 @@ export async function createCustomer(
     phone?: string | null;
     billingAddress?: string | null;
     paymentTerms: number;
+    regionId?: string | null;
   },
 ) {
   const db = getDb();
@@ -2048,6 +2051,7 @@ export async function createCustomer(
       phone: input.phone ?? null,
       billingAddress: input.billingAddress ?? null,
       paymentTerms: input.paymentTerms,
+      regionId: input.regionId ?? null,
       isActive: true,
       notes: null,
     })

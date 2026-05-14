@@ -43,6 +43,8 @@ export async function createEntityAction(
     ownershipRaw === ""
       ? null
       : Math.max(0, Math.min(100, parseFloat(ownershipRaw)));
+  const regionIdRaw = String(formData.get("regionId") ?? "").trim();
+  const regionId = regionIdRaw === "" ? null : regionIdRaw;
 
   if (!code) return { error: "Code is required." };
   if (!name) return { error: "Name is required." };
@@ -68,6 +70,7 @@ export async function createEntityAction(
       notes: notes || null,
       currencyCode: currencyCode || "USD",
       ownershipPercent,
+      regionId,
     });
     revalidatePath("/entities");
     redirect(`/entities/${created.id}`);

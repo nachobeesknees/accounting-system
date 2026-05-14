@@ -5,6 +5,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
+import { getRegionGroups, getRegions } from "@/lib/data";
 import { getSessionUser } from "@/lib/session";
 import { createCustomer } from "@/lib/mutations";
 
@@ -20,6 +22,8 @@ async function createCustomerAction(formData: FormData): Promise<void> {
   const phone = String(formData.get("phone") ?? "").trim();
   const billingAddress = String(formData.get("billingAddress") ?? "").trim();
   const paymentTermsRaw = String(formData.get("paymentTerms") ?? "30").trim();
+  const regionIdRaw = String(formData.get("regionId") ?? "").trim();
+  const regionId = regionIdRaw === "" ? null : regionIdRaw;
 
   if (!code) {
     redirect(`/customers/new?error=${encodeURIComponent("Code is required.")}`);
@@ -44,6 +48,7 @@ async function createCustomerAction(formData: FormData): Promise<void> {
       phone: phone || null,
       billingAddress: billingAddress || null,
       paymentTerms,
+      regionId,
     });
   } catch (err) {
     const message =
@@ -62,6 +67,11 @@ export default async function Page({
 }) {
   const params = await searchParams;
   const error = params.error;
+  const [regions, regionGroups] = await Promise.all([
+    getRegions(),
+    getRegionGroups(),
+  ]);
+  const groupById = new Map(regionGroups.map((g) => [g.id, g.name] as const));
 
   return (
     <>
@@ -137,7 +147,18 @@ export default async function Page({
                   step={1}
                   defaultValue={30}
                 />
-                <div />
+                <SmartSelectField
+                  label="Region"
+                  name="regionId"
+                  defaultValue=""
+                  options={regions.map((r) => ({
+                    value: r.id,
+                    label: r.name,
+                    group: r.groupId ? groupById.get(r.groupId) : undefined,
+                  }))}
+                  emptyLabel="— None —"
+                  clearable
+                />
               </Row>
             </div>
           </Card>

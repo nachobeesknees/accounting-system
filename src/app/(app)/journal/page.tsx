@@ -10,12 +10,16 @@ import { Empty } from "@/components/ui/Empty";
 import { IconBookOpen } from "@/components/ui/Icon";
 import {
   DEMO_TODAY,
+  getCustomers,
+  getEntities,
   getJournalEntries,
   getJournalEntryTemplates,
+  getRegions,
   totalDebits,
 } from "@/lib/data";
 import { getSessionUser } from "@/lib/session";
 import { getAllowedEntityIds } from "@/lib/entity-access";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { formatMoney } from "@/lib/money";
 import type { JournalEntry } from "@/lib/types";
 import { DrillNumber } from "@/components/DrillNumber";
@@ -64,6 +68,9 @@ function filterEntries(
   source: string,
   accountId: string,
   entityFilter: string,
+  fromDate: string,
+  toDate: string,
+  entityIdsInRegion: Set<string> | null,
 ): JournalEntry[] {
   const needle = q.trim().toLowerCase();
   return entries.filter((e) => {
@@ -79,6 +86,15 @@ function filterEntries(
       if (e.entityId != null) return false;
     } else if (entityFilter) {
       if (e.entityId !== entityFilter) return false;
+    }
+    // Date range — inclusive on both ends.
+    if (fromDate && e.entryDate < fromDate) return false;
+    if (toDate && e.entryDate > toDate) return false;
+    // Region scope — restrict to entries posted on an entity within the
+    // chosen region. Firm-level entries (no entity) are excluded from a
+    // region scope by design.
+    if (entityIdsInRegion) {
+      if (!e.entityId || !entityIdsInRegion.has(e.entityId)) return false;
     }
     if (needle) {
       const hay =
@@ -98,6 +114,9 @@ export default async function Page({
     source?: string;
     account?: string;
     entity?: string;
+    entityId?: string;
+    region?: string;
+    customer?: string;
     from?: string;
     to?: string;
     view?: string;
@@ -109,15 +128,31 @@ export default async function Page({
   const status = params.status ?? "";
   const source = params.source ?? "";
   const accountId = params.account ?? "";
-  const entityFilter = params.entity ?? "";
+  // `entityId` is the documented filter; `entity` kept for back-compat with
+  // older links (dashboard P&L card) and is treated as an alias.
+  const entityFilter = (params.entityId ?? params.entity ?? "").trim();
+  const regionId = (params.region ?? "").trim();
+  const customerFilter = (params.customer ?? "").trim();
+  const fromDate = (params.from ?? "").trim();
+  const toDate = (params.to ?? "").trim();
   const view = params.view === "templates" ? "templates" : "entries";
   const error = params.error ?? "";
 
   const user = await getSessionUser();
-  const [allEntriesRaw, templates, allowedEntityIds] = await Promise.all([
+  const [
+    allEntriesRaw,
+    templates,
+    allowedEntityIds,
+    allEntities,
+    allCustomers,
+    allRegions,
+  ] = await Promise.all([
     getJournalEntries(),
     getJournalEntryTemplates(),
     getAllowedEntityIds(user),
+    getEntities(),
+    getCustomers(),
+    getRegions(),
   ]);
   // user_entity_access — drop JEs tagged to a client entity outside the
   // user's scope. Firm-level (entityId null) entries are always visible.
@@ -130,7 +165,41 @@ export default async function Page({
   const todayIso = DEMO_TODAY.toISOString().slice(0, 10);
   const dueTemplates = templates.filter((t) => isTemplateDue(t, todayIso));
 
-  const entries = filterEntries(allEntries, q, status, source, accountId, entityFilter);
+  // If a customer was requested, narrow the entity filter to entities that
+  // belong to that customer. Useful for "show every JE for this client".
+  const customerEntityIds = customerFilter
+    ? new Set(
+        allEntities
+          .filter((e) => e.clientId === customerFilter)
+          .map((e) => e.id),
+      )
+    : null;
+  const entityIdsInRegion = regionId
+    ? new Set(
+        allEntities
+          .filter((e) => (e.regionId ?? null) === regionId)
+          .map((e) => e.id),
+      )
+    : null;
+  // Compose the region/customer scopes — both narrow `entityId`.
+  const combinedEntityScope =
+    customerEntityIds && entityIdsInRegion
+      ? new Set(
+          Array.from(customerEntityIds).filter((id) => entityIdsInRegion.has(id)),
+        )
+      : (customerEntityIds ?? entityIdsInRegion);
+
+  const entries = filterEntries(
+    allEntries,
+    q,
+    status,
+    source,
+    accountId,
+    entityFilter,
+    fromDate,
+    toDate,
+    combinedEntityScope,
+  );
   const grandTotal = entries.reduce((s, e) => s + totalDebits(e), 0);
 
   return (
@@ -236,6 +305,40 @@ export default async function Page({
                 <option value="bill">Bill</option>
                 <option value="reconciliation">Reconciliation</option>
               </SelectField>
+              <Field label="From" name="from" type="date" defaultValue={fromDate} />
+              <Field label="To" name="to" type="date" defaultValue={toDate} />
+              <SmartSelectField
+                label="Entity"
+                name="entityId"
+                defaultValue={entityFilter}
+                options={[
+                  { value: "firm", label: "Firm-level (unattributed)" },
+                  ...allEntities.map((e) => ({
+                    value: e.id,
+                    label: `${e.code} — ${e.name}`,
+                    search: e.code,
+                  })),
+                ]}
+                emptyLabel="All"
+                clearable
+              />
+              <SmartSelectField
+                label="Region"
+                name="region"
+                defaultValue={regionId}
+                options={allRegions.map((r) => ({
+                  value: r.id,
+                  label: r.name,
+                }))}
+                emptyLabel="All"
+                clearable
+              />
+              {accountId && (
+                <input type="hidden" name="account" value={accountId} />
+              )}
+              {customerFilter && (
+                <input type="hidden" name="customer" value={customerFilter} />
+              )}
               <Button variant="primary" type="submit">
                 Apply
               </Button>
@@ -243,6 +346,27 @@ export default async function Page({
                 Reset
               </ButtonLink>
             </form>
+            {(accountId || customerFilter) && (
+              <div
+                className="px-1 text-[11.5px]"
+                style={{ color: "var(--ink-3)" }}
+              >
+                {accountId && (
+                  <span className="mr-2">
+                    Account scope: <code style={{ color: "var(--ink-2)" }}>{accountId}</code>
+                  </span>
+                )}
+                {customerFilter && (
+                  <span>
+                    Client scope:{" "}
+                    <code style={{ color: "var(--ink-2)" }}>
+                      {allCustomers.find((c) => c.id === customerFilter)?.name ??
+                        customerFilter}
+                    </code>
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="px-6 py-3.5 pb-8">

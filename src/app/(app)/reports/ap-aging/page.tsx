@@ -3,6 +3,7 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { DrillNumber } from "@/components/DrillNumber";
 import {
   DEMO_TODAY,
   getBankAccounts,
@@ -309,53 +310,72 @@ export default async function Page() {
                   </TD>
                 </TR>
               )}
-              {vendorRows.map((r) => (
-                <TR key={r.vendorId} hover={false}>
-                  <TD>
-                    <Link
-                      href={`/vendors/${r.vendorId}`}
-                      style={{ color: "var(--ink)", textDecoration: "none" }}
-                    >
-                      {r.vendorName}
-                    </Link>
-                  </TD>
-                  {BUCKET_HEADERS.map((h) => (
-                    <TD key={h.key} num neg={h.key === "d90p" && r.buckets[h.key] > 0}>
-                      {r.buckets[h.key] === 0
-                        ? "—"
-                        : formatMoney(r.buckets[h.key], "USD", {
-                            compact: true,
-                            paren: true,
-                            hideCurrency: true,
-                          })}
+              {vendorRows.map((r) => {
+                const vendorBillsHref = `/bills?vendor=${encodeURIComponent(r.vendorId)}`;
+                return (
+                  <TR key={r.vendorId} hover={false}>
+                    <TD>
+                      <Link
+                        href={vendorBillsHref}
+                        style={{ color: "var(--ink)", textDecoration: "none" }}
+                        title="Show this vendor's bills"
+                      >
+                        {r.vendorName}
+                      </Link>
                     </TD>
-                  ))}
-                  <TD num>
-                    {formatMoney(r.total, "USD", {
-                      compact: true,
-                      paren: true,
-                      hideCurrency: true,
+                    {BUCKET_HEADERS.map((h) => {
+                      const v = r.buckets[h.key];
+                      const href = `/bills?vendor=${encodeURIComponent(r.vendorId)}&bucket=${h.key}`;
+                      return (
+                        <TD
+                          key={h.key}
+                          num
+                          neg={h.key === "d90p" && v > 0}
+                        >
+                          {v === 0 ? (
+                            "—"
+                          ) : (
+                            <DrillNumber
+                              value={v}
+                              href={href}
+                              currencyCode={null}
+                              compact
+                              neg={h.key === "d90p" && v > 0}
+                            />
+                          )}
+                        </TD>
+                      );
                     })}
-                  </TD>
-                </TR>
-              ))}
+                    <TD num>
+                      <DrillNumber
+                        value={r.total}
+                        href={vendorBillsHref}
+                        currencyCode={null}
+                        compact
+                      />
+                    </TD>
+                  </TR>
+                );
+              })}
               <TR total hover={false}>
                 <TD>Totals</TD>
                 {BUCKET_HEADERS.map((h) => (
                   <TD key={h.key} num>
-                    {formatMoney(totals[h.key], "USD", {
-                      compact: true,
-                      paren: true,
-                      hideCurrency: true,
-                    })}
+                    <DrillNumber
+                      value={totals[h.key]}
+                      href={`/bills?bucket=${h.key}`}
+                      currencyCode={null}
+                      compact
+                    />
                   </TD>
                 ))}
                 <TD num>
-                  {formatMoney(totalPayable, "USD", {
-                    compact: true,
-                    paren: true,
-                    hideCurrency: true,
-                  })}
+                  <DrillNumber
+                    value={totalPayable}
+                    href="/bills"
+                    currencyCode={null}
+                    compact
+                  />
                 </TD>
               </TR>
             </TBody>

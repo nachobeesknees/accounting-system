@@ -9,9 +9,11 @@ import { IconFile } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
+  DEMO_TODAY,
   getBills,
   getCustomers,
   getEntities,
+  getRegions,
   getVendors,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
@@ -19,6 +21,37 @@ import { formatMoney, parseAmount } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
 import { duplicateBillAction } from "../duplicate-actions";
 import type { Bill, Customer, Entity, Vendor } from "@/lib/types";
+
+type Bucket = "current" | "d30" | "d60" | "d90" | "d90p";
+
+const VALID_BUCKETS: ReadonlySet<string> = new Set([
+  "current",
+  "d30",
+  "d60",
+  "d90",
+  "d90p",
+]);
+
+function bucketFor(daysOverdue: number): Bucket {
+  if (daysOverdue <= 0) return "current";
+  if (daysOverdue <= 30) return "d30";
+  if (daysOverdue <= 60) return "d60";
+  if (daysOverdue <= 90) return "d90";
+  return "d90p";
+}
+
+function daysBetween(from: Date, to: Date): number {
+  const ms = to.getTime() - from.getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+}
+
+const BUCKET_LABEL: Record<Bucket, string> = {
+  current: "Current",
+  d30: "1–30 days overdue",
+  d60: "31–60 days overdue",
+  d90: "61–90 days overdue",
+  d90p: "90+ days overdue",
+};
 
 function filterBills(
   bills: Bill[],
@@ -28,6 +61,9 @@ function filterBills(
   vendor: string,
   client: string,
   entity: string,
+  bucket: string,
+  today: Date,
+  scopedIds: Set<string> | null,
 ): Bill[] {
   const needle = q.trim().toLowerCase();
   return bills.filter((bill) => {
@@ -35,6 +71,15 @@ function filterBills(
     if (vendor && bill.vendorId !== vendor) return false;
     if (client && bill.clientId !== client) return false;
     if (entity && bill.entityId !== entity) return false;
+    if (scopedIds && !scopedIds.has(bill.id)) return false;
+    if (bucket && VALID_BUCKETS.has(bucket)) {
+      const bal = parseAmount(bill.balanceDue);
+      if (bal <= 0) return false;
+      if (bill.status === "void" || bill.status === "paid") return false;
+      const due = new Date(`${bill.dueDate}T00:00:00Z`);
+      const daysOverdue = daysBetween(due, today);
+      if (bucketFor(daysOverdue) !== bucket) return false;
+    }
     if (needle) {
       const vend = vendorsById.get(bill.vendorId);
       const hay = `${bill.billNumber} ${vend?.name ?? ""} ${vend?.code ?? ""}`.toLowerCase();
@@ -53,6 +98,8 @@ export default async function Page({
     client?: string;
     entity?: string;
     q?: string;
+    bucket?: string;
+    region?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -61,13 +108,17 @@ export default async function Page({
   const vendorId = params.vendor ?? "";
   const clientId = params.client ?? "";
   const entityId = params.entity ?? "";
+  const bucket = params.bucket ?? "";
+  const regionId = params.region ?? "";
 
-  const [allBills, allVendors, allCustomers, allEntities] = await Promise.all([
-    getBills(),
-    getVendors(),
-    getCustomers(),
-    getEntities(),
-  ]);
+  const [allBills, allVendors, allCustomers, allEntities, allRegions] =
+    await Promise.all([
+      getBills(),
+      getVendors(),
+      getCustomers(),
+      getEntities(),
+      getRegions(),
+    ]);
   const vendorsById = new Map(allVendors.map((v) => [v.id, v] as const));
   const customersById = new Map<string, Customer>(
     allCustomers.map((c) => [c.id, c] as const),
@@ -75,6 +126,23 @@ export default async function Page({
   const entitiesById = new Map<string, Entity>(
     allEntities.map((e) => [e.id, e] as const),
   );
+  // Region filter for bills: keep bills whose tied client OR entity falls
+  // within the chosen region. Without either tie the bill is excluded from
+  // a region scope (firm-level vendor bills don't carry geography).
+  const scopedBillIds = regionId
+    ? new Set(
+        allBills
+          .filter((b) => {
+            const c = b.clientId ? customersById.get(b.clientId) : null;
+            const e = b.entityId ? entitiesById.get(b.entityId) : null;
+            return (
+              (c && (c.regionId ?? null) === regionId) ||
+              (e && (e.regionId ?? null) === regionId)
+            );
+          })
+          .map((b) => b.id),
+      )
+    : null;
   const rows = filterBills(
     allBills,
     vendorsById,
@@ -83,9 +151,14 @@ export default async function Page({
     vendorId,
     clientId,
     entityId,
+    bucket,
+    DEMO_TODAY,
+    scopedBillIds,
   )
     .slice()
     .sort((a, b) => b.billDate.localeCompare(a.billDate));
+  const activeBucketLabel =
+    bucket && VALID_BUCKETS.has(bucket) ? BUCKET_LABEL[bucket as Bucket] : null;
   const vendors = allVendors.slice().sort((a, b) => a.name.localeCompare(b.name));
   const customers = allCustomers
     .slice()
@@ -170,6 +243,25 @@ export default async function Page({
             emptyLabel="All"
             clearable
           />
+          <SelectField label="Aging bucket" name="bucket" defaultValue={bucket}>
+            <option value="">All</option>
+            <option value="current">Current (not overdue)</option>
+            <option value="d30">1–30 days overdue</option>
+            <option value="d60">31–60 days overdue</option>
+            <option value="d90">61–90 days overdue</option>
+            <option value="d90p">90+ days overdue</option>
+          </SelectField>
+          <SmartSelectField
+            label="Region"
+            name="region"
+            defaultValue={regionId}
+            options={allRegions.map((r) => ({
+              value: r.id,
+              label: r.name,
+            }))}
+            emptyLabel="All"
+            clearable
+          />
           <Button variant="primary" type="submit">
             Apply
           </Button>
@@ -178,6 +270,19 @@ export default async function Page({
           </ButtonLink>
         </form>
       </div>
+      {activeBucketLabel && (
+        <div
+          className="px-6 py-1 text-[11.5px]"
+          style={{
+            background: "var(--rail)",
+            color: "var(--ink-3)",
+            borderBottom: "1px solid var(--line)",
+          }}
+        >
+          Showing only bills in the <strong>{activeBucketLabel}</strong> bucket
+          (open balance, not paid/void).
+        </div>
+      )}
 
       <div className="px-6 py-3.5 pb-8">
         <Card title="Bills">
