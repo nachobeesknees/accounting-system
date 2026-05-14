@@ -10,7 +10,7 @@ import {
   getVendors,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 
 const FREQUENCY_LABEL: Record<string, string> = {
   weekly: "Weekly",
@@ -127,7 +127,7 @@ export default async function Page({
                           {FREQUENCY_LABEL[rp.frequency] ?? rp.frequency}
                         </Pill>
                       </TD>
-                      <TD num>{formatUSD(rp.amount, { paren: true })}</TD>
+                      <TD num>{formatMoney(rp.amount, "USD", { paren: true , compact: true })}</TD>
                       <TD mono>{formatDate(rp.nextPaymentDate)}</TD>
                       <TD mono>
                         {acct ? (

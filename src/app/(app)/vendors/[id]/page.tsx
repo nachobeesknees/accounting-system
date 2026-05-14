@@ -10,7 +10,7 @@ import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getAccountById, getBills, getVendorById } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 
 export default async function Page({
   params,
@@ -97,17 +97,17 @@ export default async function Page({
           <KVGrid>
             <KV
               k="Total billed"
-              v={formatUSD(totalBilled, { paren: true })}
+              v={formatMoney(totalBilled, "USD", { paren: true , compact: true })}
               mono
             />
             <KV
               k="Total paid"
-              v={formatUSD(totalPaid, { paren: true })}
+              v={formatMoney(totalPaid, "USD", { paren: true , compact: true })}
               mono
             />
             <KV
               k="Outstanding balance"
-              v={formatUSD(outstanding, { paren: true })}
+              v={formatMoney(outstanding, "USD", { paren: true , compact: true })}
               mono
             />
             <KV
@@ -153,9 +153,9 @@ export default async function Page({
                       </TD>
                       <TD>{formatDate(bill.billDate)}</TD>
                       <TD>{formatDate(bill.dueDate)}</TD>
-                      <TD num>{formatUSD(bill.total, { paren: true })}</TD>
+                      <TD num>{formatMoney(bill.total, "USD", { paren: true , compact: true })}</TD>
                       <TD num neg={isOverdue}>
-                        {formatUSD(bal, { paren: true })}
+                        {formatMoney(bal, "USD", { paren: true , compact: true })}
                       </TD>
                       <TD>
                         <Pill variant={statusVariant(bill.status)}>

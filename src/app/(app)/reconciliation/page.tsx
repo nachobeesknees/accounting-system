@@ -11,7 +11,7 @@ import {
   getBankTransactions,
   getJournalEntries,
 } from "@/lib/data";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 
 function formatDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -161,17 +161,17 @@ export default async function Page({
       <div className="px-6 my-3.5 grid grid-cols-1 sm:grid-cols-3 gap-3.5">
         <Tile
           label="Book balance"
-          value={formatUSD(bookBalance, { paren: true })}
+          value={formatMoney(bookBalance, "USD", { paren: true })}
           sub="GL account 1000"
         />
         <Tile
           label="Cleared"
-          value={formatUSD(clearedTotal, { paren: true })}
+          value={formatMoney(clearedTotal, "USD", { paren: true })}
           sub={`${reconciled.length} matched transactions`}
         />
         <Tile
           label="Outstanding"
-          value={formatUSD(outstandingTotal, { paren: true })}
+          value={formatMoney(outstandingTotal, "USD", { paren: true })}
           sub={`${unreconciled.length} unmatched`}
           neg={outstandingTotal < 0}
         />
@@ -214,7 +214,7 @@ export default async function Page({
                         {t.reference ?? "—"}
                       </TD>
                       <TD num neg={amount < 0}>
-                        {formatUSD(amount, { paren: true })}
+                        {formatMoney(amount, "USD", { paren: true })}
                       </TD>
                       <TD num>
                         <Button variant="ghost" disabled>
@@ -271,7 +271,7 @@ export default async function Page({
                         )}
                       </TD>
                       <TD num neg={amount < 0}>
-                        {formatUSD(amount, { paren: true })}
+                        {formatMoney(amount, "USD", { paren: true })}
                       </TD>
                     </TR>
                   );

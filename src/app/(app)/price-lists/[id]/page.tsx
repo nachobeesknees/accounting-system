@@ -15,7 +15,7 @@ import {
   getPriceListEntries,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import type { PriceListItemType } from "@/lib/types";
 import {
   addEntryAction,
@@ -222,7 +222,7 @@ export default async function Page({
                   <TH>Type</TH>
                   <TH>Key</TH>
                   <TH>Label</TH>
-                  <TH num>Unit price</TH>
+                  <TH num>Unit price (USD)</TH>
                   <TH num>Included qty</TH>
                   <TH></TH>
                 </TR>
@@ -237,7 +237,7 @@ export default async function Page({
                     </TD>
                     <TD mono>{e.itemKey}</TD>
                     <TD>{e.label}</TD>
-                    <TD num>{formatUSD(e.unitPrice, { paren: true })}</TD>
+                    <TD num>{formatMoney(e.unitPrice, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                     <TD num style={{ color: "var(--ink-3)" }}>
                       {e.includedQuantity ?? "—"}
                     </TD>

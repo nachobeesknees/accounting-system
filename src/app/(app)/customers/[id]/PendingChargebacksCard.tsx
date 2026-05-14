@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { formatDate } from "@/lib/format";
-import { formatUSD } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 
 import { generateChargebackInvoiceAction } from "./actions";
 
@@ -114,7 +114,7 @@ export function PendingChargebacksCard({
                   <TD style={{ color: "var(--ink-3)" }}>{r.methodLabel}</TD>
                   <TD num>
                     {r.rebillAmount != null
-                      ? formatUSD(r.rebillAmount, { paren: true })
+                      ? formatMoney(r.rebillAmount, "USD", { paren: true , compact: true })
                       : "—"}
                   </TD>
                 </TR>
@@ -126,7 +126,7 @@ export function PendingChargebacksCard({
               <TD>{""}</TD>
               <TD>{""}</TD>
               <TD>Selected total</TD>
-              <TD num>{formatUSD(selectedTotal, { paren: true })}</TD>
+              <TD num>{formatMoney(selectedTotal, "USD", { paren: true , compact: true })}</TD>
             </TR>
           </TBody>
         </Table>

@@ -19,7 +19,7 @@ import {
   totalCredits,
   totalDebits,
 } from "@/lib/data";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import { postEntry, voidEntry } from "./actions";
 import { Attachments } from "@/components/Attachments";
 
@@ -246,7 +246,7 @@ export default async function Page({
                       color: "var(--ink)",
                     }}
                   >
-                    {formatUSD(debitTotal)}
+                    {formatMoney(debitTotal, "USD")}
                   </span>
                 </span>
                 <span>·</span>
@@ -259,7 +259,7 @@ export default async function Page({
                       color: "var(--ink)",
                     }}
                   >
-                    {formatUSD(creditTotal)}
+                    {formatMoney(creditTotal, "USD")}
                   </span>
                 </span>
               </>
@@ -313,8 +313,8 @@ export default async function Page({
                           ) : null;
                         })()}
                       </TD>
-                      <TD num>{d === 0 ? "—" : formatUSD(d)}</TD>
-                      <TD num>{c === 0 ? "—" : formatUSD(c)}</TD>
+                      <TD num>{d === 0 ? "—" : formatMoney(d, "USD")}</TD>
+                      <TD num>{c === 0 ? "—" : formatMoney(c, "USD")}</TD>
                     </TR>
                   );
                 })}
@@ -323,8 +323,8 @@ export default async function Page({
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD>Totals</TD>
-                  <TD num>{formatUSD(debitTotal)}</TD>
-                  <TD num>{formatUSD(creditTotal)}</TD>
+                  <TD num>{formatMoney(debitTotal, "USD")}</TD>
+                  <TD num>{formatMoney(creditTotal, "USD")}</TD>
                 </TR>
               </TBody>
             </Table>

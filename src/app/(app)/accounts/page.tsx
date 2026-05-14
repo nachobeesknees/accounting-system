@@ -8,7 +8,7 @@ import {
   getAccounts,
   getDisplayBalances,
 } from "@/lib/data";
-import { formatUSD } from "@/lib/money";
+import { formatMoney } from "@/lib/money";
 import type { AccountType } from "@/lib/types";
 
 const TYPE_LABEL: Record<AccountType, string> = {
@@ -137,7 +137,7 @@ export default async function Page({
                           {a.normalBalance}
                         </TD>
                         <TD num neg={bal < 0}>
-                          {formatUSD(bal, { paren: true })}
+                          {formatMoney(bal, "USD", { paren: true , compact: true })}
                         </TD>
                       </TR>
                     );

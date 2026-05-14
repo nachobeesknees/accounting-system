@@ -19,7 +19,7 @@ import {
   getTimeEntries,
   getUsers,
 } from "@/lib/data";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import type { FeeFrequency } from "@/lib/types";
 import {
   deleteAssignmentAction,
@@ -297,11 +297,11 @@ export default async function Page({
             />
             <KV
               k="Per-period amount"
-              v={formatUSD(perPeriod)}
+              v={formatMoney(perPeriod, "USD", { compact: true })}
               sub={
                 fee.perPeriodAmount != null && fee.perPeriodAmount !== ""
                   ? "Override"
-                  : `Derived: ${formatUSD(annualFeeNum)} ÷ ${periods}`
+                  : `Derived: ${formatMoney(annualFeeNum, "USD", { compact: true })} ÷ ${periods}`
               }
               mono
             />

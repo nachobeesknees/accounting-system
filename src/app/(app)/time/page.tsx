@@ -14,7 +14,7 @@ import {
   getUsers,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import type { TimeEntry } from "@/lib/types";
 
 function filterEntries(
@@ -158,7 +158,7 @@ export default async function Page({
             Billable value
           </div>
           <div className="mt-1" style={{ fontSize: 22, color: "var(--ink)", fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" }}>
-            {formatUSD(billableValue, { paren: true })}
+            {formatMoney(billableValue, "USD", { paren: true , compact: true })}
           </div>
         </div>
       </div>
@@ -194,8 +194,8 @@ export default async function Page({
                   <TH>Description</TH>
                   <TH>Task</TH>
                   <TH num>Hours</TH>
-                  <TH num>Rate</TH>
-                  <TH num>Amount</TH>
+                  <TH num>Rate (USD)</TH>
+                  <TH num>Amount (USD)</TH>
                   <TH>Billable</TH>
                 </TR>
               </THead>
@@ -227,11 +227,11 @@ export default async function Page({
                       </TD>
                       <TD num>{hrs.toFixed(2)}</TD>
                       <TD num style={{ color: "var(--ink-3)" }}>
-                        {t.rateAtLog ? formatUSD(rate, { paren: true }) : "—"}
+                        {t.rateAtLog ? formatMoney(rate, "USD", { paren: true, compact: true, hideCurrency: true }) : "—"}
                       </TD>
                       <TD num>
                         {t.isBillable && t.rateAtLog
-                          ? formatUSD(hrs * rate, { paren: true })
+                          ? formatMoney(hrs * rate, "USD", { paren: true, compact: true, hideCurrency: true })
                           : "—"}
                       </TD>
                       <TD>
@@ -246,7 +246,7 @@ export default async function Page({
                   <TD colSpan={5}>Totals</TD>
                   <TD num>{totalHours.toFixed(2)}</TD>
                   <TD num>{""}</TD>
-                  <TD num>{formatUSD(billableValue, { paren: true })}</TD>
+                  <TD num>{formatMoney(billableValue, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                   <TD>{""}</TD>
                 </TR>
               </TBody>

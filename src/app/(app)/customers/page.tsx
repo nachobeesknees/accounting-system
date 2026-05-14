@@ -13,7 +13,7 @@ import {
   getRegionGroups,
   getRegions,
 } from "@/lib/data";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import type { Customer } from "@/lib/types";
 
 function filterCustomers(
@@ -179,7 +179,7 @@ export default async function Page({
                   <TH>Phone</TH>
                   <TH>Region</TH>
                   <TH num>Terms</TH>
-                  <TH num>Balance</TH>
+                  <TH num>Balance (USD)</TH>
                   <TH>Status</TH>
                 </TR>
               </THead>
@@ -214,7 +214,7 @@ export default async function Page({
                       </TD>
                       <TD style={{ color: "var(--ink-3)" }}>{regionName}</TD>
                       <TD num>{`Net ${c.paymentTerms}`}</TD>
-                      <TD num>{formatUSD(balance, { paren: true })}</TD>
+                      <TD num>{formatMoney(balance, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                       <TD>
                         <Pill variant={statusVariant(statusKey)}>
                           {statusLabel(statusKey)}
@@ -230,7 +230,7 @@ export default async function Page({
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD>{""}</TD>
-                  <TD num>{formatUSD(balanceTotal, { paren: true })}</TD>
+                  <TD num>{formatMoney(balanceTotal, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                   <TD>{""}</TD>
                 </TR>
               </TBody>

@@ -6,7 +6,7 @@ import { Empty } from "@/components/ui/Empty";
 import { SelectField } from "@/components/ui/Field";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getAccounts, getJournalEntries } from "@/lib/data";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 
 function formatRowDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -130,7 +130,7 @@ export default async function Page({
                   color: closing < 0 ? "var(--p-review-fg)" : "var(--ink)",
                 }}
               >
-                {formatUSD(closing, { paren: true })}
+                {formatMoney(closing, "USD", { paren: true })}
               </span>
             </span>
           </div>
@@ -191,13 +191,13 @@ export default async function Page({
                     </TD>
                     <TD>{r.description}</TD>
                     <TD num>
-                      {r.debit === 0 ? "—" : formatUSD(r.debit)}
+                      {r.debit === 0 ? "—" : formatMoney(r.debit, "USD")}
                     </TD>
                     <TD num>
-                      {r.credit === 0 ? "—" : formatUSD(r.credit)}
+                      {r.credit === 0 ? "—" : formatMoney(r.credit, "USD")}
                     </TD>
                     <TD num neg={r.running < 0}>
-                      {formatUSD(r.running, { paren: true })}
+                      {formatMoney(r.running, "USD", { paren: true })}
                     </TD>
                   </TR>
                 ))}
@@ -212,7 +212,7 @@ export default async function Page({
                     Closing balance
                   </TD>
                   <TD num neg={closing < 0}>
-                    {formatUSD(closing, { paren: true })}
+                    {formatMoney(closing, "USD", { paren: true })}
                   </TD>
                 </TR>
               </TBody>

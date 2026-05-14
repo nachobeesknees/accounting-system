@@ -6,7 +6,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { formatMoneyInput, formatUSD, parseAmount } from "@/lib/money";
+import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
 import type {
   Account,
   Customer,
@@ -291,7 +291,7 @@ export function NewInvoiceForm({
                         fontVariantNumeric: "tabular-nums",
                       }}
                     >
-                      {formatUSD(amount)}
+                      {formatMoney(amount, "USD")}
                     </span>
                   </TD>
                   <TD>
@@ -322,7 +322,7 @@ export function NewInvoiceForm({
               <TD>Subtotal</TD>
               <TD>{""}</TD>
               <TD>{""}</TD>
-              <TD num>{formatUSD(subtotal)}</TD>
+              <TD num>{formatMoney(subtotal, "USD")}</TD>
               <TD>{""}</TD>
             </TR>
           </TBody>

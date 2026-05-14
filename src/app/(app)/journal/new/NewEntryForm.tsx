@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { formatMoneyInput, formatUSD, parseAmount } from "@/lib/money";
+import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
 import type {
   Account,
   Dimension,
@@ -328,8 +328,8 @@ export function NewEntryForm({
                   {balanced ? "Balanced" : "Unbalanced"}
                 </Pill>
               </TD>
-              <TD num>{formatUSD(debitTotal)}</TD>
-              <TD num>{formatUSD(creditTotal)}</TD>
+              <TD num>{formatMoney(debitTotal, "USD")}</TD>
+              <TD num>{formatMoney(creditTotal, "USD")}</TD>
               <TD>{""}</TD>
             </TR>
           </TBody>
