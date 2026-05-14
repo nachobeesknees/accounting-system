@@ -7,18 +7,24 @@ import type { Account } from "./types";
  * stamps `bypassControlWarning=true` on the entry so the audit log captures
  * intent.
  *
- * Detection is two-pronged so we catch both well-typed accounts and the
- * conventional-code charts that don't bother setting subType:
- *   - account.accountType / subType hints — "accounts_receivable",
- *     "accounts_payable", "bank", "cash"
+ * Detection is three-pronged so we catch well-typed accounts, the
+ * conventional-code charts that don't bother setting subType, and the
+ * charts whose names explicitly say "Accounts Receivable" / "Cash" even
+ * if the code falls outside the typical range:
+ *   - account.subType hints — "accounts_receivable", "accounts_payable",
+ *     "bank", "cash"
  *   - account.code ranges — 1000-1099 cash, 1100-1199 AR, 2000-2099 AP
+ *   - account.name match — "cash", "bank", "accounts receivable",
+ *     "accounts payable" (case-insensitive)
  *
  * Returns "ar" | "ap" | "cash" when the account is controlled, null otherwise.
  */
 export type AccountControlClass = "ar" | "ap" | "cash";
 
 export function getAccountControlClass(
-  account: Pick<Account, "code" | "subType" | "accountType">,
+  account: Pick<Account, "code" | "subType" | "accountType"> & {
+    name?: string;
+  },
 ): AccountControlClass | null {
   const sub = (account.subType ?? "").toLowerCase();
   if (sub === "accounts_receivable" || sub === "ar") return "ar";
@@ -36,6 +42,19 @@ export function getAccountControlClass(
       if (code >= 2000 && code <= 2099) return "ap";
     }
   }
+
+  const name = (account.name ?? "").toLowerCase();
+  if (name.includes("accounts receivable") || /\bar\b/.test(name)) return "ar";
+  if (name.includes("accounts payable") || /\bap\b/.test(name)) return "ap";
+  if (
+    name.startsWith("cash") ||
+    name.startsWith("bank") ||
+    name.includes(" cash") ||
+    name.includes(" bank")
+  ) {
+    return "cash";
+  }
+
   return null;
 }
 
