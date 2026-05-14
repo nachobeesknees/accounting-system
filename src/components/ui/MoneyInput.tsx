@@ -30,6 +30,8 @@ type Props = Omit<
   defaultValue?: string | number | null;
   /** Hidden input name actually submitted; defaults to `name`. */
   submitName?: string;
+  /** Optional help text under the input. */
+  help?: ReactNode;
 };
 
 /**
@@ -43,6 +45,7 @@ export function MoneyInput({
   name,
   defaultValue,
   submitName,
+  help,
   className,
   ...rest
 }: Props) {
@@ -81,6 +84,14 @@ export function MoneyInput({
         {...rest}
       />
       <input type="hidden" name={submitName ?? name} value={raw} />
+      {help && (
+        <span
+          className="text-[11px]"
+          style={{ color: "var(--ink-4)", lineHeight: 1.4 }}
+        >
+          {help}
+        </span>
+      )}
     </label>
   );
 }

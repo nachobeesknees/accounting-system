@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -56,6 +57,12 @@ export default async function Page({
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Settings", href: "/settings" },
+          { label: "Custom fields" },
+        ]}
+      />
       <PageHeader title="Custom fields" meta={`${defs.length} definitions`} />
 
       <div className="px-6 my-3.5 flex flex-col gap-3.5 pb-8">

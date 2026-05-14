@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Breadcrumbs } from "@/components/ui/Breadcrumbs";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { getSessionUser } from "@/lib/session";
@@ -33,6 +34,12 @@ export default async function Page() {
 
   return (
     <>
+      <Breadcrumbs
+        items={[
+          { label: "Settings", href: "/settings" },
+          { label: "Import / Export" },
+        ]}
+      />
       <PageHeader
         title="Import / Export"
         meta="Settings · CSV bulk operations · admin only"

@@ -93,12 +93,20 @@ export function NewEntityForm({
               <Field label="Formation date" name="formationDate" type="date" />
             </Row>
             <Row>
-              <Field label="EIN" name="ein" mono placeholder="00-0000000" />
+              <Field
+                label="EIN"
+                name="ein"
+                mono
+                placeholder="00-0000000"
+                pattern="\d{2}-?\d{7}"
+                help="Federal EIN — 9 digits, with or without a dash."
+              />
               <Field
                 label="Registration #"
                 name="registrationNumber"
                 mono
                 placeholder="Corporate filing #"
+                help="State filing number — e.g. Delaware corp ID."
               />
             </Row>
             <Row>
