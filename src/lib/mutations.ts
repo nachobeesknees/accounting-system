@@ -24,6 +24,7 @@ import type {
 import { getJournalEntryById } from "./data";
 import { getEntityScope } from "./entity-scope";
 import { checkPeriodForPost } from "./periods";
+import { logAuditEvent } from "./audit";
 
 /**
  * Currency to use for a new transaction issued by the firm. Prefers the
@@ -274,6 +275,25 @@ export async function createJournalEntry(
 
   const created = await getJournalEntryById(id);
   if (!created) throw new Error("Created entry not found after insert.");
+  await logAuditEvent(user, {
+    action: isTemplate ? "journal.template_create" : "journal.create",
+    resourceType: "journal_entry",
+    resourceId: created.id,
+    resourceName: created.entryNumber,
+    changes: { after: { status: created.status, lines: input.lines.length } },
+    metadata: {
+      bypassControlWarning: !!input.bypassControlWarning,
+      periodOverrideReason: overrideRecorded,
+    },
+  });
+  if (input.bypassControlWarning) {
+    await logAuditEvent(user, {
+      action: "journal.bypass_control_warning",
+      resourceType: "journal_entry",
+      resourceId: created.id,
+      resourceName: created.entryNumber,
+    });
+  }
   return created;
 }
 
@@ -463,6 +483,16 @@ export async function postJournalEntry(
 
   const updated = await getJournalEntryById(entryId);
   if (!updated) throw new Error("Entry vanished after post.");
+  await logAuditEvent(user, {
+    action: "journal.post",
+    resourceType: "journal_entry",
+    resourceId: updated.id,
+    resourceName: updated.entryNumber,
+    changes: { before: { status: entry.status }, after: { status: "posted" } },
+    metadata: periodCheck.overrideRecorded
+      ? { periodOverrideReason: periodCheck.overrideRecorded }
+      : undefined,
+  });
   return updated;
 }
 
@@ -538,6 +568,14 @@ export async function voidJournalEntry(
 
   const updated = await getJournalEntryById(entryId);
   if (!updated) throw new Error("Entry vanished after void.");
+  await logAuditEvent(user, {
+    action: "journal.void",
+    resourceType: "journal_entry",
+    resourceId: updated.id,
+    resourceName: updated.entryNumber,
+    changes: { before: { status: entry.status }, after: { status: "void" } },
+    metadata: reason ? { reason } : undefined,
+  });
   return updated;
 }
 
@@ -1562,7 +1600,7 @@ export type CreateContactInput = {
   ocrText?: string | null;
 };
 
-export async function createContact(_user: SessionUser, input: CreateContactInput) {
+export async function createContact(user: SessionUser, input: CreateContactInput) {
   const db = getDb();
   const [existing] = await db
     .select({ id: schema.contacts.id })
@@ -1593,6 +1631,13 @@ export async function createContact(_user: SessionUser, input: CreateContactInpu
       ocrText: input.ocrText ?? null,
     })
     .returning();
+  await logAuditEvent(user, {
+    action: "contact.create",
+    resourceType: "contact",
+    resourceId: id,
+    resourceName: created.name,
+    changes: { after: { code: created.code, kind: created.kind } },
+  });
   return created;
 }
 
@@ -2203,7 +2248,7 @@ export type CreateInvoiceInput = {
   lines: DraftInvoiceLine[];
 };
 
-export async function createInvoice(_user: SessionUser, input: CreateInvoiceInput) {
+export async function createInvoice(user: SessionUser, input: CreateInvoiceInput) {
   if (input.lines.length === 0) throw new Error("Invoice must have at least 1 line.");
   for (const [i, l] of input.lines.entries()) {
     if (!l.accountId) throw new Error(`Line ${i + 1}: account is required.`);
@@ -2288,6 +2333,18 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
         createdAt: now,
       })),
     );
+  });
+  await logAuditEvent(user, {
+    action: "invoice.create",
+    resourceType: "invoice",
+    resourceId: id,
+    resourceName: invoiceNumber,
+    changes: {
+      after: { customerId: input.customerId, subtotal, taxAmount, total },
+    },
+    metadata: periodCheck.overrideRecorded
+      ? { periodOverrideReason: periodCheck.overrideRecorded }
+      : undefined,
   });
   return { id, invoiceNumber };
 }
@@ -2418,6 +2475,15 @@ export async function postInvoice(
       updatedAt: new Date(),
     })
     .where(eq(schema.invoices.id, invoiceId));
+
+  await logAuditEvent(user, {
+    action: "invoice.post",
+    resourceType: "invoice",
+    resourceId: invoiceId,
+    resourceName: inv.invoiceNumber,
+    changes: { before: { status: "draft" }, after: { status: "sent" } },
+    metadata: { journalEntryId: je.id },
+  });
 
   return { invoiceId, journalEntryId: je.id, entryNumber: je.entryNumber };
 }
@@ -2828,7 +2894,7 @@ export type CreateBillInput = {
   chargebackNotes?: string | null;
 };
 
-export async function createBill(_user: SessionUser, input: CreateBillInput) {
+export async function createBill(user: SessionUser, input: CreateBillInput) {
   if (input.lines.length === 0) throw new Error("Bill must have at least 1 line.");
   for (const [i, l] of input.lines.entries()) {
     if (!l.accountId) throw new Error(`Line ${i + 1}: account is required.`);
@@ -2913,6 +2979,16 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
         .where(eq(schema.vendors.id, input.vendorId));
     }
   });
+  await logAuditEvent(user, {
+    action: "bill.create",
+    resourceType: "bill",
+    resourceId: id,
+    resourceName: billNumber,
+    changes: { after: { vendorId: input.vendorId, total: subtotal } },
+    metadata: periodCheck.overrideRecorded
+      ? { periodOverrideReason: periodCheck.overrideRecorded }
+      : undefined,
+  });
   return { id, billNumber };
 }
 
@@ -2976,6 +3052,15 @@ export async function approveBill(
       updatedAt: new Date(),
     })
     .where(eq(schema.bills.id, billId));
+
+  await logAuditEvent(user, {
+    action: "bill.approve",
+    resourceType: "bill",
+    resourceId: billId,
+    resourceName: bill.billNumber,
+    changes: { before: { status: bill.status }, after: { status: "approved" } },
+    metadata: { journalEntryId: je.id },
+  });
 
   return { billId, journalEntryId: je.id, entryNumber: je.entryNumber };
 }

@@ -18,6 +18,7 @@ import type {
   AccountingPeriodStatus,
   SessionUser,
 } from "./types";
+import { logAuditEvent } from "./audit";
 
 const MONTH_NAMES = [
   "January",
@@ -296,6 +297,14 @@ export async function closePeriod(
     })
     .where(eq(schema.accountingPeriods.id, periodId))
     .returning();
+  await logAuditEvent(user, {
+    action: "period.close",
+    resourceType: "accounting_period",
+    resourceId: updated.id,
+    resourceName: updated.name,
+    changes: { before: { status: existing.status }, after: { status: "closed" } },
+    metadata: notes ? { notes } : undefined,
+  });
   return mapPeriod(updated);
 }
 
@@ -322,6 +331,13 @@ export async function lockPeriod(
     })
     .where(eq(schema.accountingPeriods.id, periodId))
     .returning();
+  await logAuditEvent(user, {
+    action: "period.lock",
+    resourceType: "accounting_period",
+    resourceId: updated.id,
+    resourceName: updated.name,
+    changes: { before: { status: existing.status }, after: { status: "locked" } },
+  });
   return mapPeriod(updated);
 }
 
