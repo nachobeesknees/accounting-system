@@ -168,6 +168,10 @@ const COLUMNS: ColumnSpec[] = [
   { table: "journal_entries", column: "recurring_next_date", type: "date" },
   { table: "journal_entries", column: "recurring_end_date", type: "date" },
   { table: "journal_entries", column: "recurring_parent_id", type: "text" },
+
+  // ---- Security module: per-user attributes ----
+  // Stamped every successful Auth.js login. NULL → never logged in.
+  { table: "users", column: "last_login_at", type: "timestamp with time zone" },
 ];
 
 const TABLES = [
@@ -475,6 +479,56 @@ const TABLES = [
       updated_at timestamp with time zone DEFAULT now() NOT NULL,
       UNIQUE (dimension_id, code)
     )`,
+  },
+  {
+    // Per-user entity scoping. No rows for a user = sees all entities
+    // (admin default). access_level controls full vs. read_only.
+    name: "user_entity_access",
+    ddl: `CREATE TABLE IF NOT EXISTS user_entity_access (
+      id text PRIMARY KEY,
+      user_id text NOT NULL,
+      entity_id text NOT NULL,
+      access_level text NOT NULL DEFAULT 'full',
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      UNIQUE (user_id, entity_id)
+    )`,
+  },
+  {
+    // Per-user client scoping. Mirror of user_entity_access keyed on
+    // customers.id — used by the "employee" role.
+    name: "user_client_access",
+    ddl: `CREATE TABLE IF NOT EXISTS user_client_access (
+      id text PRIMARY KEY,
+      user_id text NOT NULL,
+      customer_id text NOT NULL,
+      access_level text NOT NULL DEFAULT 'full',
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      UNIQUE (user_id, customer_id)
+    )`,
+  },
+  {
+    // Immutable audit trail. User identity columns are denormalised so
+    // history survives later user renames / deletes. Indexed by timestamp.
+    name: "audit_log",
+    ddl: `CREATE TABLE IF NOT EXISTS audit_log (
+      id text PRIMARY KEY,
+      timestamp timestamp with time zone DEFAULT now() NOT NULL,
+      user_id text,
+      user_email text,
+      user_role text,
+      action text NOT NULL,
+      resource_type text,
+      resource_id text,
+      resource_name text,
+      changes jsonb,
+      ip_address text,
+      user_agent text,
+      metadata jsonb
+    );
+    CREATE INDEX IF NOT EXISTS audit_log_timestamp_idx ON audit_log (timestamp DESC);
+    CREATE INDEX IF NOT EXISTS audit_log_user_id_idx ON audit_log (user_id);
+    CREATE INDEX IF NOT EXISTS audit_log_action_idx ON audit_log (action);
+    CREATE INDEX IF NOT EXISTS audit_log_resource_idx ON audit_log (resource_type, resource_id)`,
   },
 ];
 
