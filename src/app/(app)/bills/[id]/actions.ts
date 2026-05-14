@@ -11,6 +11,7 @@ import {
   voidBill,
 } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
+import { stripPeriodErrorPrefix } from "@/lib/periods";
 
 type ChargebackType = "cost" | "markup" | "fixed" | "included";
 function parseChargebackType(raw: string): ChargebackType | null {
@@ -42,15 +43,22 @@ export async function approveBillAction(formData: FormData) {
   if (!user) redirect("/login");
 
   const billId = String(formData.get("billId") ?? "");
+  const periodOverrideReason = String(
+    formData.get("periodOverrideReason") ?? "",
+  ).trim();
   if (!billId) redirect("/bills");
 
   try {
-    const result = await approveBill(user, billId);
+    const result = await approveBill(user, billId, {
+      periodOverrideReason:
+        periodOverrideReason === "" ? null : periodOverrideReason,
+    });
     revalidateCommon(billId);
     redirect(`/bills/${billId}?approved=${encodeURIComponent(result.entryNumber)}`);
   } catch (err) {
     if (isRedirectError(err)) throw err;
-    const msg = err instanceof Error ? err.message : "Failed to approve bill.";
+    const raw = err instanceof Error ? err.message : "Failed to approve bill.";
+    const msg = stripPeriodErrorPrefix(raw);
     redirect(`/bills/${billId}?error=${encodeURIComponent(msg)}`);
   }
 }

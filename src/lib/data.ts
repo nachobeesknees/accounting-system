@@ -623,6 +623,7 @@ function mapJournalEntry(
     entityId: r.entityId,
     firmEntityId: r.firmEntityId ?? null,
     bypassControlWarning: r.bypassControlWarning ?? false,
+    periodOverrideReason: r.periodOverrideReason ?? null,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }

@@ -19,6 +19,7 @@ import { sumCredits, sumDebits, toDecimalString } from "./money";
 import type { JournalEntry, SessionUser } from "./types";
 import { getJournalEntryById } from "./data";
 import { getEntityScope } from "./entity-scope";
+import { checkPeriodForPost } from "./periods";
 
 /**
  * Currency to use for a new transaction issued by the firm. Prefers the
@@ -129,6 +130,11 @@ export type CreateJournalEntryInput = {
   status?: "draft" | "posted";
   /** User confirmed past an AR/AP/Cash direct-posting warning. */
   bypassControlWarning?: boolean;
+  /**
+   * If the entry date falls inside a soft-closed accounting period, this
+   * reason is required and stored alongside the entry for audit.
+   */
+  periodOverrideReason?: string | null;
   lines: DraftJournalLine[];
 };
 
@@ -164,6 +170,15 @@ export async function createJournalEntry(
   const status = input.status ?? "draft";
   const now = new Date();
 
+  // Period close enforcement (see src/lib/periods.ts). Locked periods always
+  // block; closed periods require an override reason. Applied to drafts too
+  // so the warning fires at the same moment as on the form.
+  const result = await checkPeriodForPost(
+    input.entryDate,
+    input.periodOverrideReason,
+  );
+  const overrideRecorded = result.overrideRecorded;
+
   await db.transaction(async (tx) => {
     await tx.insert(schema.journalEntries).values({
       id,
@@ -182,6 +197,7 @@ export async function createJournalEntry(
       entityId: input.entityId ?? null,
       firmEntityId: input.firmEntityId ?? null,
       bypassControlWarning: input.bypassControlWarning ?? false,
+      periodOverrideReason: overrideRecorded,
       createdAt: now,
       updatedAt: now,
     });
@@ -209,6 +225,7 @@ export async function createJournalEntry(
 export async function postJournalEntry(
   user: SessionUser,
   entryId: string,
+  options: { periodOverrideReason?: string | null } = {},
 ): Promise<JournalEntry> {
   const entry = await getJournalEntryById(entryId);
   if (!entry) throw new Error("Entry not found.");
@@ -227,6 +244,12 @@ export async function postJournalEntry(
     }
   }
 
+  // New monthly-period enforcement (see src/lib/periods.ts).
+  const periodCheck = await checkPeriodForPost(
+    entry.entryDate,
+    options.periodOverrideReason,
+  );
+
   const dt = sumDebits(entry.lines);
   const ct = sumCredits(entry.lines);
   if (Math.abs(dt - ct) > 0.005) {
@@ -241,6 +264,8 @@ export async function postJournalEntry(
       status: "posted",
       postedAt: now,
       postedBy: user.userId,
+      periodOverrideReason:
+        periodCheck.overrideRecorded ?? entry.periodOverrideReason ?? null,
       updatedAt: now,
     })
     .where(eq(schema.journalEntries.id, entryId));
@@ -1856,6 +1881,8 @@ export type CreateInvoiceInput = {
   notes?: string | null;
   /** Raw OCR text indexed by global search. */
   ocrText?: string | null;
+  /** Required when the invoice date falls inside a soft-closed period. */
+  periodOverrideReason?: string | null;
   lines: DraftInvoiceLine[];
 };
 
@@ -1867,6 +1894,12 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
     if (l.unitPrice < 0) throw new Error(`Line ${i + 1}: unit price must be >= 0.`);
     if (!l.description.trim()) throw new Error(`Line ${i + 1}: description is required.`);
   }
+
+  // Period close enforcement on the invoice date (see src/lib/periods.ts).
+  const periodCheck = await checkPeriodForPost(
+    input.invoiceDate,
+    input.periodOverrideReason,
+  );
 
   const db = getDb();
   const id = uid("i");
@@ -1895,6 +1928,7 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
       firmEntityId,
       notes: input.notes ?? null,
       ocrText: input.ocrText ?? null,
+      periodOverrideReason: periodCheck.overrideRecorded,
       journalEntryId: null,
       createdAt: now,
       updatedAt: now,
@@ -1951,7 +1985,11 @@ async function getDefaultFirmEntityId(): Promise<string | null> {
   return first?.id ?? null;
 }
 
-export async function postInvoice(user: SessionUser, invoiceId: string) {
+export async function postInvoice(
+  user: SessionUser,
+  invoiceId: string,
+  options: { periodOverrideReason?: string | null } = {},
+) {
   const db = getDb();
   const [inv] = await db
     .select()
@@ -1992,6 +2030,12 @@ export async function postInvoice(user: SessionUser, invoiceId: string) {
   // time / by /invoices/generate), or fall back to the primary US LLC.
   const firmEntityId = inv.firmEntityId ?? (await getDefaultFirmEntityId());
 
+  // Bubble through any override the invoice already recorded at create time
+  // so the caller doesn't have to re-supply it, plus accept a fresh reason
+  // from `options`.
+  const periodOverrideReason =
+    options.periodOverrideReason ?? inv.periodOverrideReason ?? null;
+
   const je = await createJournalEntry(user, {
     entryDate: inv.invoiceDate,
     description: `Service invoice issued (${inv.invoiceNumber})`,
@@ -2000,6 +2044,7 @@ export async function postInvoice(user: SessionUser, invoiceId: string) {
     status: "posted",
     entityId,
     firmEntityId,
+    periodOverrideReason,
     lines: jeLines,
   });
 
@@ -2010,6 +2055,7 @@ export async function postInvoice(user: SessionUser, invoiceId: string) {
       journalEntryId: je.id,
       entityId,
       firmEntityId,
+      periodOverrideReason: periodOverrideReason ?? inv.periodOverrideReason,
       updatedAt: new Date(),
     })
     .where(eq(schema.invoices.id, invoiceId));
@@ -2408,6 +2454,8 @@ export type CreateBillInput = {
   entityId?: string | null;
   /** Raw OCR text indexed by global search. */
   ocrText?: string | null;
+  /** Required when the bill date falls inside a soft-closed period. */
+  periodOverrideReason?: string | null;
   lines: DraftBillLine[];
   // Optional chargeback config — if `chargebackType` is set the bill is
   // marked as rebillable. "included" means just reference the client/entity
@@ -2429,6 +2477,12 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
     if (l.unitPrice < 0) throw new Error(`Line ${i + 1}: unit price must be >= 0.`);
     if (!l.description.trim()) throw new Error(`Line ${i + 1}: description is required.`);
   }
+
+  // Period close enforcement on the bill date.
+  const periodCheck = await checkPeriodForPost(
+    input.billDate,
+    input.periodOverrideReason,
+  );
 
   const db = getDb();
   const id = uid("b");
@@ -2459,6 +2513,7 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
       currencyCode,
       notes: input.notes ?? null,
       ocrText: input.ocrText ?? null,
+      periodOverrideReason: periodCheck.overrideRecorded,
       journalEntryId: null,
       clientId: input.clientId ?? null,
       entityId: input.entityId ?? null,
@@ -2502,7 +2557,11 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
   return { id, billNumber };
 }
 
-export async function approveBill(user: SessionUser, billId: string) {
+export async function approveBill(
+  user: SessionUser,
+  billId: string,
+  options: { periodOverrideReason?: string | null } = {},
+) {
   const db = getDb();
   const [bill] = await db
     .select()
@@ -2533,6 +2592,11 @@ export async function approveBill(user: SessionUser, billId: string) {
   // active firm) so bills show up in scoped views just like invoices do.
   const { firmEntityId } = await getFirmIssuingCurrency();
 
+  // Carry through any reason recorded at create time so the user isn't
+  // re-prompted at approval, plus accept a fresh one from `options`.
+  const periodOverrideReason =
+    options.periodOverrideReason ?? bill.periodOverrideReason ?? null;
+
   const je = await createJournalEntry(user, {
     entryDate: bill.billDate,
     description: `Bill approved (${bill.billNumber})`,
@@ -2540,6 +2604,7 @@ export async function approveBill(user: SessionUser, billId: string) {
     source: "bill",
     status: "posted",
     firmEntityId,
+    periodOverrideReason,
     lines: jeLines,
   });
 
@@ -2548,6 +2613,7 @@ export async function approveBill(user: SessionUser, billId: string) {
     .set({
       status: "approved",
       journalEntryId: je.id,
+      periodOverrideReason: periodOverrideReason ?? bill.periodOverrideReason,
       updatedAt: new Date(),
     })
     .where(eq(schema.bills.id, billId));

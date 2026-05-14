@@ -15,6 +15,7 @@ import {
   voidInvoice,
 } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
+import { stripPeriodErrorPrefix } from "@/lib/periods";
 
 function isRedirectError(err: unknown): boolean {
   return (
@@ -38,15 +39,22 @@ export async function postInvoiceAction(formData: FormData): Promise<void> {
   if (!user) redirect("/login");
 
   const invoiceId = String(formData.get("invoiceId") ?? "");
+  const periodOverrideReason = String(
+    formData.get("periodOverrideReason") ?? "",
+  ).trim();
   if (!invoiceId) {
     redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
   }
 
   try {
-    await postInvoice(user, invoiceId);
+    await postInvoice(user, invoiceId, {
+      periodOverrideReason:
+        periodOverrideReason === "" ? null : periodOverrideReason,
+    });
   } catch (err) {
     if (isRedirectError(err)) throw err;
-    const message = err instanceof Error ? err.message : "Failed to post invoice.";
+    const raw = err instanceof Error ? err.message : "Failed to post invoice.";
+    const message = stripPeriodErrorPrefix(raw);
     redirect(`/invoices/${invoiceId}?error=${encodeURIComponent(message)}`);
   }
 

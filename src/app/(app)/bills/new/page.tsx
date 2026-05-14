@@ -8,22 +8,29 @@ import {
   getEntities,
   getVendors,
 } from "@/lib/data";
+import {
+  ensureAccountingPeriods,
+  getAccountingPeriods,
+} from "@/lib/periods";
 
 import { NewBillForm } from "./NewBillForm";
 
 export default async function Page() {
+  await ensureAccountingPeriods(new Date().getUTCFullYear());
   const [
     vendorsAll,
     accountsAll,
     customersAll,
     entitiesAll,
     dimensionsWithValues,
+    accountingPeriods,
   ] = await Promise.all([
     getVendors(),
     getAccounts(),
     getCustomers(),
     getEntities(),
     getDimensionsWithValues(),
+    getAccountingPeriods(),
   ]);
   const vendors = vendorsAll
     .filter((v) => v.isActive)
@@ -89,6 +96,7 @@ export default async function Page() {
         today={today}
         defaultDueDate={defaultDueDate}
         dimensionsWithValues={dimensionsWithValues}
+        accountingPeriods={accountingPeriods}
       />
     </>
   );

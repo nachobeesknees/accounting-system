@@ -18,6 +18,7 @@ import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
 import type { OcrExtraction } from "@/lib/ocr";
 import type {
   Account,
+  AccountingPeriod,
   Customer,
   Dimension,
   DimensionValue,
@@ -25,6 +26,7 @@ import type {
   Vendor,
 } from "@/lib/types";
 import { suggestNextVendorInvoiceNumber } from "@/lib/vendor-invoice-numbers";
+import { PeriodStatusBanner } from "@/components/PeriodStatusBanner";
 
 import { createBillAction, type CreateBillState } from "./actions";
 
@@ -59,6 +61,7 @@ export function NewBillForm({
   today,
   defaultDueDate,
   dimensionsWithValues,
+  accountingPeriods,
 }: {
   vendors: Vendor[];
   expenseAccounts: Account[];
@@ -67,6 +70,7 @@ export function NewBillForm({
   today: string;
   defaultDueDate: string;
   dimensionsWithValues: Array<{ dimension: Dimension; values: DimensionValue[] }>;
+  accountingPeriods: AccountingPeriod[];
 }) {
   const [state, formAction] = useFormState(createBillAction, INITIAL_STATE);
   const [vendorId, setVendorId] = useState<string>(vendors[0]?.id ?? "");
@@ -368,6 +372,7 @@ export function NewBillForm({
       <OcrUpload formType="bill" onExtracted={applyOcr} />
       {showReview && <ReviewBanner onDismiss={() => setShowReview(false)} />}
       <input type="hidden" name="ocrText" value={ocrText} />
+      <PeriodStatusBanner date={billDate} periods={accountingPeriods} />
 
       <Card title="Header" bodyPadding>
         <div className="flex flex-col gap-3">

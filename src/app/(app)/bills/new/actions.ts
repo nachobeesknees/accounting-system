@@ -11,6 +11,7 @@ import {
   type DraftBillLine,
 } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
+import { stripPeriodErrorPrefix } from "@/lib/periods";
 
 type ChargebackType = "cost" | "markup" | "fixed" | "included";
 
@@ -101,6 +102,9 @@ export async function createBillAction(
   ).trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const ocrText = String(formData.get("ocrText") ?? "").trim();
+  const periodOverrideReason = String(
+    formData.get("periodOverrideReason") ?? "",
+  ).trim();
   const action = String(formData.get("action") ?? "draft");
   const clientIdRaw = String(formData.get("clientId") ?? "").trim();
   const entityIdRaw = String(formData.get("entityId") ?? "").trim();
@@ -186,6 +190,8 @@ export async function createBillAction(
         vendorInvoiceNumber === "" ? null : vendorInvoiceNumber,
       notes: notes === "" ? null : notes,
       ocrText: ocrText === "" ? null : ocrText,
+      periodOverrideReason:
+        periodOverrideReason === "" ? null : periodOverrideReason,
       clientId: clientIdRaw === "" ? null : clientIdRaw,
       entityId: entityIdRaw === "" ? null : entityIdRaw,
       lines,
@@ -193,7 +199,10 @@ export async function createBillAction(
     });
 
     if (action === "approve") {
-      await approveBill(user, created.id);
+      await approveBill(user, created.id, {
+        periodOverrideReason:
+          periodOverrideReason === "" ? null : periodOverrideReason,
+      });
     }
 
     revalidatePath("/bills");
@@ -202,8 +211,8 @@ export async function createBillAction(
     redirect(`/bills/${created.id}`);
   } catch (err) {
     if (isRedirectError(err)) throw err;
-    return {
-      error: err instanceof Error ? err.message : "Failed to create bill.",
-    };
+    const raw =
+      err instanceof Error ? err.message : "Failed to create bill.";
+    return { error: stripPeriodErrorPrefix(raw) };
   }
 }

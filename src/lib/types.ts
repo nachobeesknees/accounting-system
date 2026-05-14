@@ -21,6 +21,21 @@ export type FiscalPeriod = {
   status: "open" | "closing" | "closed";
 };
 
+export type AccountingPeriodStatus = "open" | "closed" | "locked";
+
+export type AccountingPeriod = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: AccountingPeriodStatus;
+  closedAt: string | null;
+  closedBy: string | null;
+  lockedAt: string | null;
+  lockedBy: string | null;
+  notes: string | null;
+};
+
 export type JournalEntryStatus = "draft" | "posted" | "void";
 
 /**
@@ -64,6 +79,8 @@ export type JournalEntry = {
   firmEntityId?: string | null;
   /** Audit flag: user confirmed past an AR/AP/Cash direct-posting warning. */
   bypassControlWarning?: boolean;
+  /** Reason recorded when posted into a soft-closed accounting period. */
+  periodOverrideReason?: string | null;
   lines: JournalLine[];
 };
 

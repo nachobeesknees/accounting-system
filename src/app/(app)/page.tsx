@@ -25,6 +25,12 @@ import { formatAmount, formatMoney } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
 import { parseAmount } from "@/lib/money";
 import { getSessionUser } from "@/lib/session";
+import {
+  ensureAccountingPeriods,
+  getAccountingPeriods,
+} from "@/lib/periods";
+import type { AccountingPeriodStatus } from "@/lib/types";
+import { closePeriodAction } from "./settings/periods/actions";
 
 function formatLongDate(d: Date): string {
   return d.toLocaleDateString("en-US", {
@@ -144,6 +150,10 @@ export default async function Page() {
   const user = await getSessionUser();
   const role = user?.role ?? "Demo";
 
+  // Auto-seed accounting periods on first dashboard load so the widget
+  // below always has rows. Safe to re-call — only inserts what's missing.
+  await ensureAccountingPeriods(new Date().getUTCFullYear());
+
   const [
     kpis,
     ar,
@@ -158,6 +168,7 @@ export default async function Page() {
     base,
     fxRates,
     awaitingApproval,
+    accountingPeriods,
   ] = await Promise.all([
     getKpis(),
     getArAging(DEMO_TODAY),
@@ -174,7 +185,36 @@ export default async function Page() {
     user
       ? getInvoicesAwaitingApproval(user.userId, user.role, user.isSuperuser)
       : Promise.resolve([]),
+    getAccountingPeriods(),
   ]);
+
+  // Widget data: pick the current period plus the two preceding ones so the
+  // user sees recent close history at a glance.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const currentIdx = accountingPeriods.findIndex(
+    (p) => todayIso >= p.startDate && todayIso <= p.endDate,
+  );
+  const fallbackEnd =
+    currentIdx >= 0
+      ? currentIdx
+      : Math.max(0, accountingPeriods.length - 1);
+  const recentPeriods = accountingPeriods
+    .slice(Math.max(0, fallbackEnd - 2), fallbackEnd + 1)
+    .reverse(); // newest first
+  const currentOpenPeriod =
+    currentIdx >= 0 && accountingPeriods[currentIdx]?.status === "open"
+      ? accountingPeriods[currentIdx]
+      : null;
+  function periodStatusVariant(status: AccountingPeriodStatus) {
+    if (status === "open") return "active" as const;
+    if (status === "closed") return "pending" as const;
+    return "review" as const;
+  }
+  function periodStatusLabel(status: AccountingPeriodStatus) {
+    if (status === "open") return "Open";
+    if (status === "closed") return "Closed";
+    return "Locked";
+  }
   const entityById = new Map(entities.map((e) => [e.id, e] as const));
   const baseCode = base?.code ?? "USD";
   const baseSymbol = base?.symbol ?? "$";
@@ -448,6 +488,98 @@ export default async function Page() {
           </Table>
         </Card>
       </div>
+
+      {recentPeriods.length > 0 && (
+        <div className="px-6 mb-3.5">
+          <Card
+            title="Period status"
+            actions={
+              <Link
+                href="/settings/periods"
+                style={{ color: "var(--ink-3)", textDecoration: "none" }}
+              >
+                Manage periods →
+              </Link>
+            }
+          >
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Period</TH>
+                  <TH>Date range</TH>
+                  <TH>Status</TH>
+                  <TH>Closed</TH>
+                  <TH></TH>
+                </TR>
+              </THead>
+              <TBody>
+                {recentPeriods.map((p) => {
+                  const isCurrent =
+                    todayIso >= p.startDate && todayIso <= p.endDate;
+                  return (
+                    <TR key={p.id}>
+                      <TD>
+                        {p.name}
+                        {isCurrent && (
+                          <span
+                            className="ml-2 text-[10.5px] uppercase"
+                            style={{
+                              color: "var(--ink-4)",
+                              letterSpacing: "0.04em",
+                            }}
+                          >
+                            (current)
+                          </span>
+                        )}
+                      </TD>
+                      <TD>
+                        {formatShortDate(p.startDate)} – {formatShortDate(p.endDate)}
+                      </TD>
+                      <TD>
+                        <Pill variant={periodStatusVariant(p.status)}>
+                          {periodStatusLabel(p.status)}
+                        </Pill>
+                      </TD>
+                      <TD>
+                        {p.closedAt
+                          ? new Date(p.closedAt).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                              timeZone: "UTC",
+                            })
+                          : "—"}
+                      </TD>
+                      <TD>
+                        {currentOpenPeriod && currentOpenPeriod.id === p.id ? (
+                          <form action={closePeriodAction}>
+                            <input type="hidden" name="periodId" value={p.id} />
+                            <button
+                              type="submit"
+                              className="text-[12px]"
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                color: "var(--ink-2)",
+                                cursor: "pointer",
+                                padding: 0,
+                              }}
+                            >
+                              Close period →
+                            </button>
+                          </form>
+                        ) : (
+                          <span style={{ color: "var(--ink-4)" }}>—</span>
+                        )}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          </Card>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 px-6 mb-3.5">
         <Card

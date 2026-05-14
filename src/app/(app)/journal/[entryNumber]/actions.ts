@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getSessionUser } from "@/lib/session";
 import { getJournalEntryById } from "@/lib/data";
 import { postJournalEntry, voidJournalEntry } from "@/lib/mutations";
+import { stripPeriodErrorPrefix } from "@/lib/periods";
 
 function isRedirect(err: unknown): boolean {
   return (
@@ -17,7 +18,7 @@ function isRedirect(err: unknown): boolean {
 }
 
 function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
+  if (err instanceof Error) return stripPeriodErrorPrefix(err.message);
   return "Unknown error";
 }
 
@@ -26,13 +27,19 @@ export async function postEntry(formData: FormData): Promise<void> {
   if (!user) redirect("/login");
 
   const entryId = String(formData.get("entryId") ?? "");
+  const periodOverrideReason = String(
+    formData.get("periodOverrideReason") ?? "",
+  ).trim();
   if (!entryId) redirect("/journal");
 
   const before = await getJournalEntryById(entryId);
   const beforeTarget = before ? `/journal/${before.entryNumber}` : "/journal";
 
   try {
-    await postJournalEntry(user, entryId);
+    await postJournalEntry(user, entryId, {
+      periodOverrideReason:
+        periodOverrideReason === "" ? null : periodOverrideReason,
+    });
   } catch (err) {
     if (isRedirect(err)) throw err;
     revalidatePath(beforeTarget);
