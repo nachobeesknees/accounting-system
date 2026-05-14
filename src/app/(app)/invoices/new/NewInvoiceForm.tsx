@@ -27,6 +27,27 @@ import {
   type CreateInvoiceState,
 } from "./actions";
 
+const SERVICE_REVENUE_ACCOUNT_ID = "a-4000";
+
+export type ChargebackRow = {
+  billId: string;
+  billNumber: string;
+  vendorName: string;
+  total: number;
+  rebillAmount: number;
+  method: "cost" | "markup" | "fixed";
+  methodLabel: string;
+  description: string;
+};
+
+export type PriceListEntryRow = {
+  id: string;
+  label: string;
+  code: string;
+  unitPrice: number;
+  includedQuantity: number | null;
+};
+
 type Line = {
   description: string;
   accountId: string;
@@ -54,6 +75,8 @@ export function NewInvoiceForm({
   dueDefault,
   dimensionsWithValues,
   accountingPeriods,
+  chargebacksByCustomer,
+  priceListEntries,
 }: {
   customers: Customer[];
   revenueAccounts: Account[];
@@ -61,6 +84,8 @@ export function NewInvoiceForm({
   dueDefault: string;
   dimensionsWithValues: Array<{ dimension: Dimension; values: DimensionValue[] }>;
   accountingPeriods: AccountingPeriod[];
+  chargebacksByCustomer: Record<string, ChargebackRow[]>;
+  priceListEntries: PriceListEntryRow[];
 }) {
   const [state, formAction] = useFormState(createInvoiceAction, INITIAL_STATE);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
@@ -70,6 +95,14 @@ export function NewInvoiceForm({
   const [notes, setNotes] = useState("");
   const [ocrText, setOcrText] = useState("");
   const [showReview, setShowReview] = useState(false);
+
+  // Selection state for the two new widgets.
+  const [selectedBillIds, setSelectedBillIds] = useState<Set<string>>(new Set());
+  const [selectedPriceEntryIds, setSelectedPriceEntryIds] = useState<Set<string>>(
+    new Set(),
+  );
+  // Bill IDs already added to the invoice (sent to server action).
+  const [chargebackBillIds, setChargebackBillIds] = useState<string[]>([]);
 
   const customerOptions = useMemo<SmartSelectOption[]>(
     () =>
@@ -100,6 +133,13 @@ export function NewInvoiceForm({
     }
     return m;
   }, [dimensionsWithValues]);
+
+  // Filter chargebacks by selected customer, excluding any already added.
+  const pendingChargebacks: ChargebackRow[] = useMemo(() => {
+    if (!customerId) return [];
+    const rows = chargebacksByCustomer[customerId] ?? [];
+    return rows.filter((r) => !chargebackBillIds.includes(r.billId));
+  }, [customerId, chargebacksByCustomer, chargebackBillIds]);
 
   function applyOcr(data: OcrExtraction, raw: string) {
     setOcrText(raw);
@@ -161,6 +201,90 @@ export function NewInvoiceForm({
     );
   }
 
+  /** Append new lines to the table, replacing any leading blank line. */
+  function appendLines(newLines: Line[]) {
+    if (newLines.length === 0) return;
+    setLines((prev) => {
+      const onlyBlank =
+        prev.length === 1 &&
+        prev[0].description.trim() === "" &&
+        prev[0].accountId === "" &&
+        parseAmount(prev[0].unitPrice) === 0;
+      return onlyBlank ? newLines : [...prev, ...newLines];
+    });
+  }
+
+  function toggleBill(id: string) {
+    setSelectedBillIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function togglePriceEntry(id: string) {
+    setSelectedPriceEntryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function addSelectedChargebacks() {
+    const picks = pendingChargebacks.filter((r) => selectedBillIds.has(r.billId));
+    if (picks.length === 0) return;
+    const newLines: Line[] = picks.map((r) => ({
+      description: r.description,
+      accountId: SERVICE_REVENUE_ACCOUNT_ID,
+      quantity: "1",
+      unitPrice: r.rebillAmount.toFixed(2),
+      dimensions: {},
+    }));
+    appendLines(newLines);
+    setChargebackBillIds((prev) => [...prev, ...picks.map((p) => p.billId)]);
+    setSelectedBillIds(new Set());
+  }
+
+  function addSelectedPriceListEntries() {
+    const picks = priceListEntries.filter((e) =>
+      selectedPriceEntryIds.has(e.id),
+    );
+    if (picks.length === 0) return;
+    const newLines: Line[] = picks.map((e) => ({
+      description: e.label,
+      accountId: SERVICE_REVENUE_ACCOUNT_ID,
+      quantity:
+        e.includedQuantity != null && e.includedQuantity > 0
+          ? String(e.includedQuantity)
+          : "1",
+      unitPrice: e.unitPrice.toFixed(2),
+      dimensions: {},
+    }));
+    appendLines(newLines);
+    setSelectedPriceEntryIds(new Set());
+  }
+
+  const allBillsSelected =
+    pendingChargebacks.length > 0 &&
+    pendingChargebacks.every((r) => selectedBillIds.has(r.billId));
+  function toggleAllBills() {
+    if (allBillsSelected) {
+      setSelectedBillIds(new Set());
+    } else {
+      setSelectedBillIds(new Set(pendingChargebacks.map((r) => r.billId)));
+    }
+  }
+
+  const selectedChargebackTotal = useMemo(
+    () =>
+      pendingChargebacks
+        .filter((r) => selectedBillIds.has(r.billId))
+        .reduce((s, r) => s + r.rebillAmount, 0),
+    [pendingChargebacks, selectedBillIds],
+  );
+
   return (
     <form action={formAction} className="flex flex-col gap-3.5 px-6 py-3.5 pb-8">
       {state.error && (
@@ -181,6 +305,16 @@ export function NewInvoiceForm({
       <input type="hidden" name="ocrText" value={ocrText} />
       <PeriodStatusBanner date={invoiceDate} periods={accountingPeriods} />
 
+      {/* Hidden inputs for chargeback bill IDs already applied. */}
+      {chargebackBillIds.map((id) => (
+        <input
+          key={id}
+          type="hidden"
+          name="chargebackBillIds[]"
+          value={id}
+        />
+      ))}
+
       <Card title="Header" bodyPadding>
         <div className="flex flex-col gap-3">
           <Row>
@@ -189,7 +323,12 @@ export function NewInvoiceForm({
               name="customerId"
               required
               value={customerId}
-              onChange={setCustomerId}
+              onChange={(v) => {
+                setCustomerId(v);
+                // Reset chargeback selection state on customer change.
+                setSelectedBillIds(new Set());
+                setChargebackBillIds([]);
+              }}
               options={customerOptions}
               emptyLabel="Select customer…"
             />
@@ -222,6 +361,166 @@ export function NewInvoiceForm({
           />
         </div>
       </Card>
+
+      {/* Widget 1: Pending vendor chargebacks for the selected customer. */}
+      {customerId && pendingChargebacks.length > 0 && (
+        <Card
+          title="Pending vendor chargebacks"
+          actions={
+            <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+              {pendingChargebacks.length} bill
+              {pendingChargebacks.length === 1 ? "" : "s"} ready to rebill
+            </span>
+          }
+        >
+          <Table>
+            <THead>
+              <TR hover={false}>
+                <TH>
+                  <input
+                    type="checkbox"
+                    aria-label="Select all chargebacks"
+                    checked={allBillsSelected}
+                    onChange={toggleAllBills}
+                  />
+                </TH>
+                <TH>Bill #</TH>
+                <TH>Vendor</TH>
+                <TH>Method</TH>
+                <TH num>Bill total</TH>
+                <TH num>Rebill</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {pendingChargebacks.map((r) => {
+                const checked = selectedBillIds.has(r.billId);
+                return (
+                  <TR key={r.billId} hover={false}>
+                    <TD>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleBill(r.billId)}
+                        aria-label={`Select ${r.billNumber}`}
+                      />
+                    </TD>
+                    <TD mono>{r.billNumber}</TD>
+                    <TD>{r.vendorName}</TD>
+                    <TD style={{ color: "var(--ink-3)" }}>{r.methodLabel}</TD>
+                    <TD num>
+                      {formatMoney(r.total, "USD", { compact: true })}
+                    </TD>
+                    <TD num>
+                      {formatMoney(r.rebillAmount, "USD", { compact: true })}
+                    </TD>
+                  </TR>
+                );
+              })}
+              <TR total hover={false}>
+                <TD>{""}</TD>
+                <TD>{""}</TD>
+                <TD>{""}</TD>
+                <TD>Selected total</TD>
+                <TD>{""}</TD>
+                <TD num>
+                  {formatMoney(selectedChargebackTotal, "USD", {
+                    compact: true,
+                  })}
+                </TD>
+              </TR>
+            </TBody>
+          </Table>
+          <div className="p-3.5 flex justify-end">
+            <Button
+              type="button"
+              variant="primary"
+              onClick={addSelectedChargebacks}
+              disabled={selectedBillIds.size === 0}
+            >
+              Add selected to invoice
+            </Button>
+          </div>
+        </Card>
+      )}
+
+      {/* Widget 2: Pull from current price list. Collapsible. */}
+      {customerId && priceListEntries.length > 0 && (
+        <section
+          className="rounded-lg overflow-hidden"
+          style={{
+            border: "1px solid var(--line)",
+            background: "var(--raised)",
+          }}
+        >
+          <details>
+            <summary
+              className="flex items-center justify-between gap-3 px-3.5 py-2 cursor-pointer"
+              style={{
+                borderBottom: "1px solid var(--line)",
+                listStyle: "none",
+              }}
+            >
+              <h3 className="text-[12.5px] font-semibold tracking-tight m-0">
+                Pull from price list
+              </h3>
+              <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                {priceListEntries.length} item
+                {priceListEntries.length === 1 ? "" : "s"}
+              </span>
+            </summary>
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>{""}</TH>
+                  <TH>Code</TH>
+                  <TH>Label</TH>
+                  <TH num>Qty</TH>
+                  <TH num>Unit price</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {priceListEntries.map((e) => {
+                  const checked = selectedPriceEntryIds.has(e.id);
+                  return (
+                    <TR key={e.id} hover={false}>
+                      <TD>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => togglePriceEntry(e.id)}
+                          aria-label={`Select ${e.label}`}
+                        />
+                      </TD>
+                      <TD mono style={{ color: "var(--ink-3)" }}>
+                        {e.code}
+                      </TD>
+                      <TD>{e.label}</TD>
+                      <TD num>
+                        {e.includedQuantity != null && e.includedQuantity > 0
+                          ? e.includedQuantity
+                          : 1}
+                      </TD>
+                      <TD num>
+                        {formatMoney(e.unitPrice, "USD", { compact: true })}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+            <div className="p-3.5 flex justify-end">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={addSelectedPriceListEntries}
+                disabled={selectedPriceEntryIds.size === 0}
+              >
+                Add selected to invoice
+              </Button>
+            </div>
+          </details>
+        </section>
+      )}
 
       <Card
         title="Line items"

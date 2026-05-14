@@ -2,6 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { inArray } from "drizzle-orm";
+import { getDb, schema } from "@/db";
 import { getSessionUser } from "@/lib/session";
 import { createInvoice, postInvoice, type DraftInvoiceLine } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
@@ -122,6 +124,13 @@ export async function createInvoiceAction(
     return { error: "Invoice must have at least one line." };
   }
 
+  // Bills the user selected via the "Pending vendor chargebacks" widget.
+  // Mark each as billed-back to this invoice so they don't get rebilled again.
+  const chargebackBillIds = formData
+    .getAll("chargebackBillIds[]")
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter((v) => v !== "");
+
   try {
     const created = await createInvoice(user, {
       customerId,
@@ -133,6 +142,15 @@ export async function createInvoiceAction(
         periodOverrideReason === "" ? null : periodOverrideReason,
       lines,
     });
+
+    if (chargebackBillIds.length > 0) {
+      const db = getDb();
+      await db
+        .update(schema.bills)
+        .set({ chargebackInvoiceId: created.id, updatedAt: new Date() })
+        .where(inArray(schema.bills.id, chargebackBillIds));
+      revalidatePath("/bills");
+    }
 
     if (action === "post") {
       await postInvoice(user, created.id, {
