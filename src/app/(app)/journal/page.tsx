@@ -11,6 +11,7 @@ import { getJournalEntries, totalDebits } from "@/lib/data";
 import { formatMoney } from "@/lib/money";
 import type { JournalEntry } from "@/lib/types";
 import { DrillNumber } from "@/components/DrillNumber";
+import { duplicateJournalEntryAction } from "../duplicate-actions";
 
 function formatShortDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -147,6 +148,7 @@ export default async function Page({
                   <TH>Source</TH>
                   <TH>Status</TH>
                   <TH num>Total</TH>
+                  <TH>{""}</TH>
                 </TR>
               </THead>
               <TBody>
@@ -192,6 +194,26 @@ export default async function Page({
                         currencyCode={null}
                       />
                     </TD>
+                    <TD>
+                      <form action={duplicateJournalEntryAction}>
+                        <input type="hidden" name="entryId" value={e.id} />
+                        <button
+                          type="submit"
+                          title="Duplicate as draft"
+                          style={{
+                            background: "transparent",
+                            border: "1px solid var(--line-2)",
+                            borderRadius: 4,
+                            color: "var(--ink-3)",
+                            cursor: "pointer",
+                            fontSize: 11,
+                            padding: "1px 6px",
+                          }}
+                        >
+                          Duplicate
+                        </button>
+                      </form>
+                    </TD>
                   </TR>
                 ))}
                 <TR total hover={false}>
@@ -202,6 +224,7 @@ export default async function Page({
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD num>{formatMoney(grandTotal, "USD")}</TD>
+                  <TD>{""}</TD>
                 </TR>
               </TBody>
             </Table>

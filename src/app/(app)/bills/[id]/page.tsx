@@ -31,6 +31,7 @@ import {
   recordBillPaymentAction,
   voidBillAction,
 } from "./actions";
+import { duplicateBillAction } from "../../duplicate-actions";
 import { Attachments } from "@/components/Attachments";
 import { BillChargebackPanel } from "./BillChargebackPanel";
 
@@ -155,6 +156,12 @@ export default async function Page({
       <ButtonLink href="/bills" variant="secondary">
         ← All bills
       </ButtonLink>
+      <form action={duplicateBillAction} style={{ display: "inline-flex" }}>
+        <input type="hidden" name="billId" value={bill.id} />
+        <Button variant="secondary" type="submit">
+          Duplicate
+        </Button>
+      </form>
       {canApprove && (
         <form action={approveBillAction} style={{ display: "inline-flex" }}>
           <input type="hidden" name="billId" value={bill.id} />

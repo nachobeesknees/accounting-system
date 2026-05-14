@@ -21,6 +21,7 @@ import {
 } from "@/lib/data";
 import { formatMoney, parseAmount } from "@/lib/money";
 import { postEntry, voidEntry } from "./actions";
+import { duplicateJournalEntryAction } from "../../duplicate-actions";
 import { Attachments } from "@/components/Attachments";
 
 function formatLongDate(iso: string): string {
@@ -103,6 +104,12 @@ export default async function Page({
       <ButtonLink variant="secondary" href="/journal">
         ← All entries
       </ButtonLink>
+      <form action={duplicateJournalEntryAction} style={{ display: "inline-flex" }}>
+        <input type="hidden" name="entryId" value={entry.id} />
+        <Button variant="secondary" type="submit">
+          Duplicate
+        </Button>
+      </form>
       {entry.status === "draft" && (
         <>
           <form action={postEntry}>
