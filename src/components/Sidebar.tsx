@@ -53,6 +53,9 @@ const SECTIONS: Section[] = [
     heading: "Reporting",
     items: [
       { href: "/reports", label: "Financial Statements" },
+      { href: "/reports/ap-aging", label: "AP Aging" },
+      { href: "/reports/ar-aging", label: "AR Aging" },
+      { href: "/reports/cash-forecast", label: "12-Week Cash Forecast" },
       { href: "/cash-forecast", label: "Cash Forecast" },
       { href: "/consolidation", label: "Consolidation" },
     ],
