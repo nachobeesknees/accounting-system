@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
-import { SelectField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getAccounts, getJournalEntries } from "@/lib/data";
 import { formatMoney, parseAmount } from "@/lib/money";
@@ -88,17 +88,16 @@ export default async function Page({
         }}
       >
         <form method="GET" className="flex items-end gap-2">
-          <SelectField
+          <SmartSelectField
             label="Account"
             name="account"
             defaultValue={account?.code ?? ""}
-          >
-            {accounts.map((a) => (
-              <option key={a.id} value={a.code}>
-                {a.code} — {a.name}
-              </option>
-            ))}
-          </SelectField>
+            options={accounts.map((a) => ({
+              value: a.code,
+              label: `${a.code} — ${a.name}`,
+              search: a.code,
+            }))}
+          />
           <Button variant="primary" type="submit">
             Apply
           </Button>

@@ -4,7 +4,8 @@ import { useActionState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { Field, Row, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import {
   createPriceListAction,
   type CreatePriceListState,
@@ -35,16 +36,17 @@ export function NewPriceListForm({ offices }: { offices: Office[] }) {
         <Card title="Price list details">
           <div className="flex flex-col gap-3">
             <Row>
-              <SelectField label="Office" name="officeId" required defaultValue="">
-                <option value="" disabled>
-                  Select office…
-                </option>
-                {offices.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.code} — {o.name}
-                  </option>
-                ))}
-              </SelectField>
+              <SmartSelectField
+                label="Office"
+                name="officeId"
+                required
+                options={offices.map((o) => ({
+                  value: o.id,
+                  label: `${o.code} — ${o.name}`,
+                  search: o.code,
+                }))}
+                emptyLabel="Select office…"
+              />
               <Field
                 label="Name"
                 name="name"

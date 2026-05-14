@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField, type SmartSelectOption } from "@/components/ui/SmartSelect";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
@@ -182,18 +183,17 @@ export default async function Page({
                 <Field label="Name" name="name" required defaultValue={entity.name} />
               </Row>
               <Row>
-                <SelectField
+                <SmartSelectField
                   label="Client"
                   name="clientId"
                   required
                   defaultValue={entity.clientId}
-                >
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </SelectField>
+                  options={customers.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                    search: c.code,
+                  }))}
+                />
                 <SelectField label="Kind" name="kind" required defaultValue={entity.kind}>
                   {Object.entries(KIND_LABEL).map(([k, v]) => (
                     <option key={k} value={k}>
@@ -234,45 +234,42 @@ export default async function Page({
                 </SelectField>
               </Row>
               <Row>
-                <SelectField
+                <SmartSelectField
                   label="Functional currency"
                   name="currencyCode"
                   defaultValue={entity.currencyCode}
-                >
-                  {currencies
+                  options={currencies
                     .filter((c) => c.isActive || c.code === entity.currencyCode)
-                    .map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.code} — {c.name}
-                      </option>
-                    ))}
-                </SelectField>
-                <SelectField
+                    .map((c) => ({
+                      value: c.code,
+                      label: `${c.code} — ${c.name}`,
+                      search: c.code,
+                    }))}
+                />
+                <SmartSelectField
                   label="Region"
                   name="regionId"
                   defaultValue={entity.regionId ?? ""}
-                >
-                  <option value="">— None —</option>
-                  {(regionsByGroup.get(null) ?? []).map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                  {orderedRegionGroupIds.map((gid) => {
-                    const g = regionGroupById.get(gid);
-                    const rs = regionsByGroup.get(gid) ?? [];
-                    if (!g || rs.length === 0) return null;
-                    return (
-                      <optgroup key={gid} label={g.name}>
-                        {rs.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            {r.name}
-                          </option>
-                        ))}
-                      </optgroup>
-                    );
-                  })}
-                </SelectField>
+                  options={[
+                    ...(regionsByGroup.get(null) ?? []).map<SmartSelectOption>(
+                      (r) => ({ value: r.id, label: r.name }),
+                    ),
+                    ...orderedRegionGroupIds.flatMap<SmartSelectOption>(
+                      (gid) => {
+                        const g = regionGroupById.get(gid);
+                        const rs = regionsByGroup.get(gid) ?? [];
+                        if (!g) return [];
+                        return rs.map((r) => ({
+                          value: r.id,
+                          label: r.name,
+                          group: g.name,
+                        }));
+                      },
+                    ),
+                  ]}
+                  emptyLabel="— None —"
+                  clearable
+                />
               </Row>
               <TextareaField
                 label="Notes"

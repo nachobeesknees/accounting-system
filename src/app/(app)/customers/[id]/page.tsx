@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
-import { SelectField } from "@/components/ui/Field";
+import { SmartSelect, type SmartSelectOption } from "@/components/ui/SmartSelect";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAssetsByClientId,
@@ -238,37 +238,30 @@ export default async function Page({
                   className="flex items-center gap-1.5"
                 >
                   <input type="hidden" name="customerId" value={customer.id} />
-                  <select
+                  <SmartSelect
                     name="regionId"
                     defaultValue={customerRegionId ?? ""}
-                    className="rounded-md px-2 py-1 text-[12.5px]"
-                    style={{
-                      background: "var(--surface)",
-                      border: "1px solid var(--line)",
-                      color: "var(--ink)",
-                    }}
-                  >
-                    <option value="">— None —</option>
-                    {(regionsByGroup.get(null) ?? []).map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                    {orderedRegionGroupIds.map((gid) => {
-                      const g = regionGroupById.get(gid);
-                      const rs = regionsByGroup.get(gid) ?? [];
-                      if (!g || rs.length === 0) return null;
-                      return (
-                        <optgroup key={gid} label={g.name}>
-                          {rs.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      );
-                    })}
-                  </select>
+                    options={[
+                      ...(regionsByGroup.get(null) ?? []).map<SmartSelectOption>(
+                        (r) => ({ value: r.id, label: r.name }),
+                      ),
+                      ...orderedRegionGroupIds.flatMap<SmartSelectOption>(
+                        (gid) => {
+                          const g = regionGroupById.get(gid);
+                          const rs = regionsByGroup.get(gid) ?? [];
+                          if (!g) return [];
+                          return rs.map((r) => ({
+                            value: r.id,
+                            label: r.name,
+                            group: g.name,
+                          }));
+                        },
+                      ),
+                    ]}
+                    emptyLabel="— None —"
+                    clearable
+                    triggerStyle={{ minHeight: 26, fontSize: 12.5 }}
+                  />
                   <Button variant="ghost" type="submit">
                     Save
                   </Button>
@@ -364,23 +357,25 @@ export default async function Page({
 
             <form action={addAssignmentAction} className="flex items-end gap-3 flex-wrap">
               <input type="hidden" name="customerId" value={customer.id} />
-              <div className="flex-1 min-w-[240px] max-w-md">
-                <SelectField
-                  label="Assign another employee"
-                  name="userId"
-                  defaultValue=""
+              <div className="flex-1 min-w-[240px] max-w-md flex flex-col gap-1">
+                <span
+                  className="text-[11.5px]"
+                  style={{ color: "var(--ink-3)" }}
                 >
-                  <option value="" disabled>
-                    Pick a user…
-                  </option>
-                  {users
+                  Assign another employee
+                </span>
+                <SmartSelect
+                  name="userId"
+                  options={users
                     .filter((u) => !assignedUserIds.has(u.id))
-                    .map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.fullName} · {u.role}
-                      </option>
-                    ))}
-                </SelectField>
+                    .map<SmartSelectOption>((u) => ({
+                      value: u.id,
+                      label: u.fullName,
+                      description: `· ${u.role}`,
+                      search: u.email,
+                    }))}
+                  emptyLabel="Pick a user…"
+                />
               </div>
               <label
                 className="flex items-center gap-1.5 text-[12.5px] cursor-pointer mb-1"

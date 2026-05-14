@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { IconFile } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -132,30 +133,42 @@ export default async function Page({
             <option value="overdue">Overdue</option>
             <option value="void">Void</option>
           </SelectField>
-          <SelectField label="Vendor" name="vendor" defaultValue={vendorId}>
-            <option value="">All</option>
-            {vendors.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.name}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField label="Client" name="client" defaultValue={clientId}>
-            <option value="">All</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField label="Entity" name="entity" defaultValue={entityId}>
-            <option value="">All</option>
-            {entitiesFiltered.map((e) => (
-              <option key={e.id} value={e.id}>
-                {e.name}
-              </option>
-            ))}
-          </SelectField>
+          <SmartSelectField
+            label="Vendor"
+            name="vendor"
+            defaultValue={vendorId}
+            options={vendors.map((v) => ({
+              value: v.id,
+              label: v.name,
+              search: v.code,
+            }))}
+            emptyLabel="All"
+            clearable
+          />
+          <SmartSelectField
+            label="Client"
+            name="client"
+            defaultValue={clientId}
+            options={customers.map((c) => ({
+              value: c.id,
+              label: c.name,
+              search: c.code,
+            }))}
+            emptyLabel="All"
+            clearable
+          />
+          <SmartSelectField
+            label="Entity"
+            name="entity"
+            defaultValue={entityId}
+            options={entitiesFiltered.map((e) => ({
+              value: e.id,
+              label: e.name,
+              search: e.code,
+            }))}
+            emptyLabel="All"
+            clearable
+          />
           <Button variant="primary" type="submit">
             Apply
           </Button>

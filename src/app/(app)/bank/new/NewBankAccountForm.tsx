@@ -4,7 +4,8 @@ import { useActionState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Row, SelectField } from "@/components/ui/Field";
+import { Field, Row } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import {
   createBankAccountAction,
@@ -55,16 +56,17 @@ export function NewBankAccountForm({
                 required
                 placeholder="Operating, Trust, Reserve, etc."
               />
-              <SelectField label="GL account" name="accountId" required defaultValue="">
-                <option value="" disabled>
-                  Select GL account…
-                </option>
-                {cashAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.code} — {a.name}
-                  </option>
-                ))}
-              </SelectField>
+              <SmartSelectField
+                label="GL account"
+                name="accountId"
+                required
+                options={cashAccounts.map((a) => ({
+                  value: a.id,
+                  label: `${a.code} — ${a.name}`,
+                  search: a.code,
+                }))}
+                emptyLabel="Select GL account…"
+              />
             </Row>
             <Row>
               <Field
@@ -96,28 +98,30 @@ export function NewBankAccountForm({
             </Row>
             <Row>
               <Field label="Balance as-of date" name="balanceAsOf" type="date" />
-              <SelectField label="Entity (optional)" name="entityId" defaultValue="">
-                <option value="">Internal / unassigned</option>
-                {entities.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.code} — {e.name}
-                  </option>
-                ))}
-              </SelectField>
+              <SmartSelectField
+                label="Entity (optional)"
+                name="entityId"
+                options={entities.map((e) => ({
+                  value: e.id,
+                  label: `${e.code} — ${e.name}`,
+                  search: e.code,
+                }))}
+                emptyLabel="Internal / unassigned"
+                clearable
+              />
             </Row>
             <Row>
-              <SelectField
+              <SmartSelectField
                 label="Client (optional)"
                 name="clientId"
-                defaultValue=""
-              >
-                <option value="">Internal / inherit from entity</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </SelectField>
+                options={customers.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                  search: c.code,
+                }))}
+                emptyLabel="Internal / inherit from entity"
+                clearable
+              />
               <div />
             </Row>
           </div>

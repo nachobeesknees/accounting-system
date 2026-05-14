@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
-import { Field, Row, SelectField } from "@/components/ui/Field";
+import { Field, Row } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getAttachments, getLookupValues, getUserById } from "@/lib/data";
@@ -179,14 +180,13 @@ export async function Attachments({
             className="text-[13px]"
           />
           <Row>
-            <SelectField label="Document type" name="documentType" defaultValue="">
-              <option value="">—</option>
-              {docTypes.map((d) => (
-                <option key={d.code} value={d.code}>
-                  {d.label}
-                </option>
-              ))}
-            </SelectField>
+            <SmartSelectField
+              label="Document type"
+              name="documentType"
+              options={docTypes.map((d) => ({ value: d.code, label: d.label }))}
+              emptyLabel="—"
+              clearable
+            />
             <Field label="Notes" name="notes" />
           </Row>
           <div className="flex justify-end">

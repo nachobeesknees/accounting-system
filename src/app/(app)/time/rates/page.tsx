@@ -2,7 +2,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
-import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { Field, Row, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -113,16 +114,17 @@ export default async function Page({
           <Card title="Add rate">
             <div className="flex flex-col gap-3">
               <Row>
-                <SelectField label="User" name="userId" required defaultValue="">
-                  <option value="" disabled>
-                    Select user…
-                  </option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.fullName} ({u.role})
-                    </option>
-                  ))}
-                </SelectField>
+                <SmartSelectField
+                  label="User"
+                  name="userId"
+                  required
+                  options={users.map((u) => ({
+                    value: u.id,
+                    label: `${u.fullName} (${u.role})`,
+                    search: u.email,
+                  }))}
+                  emptyLabel="Select user…"
+                />
                 <Field label="Role label" name="role" required placeholder="Bookkeeper, Controller, CFO…" />
               </Row>
               <Row>

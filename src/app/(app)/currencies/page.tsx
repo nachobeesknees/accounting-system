@@ -2,7 +2,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
-import { Field, Row, SelectField } from "@/components/ui/Field";
+import { Field, Row } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getCurrencies, getFxRates } from "@/lib/data";
@@ -200,18 +201,19 @@ export default async function Page({
           <Card title="Add FX rate snapshot">
             <div className="flex flex-col gap-3">
               <Row>
-                <SelectField label="Currency" name="currencyCode" required defaultValue="">
-                  <option value="" disabled>
-                    Select currency…
-                  </option>
-                  {currencies
+                <SmartSelectField
+                  label="Currency"
+                  name="currencyCode"
+                  required
+                  options={currencies
                     .filter((c) => !c.isBase)
-                    .map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.code} — {c.name}
-                      </option>
-                    ))}
-                </SelectField>
+                    .map((c) => ({
+                      value: c.code,
+                      label: `${c.code} — ${c.name}`,
+                      search: c.code,
+                    }))}
+                  emptyLabel="Select currency…"
+                />
                 <Field label="Rate date" name="rateDate" type="date" required defaultValue={today} />
               </Row>
               <Row>

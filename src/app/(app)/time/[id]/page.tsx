@@ -4,7 +4,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
-import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { Field, Row, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import {
   getCustomers,
@@ -102,13 +103,17 @@ export default async function Page({
                 />
               </Row>
               <Row>
-                <SelectField label="User" name="userId" required defaultValue={entry.userId}>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.fullName}
-                    </option>
-                  ))}
-                </SelectField>
+                <SmartSelectField
+                  label="User"
+                  name="userId"
+                  required
+                  defaultValue={entry.userId}
+                  options={users.map((u) => ({
+                    value: u.id,
+                    label: u.fullName,
+                    search: u.email,
+                  }))}
+                />
                 <MoneyInput
                   label="Rate (per hr)"
                   name="rateAtLog"
@@ -122,30 +127,30 @@ export default async function Page({
                 defaultValue={entry.description}
               />
               <Row>
-                <SelectField
+                <SmartSelectField
                   label="Client"
                   name="clientId"
                   defaultValue={entry.clientId ?? ""}
-                >
-                  <option value="">— None —</option>
-                  {customers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </SelectField>
-                <SelectField
+                  options={customers.map((c) => ({
+                    value: c.id,
+                    label: c.name,
+                    search: c.code,
+                  }))}
+                  emptyLabel="— None —"
+                  clearable
+                />
+                <SmartSelectField
                   label="Entity"
                   name="entityId"
                   defaultValue={entry.entityId ?? ""}
-                >
-                  <option value="">— None —</option>
-                  {entities.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.code} — {e.name}
-                    </option>
-                  ))}
-                </SelectField>
+                  options={entities.map((e) => ({
+                    value: e.id,
+                    label: `${e.code} — ${e.name}`,
+                    search: e.code,
+                  }))}
+                  emptyLabel="— None —"
+                  clearable
+                />
               </Row>
               <Row>
                 <Field

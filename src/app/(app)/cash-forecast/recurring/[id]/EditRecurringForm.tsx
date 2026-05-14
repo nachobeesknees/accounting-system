@@ -11,6 +11,7 @@ import {
   SelectField,
   TextareaField,
 } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { parseAmount } from "@/lib/money";
 import type {
@@ -103,54 +104,52 @@ export function EditRecurringForm({
               />
             </Row>
             <Row>
-              <SelectField
+              <SmartSelectField
                 label="Expense account"
                 name="expenseAccountId"
                 required
                 defaultValue={payment.expenseAccountId}
-              >
-                <option value="">— Select expense account —</option>
-                {expenseAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.code} — {a.name}
-                  </option>
-                ))}
-              </SelectField>
-              <SelectField
+                options={expenseAccounts.map((a) => ({
+                  value: a.id,
+                  label: `${a.code} — ${a.name}`,
+                  search: a.code,
+                }))}
+                emptyLabel="— Select expense account —"
+              />
+              <SmartSelectField
                 label="Vendor"
                 name="vendorId"
                 defaultValue={payment.vendorId ?? ""}
-              >
-                <option value="">— None —</option>
-                {vendors.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.code} — {v.name}
-                  </option>
-                ))}
-              </SelectField>
+                options={vendors.map((v) => ({
+                  value: v.id,
+                  label: `${v.code} — ${v.name}`,
+                  search: v.code,
+                }))}
+                emptyLabel="— None —"
+                clearable
+              />
             </Row>
             <Row>
-              <SelectField
+              <SmartSelectField
                 label="Bank account"
                 name="bankAccountId"
                 defaultValue={payment.bankAccountId ?? ""}
-              >
-                <option value="">— Default —</option>
-                {bankAccounts.map((b) => {
+                options={bankAccounts.map((b) => {
                   const suffix = [
                     b.institution,
                     b.lastFour ? `••${b.lastFour}` : null,
                   ]
                     .filter(Boolean)
                     .join(" ");
-                  return (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                      {suffix ? ` — ${suffix}` : ""}
-                    </option>
-                  );
+                  return {
+                    value: b.id,
+                    label: suffix ? `${b.name} — ${suffix}` : b.name,
+                    search: b.lastFour ?? undefined,
+                  };
                 })}
-              </SelectField>
+                emptyLabel="— Default —"
+                clearable
+              />
               <label className="flex flex-col gap-1">
                 <span
                   className="text-[11.5px]"

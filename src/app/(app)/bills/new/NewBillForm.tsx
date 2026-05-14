@@ -5,7 +5,12 @@ import { useFormState } from "react-dom";
 
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { Field, Row, TextareaField } from "@/components/ui/Field";
+import {
+  SmartSelect,
+  SmartSelectField,
+  type SmartSelectOption,
+} from "@/components/ui/SmartSelect";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
 import type {
@@ -108,6 +113,63 @@ export function NewBillForm({
     [customers],
   );
 
+  const vendorOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      vendors.map((v) => ({
+        value: v.id,
+        label: `${v.code} — ${v.name}`,
+        search: v.code,
+      })),
+    [vendors],
+  );
+  const clientOptions = useMemo<SmartSelectOption[]>(
+    () => customers.map((c) => ({ value: c.id, label: c.name, search: c.code })),
+    [customers],
+  );
+  const entityOptionsForClient = useMemo<SmartSelectOption[]>(
+    () =>
+      entitiesForClient.map((e) => {
+        const owner = customerById.get(e.clientId);
+        return {
+          value: e.id,
+          label: owner && !clientId ? `${e.name} · ${owner.name}` : e.name,
+          search: e.code,
+        };
+      }),
+    [entitiesForClient, customerById, clientId],
+  );
+  const allEntityOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      entities.map((e) => {
+        const owner = customerById.get(e.clientId);
+        return {
+          value: e.id,
+          label: owner ? `${e.name} · ${owner.name}` : e.name,
+          search: e.code,
+        };
+      }),
+    [entities, customerById],
+  );
+  const expenseAccountOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      expenseAccounts.map((a) => ({
+        value: a.id,
+        label: `${a.code} — ${a.name}`,
+        search: a.code,
+      })),
+    [expenseAccounts],
+  );
+  const dimensionOptions = useMemo(() => {
+    const m = new Map<string, SmartSelectOption[]>();
+    for (const { dimension, values } of dimensionsWithValues) {
+      m.set(
+        dimension.key,
+        values.map((v) => ({ value: v.id, label: v.label, search: v.code })),
+      );
+    }
+    return m;
+  }, [dimensionsWithValues]);
+
   const previewRebill = useMemo<string | null>(() => {
     if (recipient === "none") return null;
     switch (cbMethod) {
@@ -174,20 +236,15 @@ export function NewBillForm({
       <Card title="Header" bodyPadding>
         <div className="flex flex-col gap-3">
           <Row>
-            <SelectField
+            <SmartSelectField
               label="Vendor"
               name="vendorId"
               required
               value={vendorId}
-              onChange={(e) => onVendorChange(e.target.value)}
-            >
-              <option value="">— Select vendor —</option>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.code} — {v.name}
-                </option>
-              ))}
-            </SelectField>
+              onChange={onVendorChange}
+              options={vendorOptions}
+              emptyLabel="— Select vendor —"
+            />
             <Field
               label="Reference"
               name="reference"
@@ -211,36 +268,24 @@ export function NewBillForm({
             />
           </Row>
           <Row>
-            <SelectField
+            <SmartSelectField
               label="Client"
               name="clientId"
               value={clientId}
-              onChange={(e) => onClientChange(e.target.value)}
-            >
-              <option value="">— None —</option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </SelectField>
-            <SelectField
+              onChange={onClientChange}
+              options={clientOptions}
+              emptyLabel="— None —"
+              clearable
+            />
+            <SmartSelectField
               label="Entity"
               name="entityId"
               value={entityId}
-              onChange={(e) => onEntityChange(e.target.value)}
-            >
-              <option value="">— None —</option>
-              {entitiesForClient.map((e) => {
-                const owner = customerById.get(e.clientId);
-                return (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                    {owner && !clientId ? ` · ${owner.name}` : ""}
-                  </option>
-                );
-              })}
-            </SelectField>
+              onChange={onEntityChange}
+              options={entityOptionsForClient}
+              emptyLabel="— None —"
+              clearable
+            />
           </Row>
           <TextareaField
             label="Notes"
@@ -309,53 +354,32 @@ export function NewBillForm({
                   </TD>
                   <TD>
                     <div className="flex flex-col gap-1">
-                      <select
+                      <SmartSelect
                         name={`lines[${i}][accountId]`}
                         value={line.accountId}
-                        onChange={(e) =>
-                          updateLine(i, { accountId: e.target.value })
-                        }
-                        className="px-2 py-1 text-[12.5px] rounded-md outline-none w-full"
-                        style={{
-                          background: "var(--paper)",
-                          border: "1px solid var(--line-2)",
-                          color: "var(--ink)",
-                        }}
-                      >
-                        <option value="">— Select account —</option>
-                        {expenseAccounts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.code} — {a.name}
-                          </option>
-                        ))}
-                      </select>
-                      {dimensionsWithValues.map(({ dimension, values }) => (
-                        <select
+                        onChange={(v) => updateLine(i, { accountId: v })}
+                        options={expenseAccountOptions}
+                        emptyLabel="— Select account —"
+                        ariaLabel="Expense account"
+                      />
+                      {dimensionsWithValues.map(({ dimension }) => (
+                        <SmartSelect
                           key={dimension.id}
                           name={`lines[${i}][dim][${dimension.key}]`}
                           value={line.dimensions[dimension.key] ?? ""}
-                          onChange={(e) =>
+                          onChange={(v) =>
                             updateLine(i, {
                               dimensions: {
                                 ...line.dimensions,
-                                [dimension.key]: e.target.value,
+                                [dimension.key]: v,
                               },
                             })
                           }
-                          className="px-2 py-1 text-[11.5px] rounded-md outline-none w-full"
-                          style={{
-                            background: "var(--paper)",
-                            border: "1px solid var(--line-2)",
-                            color: "var(--ink-2)",
-                          }}
-                        >
-                          <option value="">— {dimension.label} —</option>
-                          {values.map((v) => (
-                            <option key={v.id} value={v.id}>
-                              {v.label}
-                            </option>
-                          ))}
-                        </select>
+                          options={dimensionOptions.get(dimension.key) ?? []}
+                          emptyLabel={`— ${dimension.label} —`}
+                          clearable
+                          ariaLabel={dimension.label}
+                        />
                       ))}
                     </div>
                   </TD>
@@ -480,46 +504,26 @@ export function NewBillForm({
 
           {recipient === "client" && (
             <Row>
-              <SelectField
+              <SmartSelectField
                 label="Client"
                 name="chargebackClientId"
                 required
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  — Select client —
-                </option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </SelectField>
+                options={clientOptions}
+                emptyLabel="— Select client —"
+              />
               <div />
             </Row>
           )}
 
           {recipient === "entity" && (
             <Row>
-              <SelectField
+              <SmartSelectField
                 label="Entity"
                 name="chargebackEntityId"
                 required
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  — Select entity —
-                </option>
-                {entities.map((e) => {
-                  const owner = customerById.get(e.clientId);
-                  return (
-                    <option key={e.id} value={e.id}>
-                      {e.name}
-                      {owner ? ` · ${owner.name}` : ""}
-                    </option>
-                  );
-                })}
-              </SelectField>
+                options={allEntityOptions}
+                emptyLabel="— Select entity —"
+              />
               <div />
             </Row>
           )}

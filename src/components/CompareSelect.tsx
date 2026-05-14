@@ -2,20 +2,22 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
+import { SmartSelect } from "@/components/ui/SmartSelect";
 import {
   COMPARE_OPTIONS,
   parseCompare,
   type CompareMode,
 } from "@/lib/report-periods";
 
-const SELECT_STYLE: React.CSSProperties = {
+const TRIGGER_STYLE: React.CSSProperties = {
   background: "var(--raised)",
   color: "var(--ink)",
   border: "1px solid var(--line-2)",
   borderRadius: 6,
-  padding: "4px 8px",
+  padding: "4px 28px 4px 8px",
   fontSize: 12.5,
-  cursor: "pointer",
+  minHeight: 28,
+  minWidth: 140,
 };
 
 /**
@@ -37,7 +39,7 @@ export function CompareSelect({
     ? COMPARE_OPTIONS.filter((o) => allowedModes.includes(o.value))
     : COMPARE_OPTIONS;
 
-  function setCompare(next: CompareMode) {
+  function setCompare(next: string) {
     const ps = new URLSearchParams(params.toString());
     if (next === "none") ps.delete("compare");
     else ps.set("compare", next);
@@ -57,17 +59,13 @@ export function CompareSelect({
       >
         Compare
       </label>
-      <select
+      <SmartSelect
         value={current}
-        onChange={(e) => setCompare(e.target.value as CompareMode)}
-        style={SELECT_STYLE}
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        onChange={setCompare}
+        ariaLabel="Compare to"
+        options={options.map((o) => ({ value: o.value, label: o.label }))}
+        triggerStyle={TRIGGER_STYLE}
+      />
     </div>
   );
 }

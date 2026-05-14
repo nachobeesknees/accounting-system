@@ -5,7 +5,10 @@ import { Card } from "@/components/ui/Card";
 import { ButtonLink } from "@/components/ui/Button";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { SelectField } from "@/components/ui/Field";
+import {
+  SmartSelect,
+  type SmartSelectOption,
+} from "@/components/ui/SmartSelect";
 import {
   DEMO_TODAY,
   getAllCustomerAssignments,
@@ -236,18 +239,31 @@ export default async function Page({
       >
         <form method="GET" className="flex gap-2 flex-wrap items-end">
           {view === "mine" && <input type="hidden" name="view" value="mine" />}
-          <SelectField
-            label="Employee"
-            name="employee"
-            defaultValue={employeeFilter}
-          >
-            <option value="">{view === "mine" ? "Me" : "All employees"}</option>
-            {employeeOptions.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.fullName}
-              </option>
-            ))}
-          </SelectField>
+          <div className="flex flex-col gap-1">
+            <span
+              className="text-[11.5px]"
+              style={{ color: "var(--ink-3)" }}
+            >
+              Employee
+            </span>
+            <SmartSelect
+              name="employee"
+              defaultValue={employeeFilter}
+              options={[
+                {
+                  value: "",
+                  label: view === "mine" ? "Me" : "All employees",
+                },
+                ...employeeOptions.map<SmartSelectOption>((u) => ({
+                  value: u.id,
+                  label: u.fullName,
+                })),
+              ]}
+              emptyLabel={view === "mine" ? "Me" : "All employees"}
+              clearable
+              triggerStyle={{ minWidth: 200 }}
+            />
+          </div>
           <button
             type="submit"
             className="px-3 py-1.5 rounded-md text-[12.5px] font-medium"

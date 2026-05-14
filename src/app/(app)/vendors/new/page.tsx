@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Section } from "@/components/ui/Card";
-import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { Field, Row, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { getAccounts } from "@/lib/data";
 import { createVendor } from "@/lib/mutations";
 import { getSessionUser } from "@/lib/session";
@@ -149,18 +150,17 @@ export default async function Page({
                 required
                 mono
               />
-              <SelectField
+              <SmartSelectField
                 label="Default expense account"
                 name="defaultExpenseAccountId"
-                defaultValue=""
-              >
-                <option value="">— None —</option>
-                {expenseAccounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.code} — {a.name}
-                  </option>
-                ))}
-              </SelectField>
+                options={expenseAccounts.map((a) => ({
+                  value: a.id,
+                  label: `${a.code} — ${a.name}`,
+                  search: a.code,
+                }))}
+                emptyLabel="— None —"
+                clearable
+              />
             </Row>
           </Section>
 

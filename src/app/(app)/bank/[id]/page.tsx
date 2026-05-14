@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -127,18 +128,17 @@ export default async function Page({
                 <div className="flex flex-col gap-3">
                   <Row>
                     <Field label="Name" name="name" required defaultValue={bank.name} />
-                    <SelectField
+                    <SmartSelectField
                       label="GL account"
                       name="accountId"
                       required
                       defaultValue={bank.accountId}
-                    >
-                      {cashAccounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.code} — {a.name}
-                        </option>
-                      ))}
-                    </SelectField>
+                      options={cashAccounts.map((a) => ({
+                        value: a.id,
+                        label: `${a.code} — ${a.name}`,
+                        search: a.code,
+                      }))}
+                    />
                   </Row>
                   <Row>
                     <Field
@@ -175,32 +175,32 @@ export default async function Page({
                       type="date"
                       defaultValue={bank.balanceAsOf ?? ""}
                     />
-                    <SelectField
+                    <SmartSelectField
                       label="Entity"
                       name="entityId"
                       defaultValue={bank.entityId ?? ""}
-                    >
-                      <option value="">Internal / unassigned</option>
-                      {entities.map((e) => (
-                        <option key={e.id} value={e.id}>
-                          {e.code} — {e.name}
-                        </option>
-                      ))}
-                    </SelectField>
+                      options={entities.map((e) => ({
+                        value: e.id,
+                        label: `${e.code} — ${e.name}`,
+                        search: e.code,
+                      }))}
+                      emptyLabel="Internal / unassigned"
+                      clearable
+                    />
                   </Row>
                   <Row>
-                    <SelectField
+                    <SmartSelectField
                       label="Client"
                       name="clientId"
                       defaultValue={bank.clientId ?? ""}
-                    >
-                      <option value="">Internal / inherit from entity</option>
-                      {customers.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </SelectField>
+                      options={customers.map((c) => ({
+                        value: c.id,
+                        label: c.name,
+                        search: c.code,
+                      }))}
+                      emptyLabel="Internal / inherit from entity"
+                      clearable
+                    />
                     <label className="flex items-end gap-2 text-[13px]">
                       <input
                         type="checkbox"

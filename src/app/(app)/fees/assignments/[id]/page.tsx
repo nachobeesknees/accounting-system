@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { KV, KVGrid } from "@/components/ui/KV";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
@@ -207,13 +208,17 @@ export default async function Page({
           <Card title="Assignment details">
             <div className="flex flex-col gap-3">
               <Row>
-                <SelectField label="Entity" name="entityId" required defaultValue={fee.entityId}>
-                  {entities.map((e) => (
-                    <option key={e.id} value={e.id}>
-                      {e.code} — {e.name}
-                    </option>
-                  ))}
-                </SelectField>
+                <SmartSelectField
+                  label="Entity"
+                  name="entityId"
+                  required
+                  defaultValue={fee.entityId}
+                  options={entities.map((e) => ({
+                    value: e.id,
+                    label: `${e.code} — ${e.name}`,
+                    search: e.code,
+                  }))}
+                />
                 <Field
                   label="Billing year"
                   name="billingYear"
@@ -224,18 +229,17 @@ export default async function Page({
                 />
               </Row>
               <Row>
-                <SelectField
+                <SmartSelectField
                   label="Schedule"
                   name="feeScheduleId"
                   defaultValue={fee.feeScheduleId ?? ""}
-                >
-                  <option value="">Custom (no template)</option>
-                  {matchingSchedules.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </SelectField>
+                  options={matchingSchedules.map((s) => ({
+                    value: s.id,
+                    label: s.name,
+                  }))}
+                  emptyLabel="Custom (no template)"
+                  clearable
+                />
                 <SelectField label="Status" name="status" defaultValue={fee.status}>
                   <option value="draft">Draft</option>
                   <option value="active">Active</option>

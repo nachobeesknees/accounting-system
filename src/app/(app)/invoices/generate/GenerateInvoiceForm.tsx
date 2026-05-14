@@ -5,12 +5,8 @@ import { useFormState } from "react-dom";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
-import {
-  Field,
-  Row,
-  SelectField,
-  TextareaField,
-} from "@/components/ui/Field";
+import { Field, Row, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { formatMoney, parseAmount } from "@/lib/money";
 import type { Customer, Entity, EntityFee } from "@/lib/types";
@@ -132,22 +128,19 @@ export function GenerateInvoiceForm({
       <Card title="Header" bodyPadding>
         <div className="flex flex-col gap-3">
           <Row>
-            <SelectField
+            <SmartSelectField
               label="Customer"
               name="customerId"
               required
               value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-            >
-              <option value="" disabled>
-                Select customer…
-              </option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.code} — {c.name}
-                </option>
-              ))}
-            </SelectField>
+              onChange={setCustomerId}
+              options={customers.map((c) => ({
+                value: c.id,
+                label: `${c.code} — ${c.name}`,
+                search: c.code,
+              }))}
+              emptyLabel="Select customer…"
+            />
             <Field
               label="Billing year"
               name="billingYear"

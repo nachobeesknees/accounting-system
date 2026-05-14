@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import {
   createAssignmentAction,
@@ -64,26 +65,22 @@ export function NewAssignmentForm({
         <Card title="Assign fee to entity">
           <div className="flex flex-col gap-3">
             <Row>
-              <SelectField
+              <SmartSelectField
                 label="Entity"
                 name="entityId"
                 required
                 value={entityId}
-                onChange={(e) => setEntityId(e.target.value)}
-              >
-                <option value="" disabled>
-                  Select entity…
-                </option>
-                {entities.map((e) => {
+                onChange={setEntityId}
+                options={entities.map((e) => {
                   const c = customerById.get(e.clientId);
-                  return (
-                    <option key={e.id} value={e.id}>
-                      {e.code} — {e.name}
-                      {c ? ` (${c.name})` : ""}
-                    </option>
-                  );
+                  return {
+                    value: e.id,
+                    label: `${e.code} — ${e.name}${c ? ` (${c.name})` : ""}`,
+                    search: e.code,
+                  };
                 })}
-              </SelectField>
+                emptyLabel="Select entity…"
+              />
               <Field
                 label="Billing year"
                 name="billingYear"
@@ -94,20 +91,18 @@ export function NewAssignmentForm({
               />
             </Row>
             <Row>
-              <SelectField
+              <SmartSelectField
                 label="Apply schedule (optional)"
                 name="feeScheduleId"
                 value={scheduleId}
-                onChange={(e) => setScheduleId(e.target.value)}
-              >
-                <option value="">Custom (no template)</option>
-                {matchingSchedules.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} — ${parseFloat(s.annualFee).toLocaleString()}/yr,{" "}
-                    {parseFloat(s.includedHours).toFixed(0)} hrs
-                  </option>
-                ))}
-              </SelectField>
+                onChange={setScheduleId}
+                options={matchingSchedules.map((s) => ({
+                  value: s.id,
+                  label: `${s.name} — $${parseFloat(s.annualFee).toLocaleString()}/yr, ${parseFloat(s.includedHours).toFixed(0)} hrs`,
+                }))}
+                emptyLabel="Custom (no template)"
+                clearable
+              />
               <SelectField label="Status" name="status" defaultValue="draft">
                 <option value="draft">Draft</option>
                 <option value="active">Active</option>

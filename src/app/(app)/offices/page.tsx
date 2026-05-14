@@ -3,8 +3,9 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
-import { Field, Row, SelectField } from "@/components/ui/Field";
+import { Field, Row } from "@/components/ui/Field";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
+import { SmartSelect, type SmartSelectOption } from "@/components/ui/SmartSelect";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getOffices, getPriceLists, getRegionGroups, getRegions } from "@/lib/data";
 import { createOfficeAction } from "./actions";
@@ -71,40 +72,47 @@ export default async function Page({
         }}
       >
         <form method="GET" className="flex gap-2 flex-wrap items-end">
-          <SelectField
-            label="Region group"
-            name="regionGroup"
-            defaultValue={regionGroupId}
-          >
-            <option value="">All</option>
-            {regionGroups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField label="Region" name="region" defaultValue={regionId}>
-            <option value="">All</option>
-            {(regionsByGroup.get(null) ?? []).map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-            {orderedGroupIds.map((gid) => {
-              const g = groupById.get(gid);
-              const rs = regionsByGroup.get(gid) ?? [];
-              if (!g || rs.length === 0) return null;
-              return (
-                <optgroup key={gid} label={g.name}>
-                  {rs.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
-          </SelectField>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11.5px]" style={{ color: "var(--ink-3)" }}>
+              Region group
+            </span>
+            <SmartSelect
+              name="regionGroup"
+              defaultValue={regionGroupId}
+              options={regionGroups.map<SmartSelectOption>((g) => ({
+                value: g.id,
+                label: g.name,
+              }))}
+              emptyLabel="All"
+              clearable
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-[11.5px]" style={{ color: "var(--ink-3)" }}>
+              Region
+            </span>
+            <SmartSelect
+              name="region"
+              defaultValue={regionId}
+              options={[
+                ...(regionsByGroup.get(null) ?? []).map<SmartSelectOption>(
+                  (r) => ({ value: r.id, label: r.name }),
+                ),
+                ...orderedGroupIds.flatMap<SmartSelectOption>((gid) => {
+                  const g = groupById.get(gid);
+                  const rs = regionsByGroup.get(gid) ?? [];
+                  if (!g) return [];
+                  return rs.map((r) => ({
+                    value: r.id,
+                    label: r.name,
+                    group: g.name,
+                  }));
+                }),
+              ]}
+              emptyLabel="All"
+              clearable
+            />
+          </div>
           <Button variant="primary" type="submit">
             Apply
           </Button>
@@ -168,39 +176,32 @@ export default async function Page({
                         className="flex items-center gap-1.5"
                       >
                         <input type="hidden" name="officeId" value={o.id} />
-                        <select
-                          name="regionId"
-                          defaultValue={o.regionId ?? ""}
-                          className="px-2 py-1 rounded-md outline-none"
-                          style={{
-                            background: "var(--paper)",
-                            border: "1px solid var(--line-2)",
-                            color: "var(--ink)",
-                            fontSize: 12,
-                            maxWidth: 220,
-                          }}
-                        >
-                          <option value="">— None —</option>
-                          {(regionsByGroup.get(null) ?? []).map((r) => (
-                            <option key={r.id} value={r.id}>
-                              {r.name}
-                            </option>
-                          ))}
-                          {orderedGroupIds.map((gid) => {
-                            const g = groupById.get(gid);
-                            const rs = regionsByGroup.get(gid) ?? [];
-                            if (!g || rs.length === 0) return null;
-                            return (
-                              <optgroup key={gid} label={g.name}>
-                                {rs.map((r) => (
-                                  <option key={r.id} value={r.id}>
-                                    {r.name}
-                                  </option>
-                                ))}
-                              </optgroup>
-                            );
-                          })}
-                        </select>
+                        <div style={{ minWidth: 180, maxWidth: 220 }}>
+                          <SmartSelect
+                            name="regionId"
+                            defaultValue={o.regionId ?? ""}
+                            options={[
+                              ...(regionsByGroup.get(null) ?? []).map<SmartSelectOption>(
+                                (r) => ({ value: r.id, label: r.name }),
+                              ),
+                              ...orderedGroupIds.flatMap<SmartSelectOption>(
+                                (gid) => {
+                                  const g = groupById.get(gid);
+                                  const rs = regionsByGroup.get(gid) ?? [];
+                                  if (!g) return [];
+                                  return rs.map((r) => ({
+                                    value: r.id,
+                                    label: r.name,
+                                    group: g.name,
+                                  }));
+                                },
+                              ),
+                            ]}
+                            emptyLabel="— None —"
+                            clearable
+                            triggerStyle={{ minHeight: 26, fontSize: 12 }}
+                          />
+                        </div>
                         <Button variant="ghost" type="submit">
                           Save
                         </Button>
@@ -244,10 +245,22 @@ export default async function Page({
                 <Field label="Currency" name="currencyCode" mono maxLength={3} defaultValue="USD" />
               </Row>
               <Row>
-                <SelectField label="Status" name="isActive" defaultValue="on">
-                  <option value="on">Active</option>
-                  <option value="">Inactive</option>
-                </SelectField>
+                <div className="flex flex-col gap-1">
+                  <span
+                    className="text-[11.5px]"
+                    style={{ color: "var(--ink-3)" }}
+                  >
+                    Status
+                  </span>
+                  <SmartSelect
+                    name="isActive"
+                    defaultValue="on"
+                    options={[
+                      { value: "on", label: "Active" },
+                      { value: "", label: "Inactive" },
+                    ]}
+                  />
+                </div>
                 <Field label="Notes" name="notes" />
               </Row>
               <div className="flex justify-end">
