@@ -58,6 +58,7 @@ const SECTIONS: Section[] = [
       { href: "/reports/cash-forecast", label: "12-Week Cash Forecast" },
       { href: "/cash-forecast", label: "Cash Forecast" },
       { href: "/consolidation", label: "Consolidation" },
+      { href: "/reports/intercompany", label: "Intercompany" },
     ],
   },
   {

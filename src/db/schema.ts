@@ -156,6 +156,13 @@ export const journalEntries = pgTable("journal_entries", {
   bypassControlWarning: boolean("bypass_control_warning").notNull().default(false),
   /** Reason given when posting into a soft-closed accounting period. */
   periodOverrideReason: text("period_override_reason"),
+  /**
+   * When set, this JE is an elimination entry (consolidation adjustment).
+   * Points back to one of the source intercompany JEs it eliminates; we
+   * filter eliminations OUT of single-entity scoped views but INCLUDE them
+   * at the firm-level consolidated view. Self-FK → journal_entries.id.
+   */
+  eliminationEntryId: text("elimination_entry_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -172,6 +179,14 @@ export const journalLines = pgTable(
     credit: numeric("credit", { precision: 15, scale: 2 }).notNull().default("0"),
     entityId: text("entity_id"),
     firmEntityId: text("firm_entity_id"),
+    /**
+     * If set, marks this line as an intercompany leg and identifies the
+     * firm-entity (office) on the other side of the transaction. Soft FK
+     * → offices.id. Used by the intercompany report and elimination
+     * generator to net out Due-From / Due-To balances on the firm-level
+     * consolidated view.
+     */
+    intercompanyCounterpartEntityId: text("intercompany_counterpart_entity_id"),
     /**
      * Open-ended slicers (department, project, cost center, ...). Stored
      * as `{ "department": "<dim-value-id>", "project": "..." }`. Keys map

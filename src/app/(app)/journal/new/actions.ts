@@ -15,6 +15,7 @@ type ParsedLine = {
   debit: number;
   credit: number;
   dimensions: Record<string, string>;
+  intercompanyCounterpartEntityId: string | null;
 };
 
 function parseDimensionsForLine(
@@ -40,6 +41,7 @@ function parseLines(formData: FormData): ParsedLine[] {
     const description = formData.get(`lines[${i}][description]`);
     const debit = formData.get(`lines[${i}][debit]`);
     const credit = formData.get(`lines[${i}][credit]`);
+    const counterpart = formData.get(`lines[${i}][counterpartEntityId]`);
 
     if (
       accountId == null &&
@@ -51,12 +53,14 @@ function parseLines(formData: FormData): ParsedLine[] {
       break;
     }
 
+    const rawCp = typeof counterpart === "string" ? counterpart.trim() : "";
     lines.push({
       accountId: typeof accountId === "string" ? accountId : "",
       description: typeof description === "string" ? description : "",
       debit: parseAmount(typeof debit === "string" ? debit : ""),
       credit: parseAmount(typeof credit === "string" ? credit : ""),
       dimensions: parseDimensionsForLine(formData, i),
+      intercompanyCounterpartEntityId: rawCp === "" ? null : rawCp,
     });
   }
   return lines;
@@ -119,6 +123,7 @@ export async function createEntry(
         debit: l.debit,
         credit: l.credit,
         dimensions: l.dimensions,
+        intercompanyCounterpartEntityId: l.intercompanyCounterpartEntityId,
       })),
     });
     revalidatePath("/journal");

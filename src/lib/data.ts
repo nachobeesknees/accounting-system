@@ -10,7 +10,7 @@
 
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumDebits, sumCredits } from "./money";
@@ -566,6 +566,7 @@ function mapJournalLine(r: typeof schema.journalLines.$inferSelect): JournalLine
     description: r.description,
     debit: r.debit,
     credit: r.credit,
+    intercompanyCounterpartEntityId: r.intercompanyCounterpartEntityId ?? null,
     dimensions: asDimensionMap(r.dimensions),
   };
 }
@@ -624,6 +625,7 @@ function mapJournalEntry(
     firmEntityId: r.firmEntityId ?? null,
     bypassControlWarning: r.bypassControlWarning ?? false,
     periodOverrideReason: r.periodOverrideReason ?? null,
+    eliminationEntryId: r.eliminationEntryId ?? null,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }
@@ -1778,6 +1780,9 @@ async function getSignedBalancesByAccount(
       eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
     );
 
+  // Elimination JEs are consolidation-only adjustments. They're INCLUDED at
+  // the firm-level consolidated view (scope === "all") but EXCLUDED when
+  // drilling into a single firm entity's books.
   let rows;
   if (scope === "all") {
     rows = await q.where(eq(schema.journalEntries.status, "posted"));
@@ -1786,6 +1791,7 @@ async function getSignedBalancesByAccount(
       and(
         eq(schema.journalEntries.status, "posted"),
         isNull(schema.journalEntries.firmEntityId),
+        isNull(schema.journalEntries.eliminationEntryId),
       ),
     );
   } else {
@@ -1793,6 +1799,7 @@ async function getSignedBalancesByAccount(
       and(
         eq(schema.journalEntries.status, "posted"),
         eq(schema.journalEntries.firmEntityId, scope),
+        isNull(schema.journalEntries.eliminationEntryId),
       ),
     );
   }
@@ -1934,6 +1941,121 @@ export async function getTrialBalance() {
   });
 }
 
+// --------- Derived: intercompany ---------
+
+/**
+ * One row per intercompany line on a posted JE. Used by /reports/intercompany
+ * to build the entity-pair matrix and to drive elimination generation.
+ *
+ * "From" = the firm entity that issued the JE (journalEntries.firmEntityId).
+ * "To"   = the counterpart marked on the line.
+ * Direction is derived per-line: debit → "due from" the counterpart
+ * (receivable on the From entity); credit → "due to" the counterpart
+ * (payable on the From entity).
+ *
+ * Elimination JEs (eliminationEntryId IS NOT NULL) are excluded so the
+ * report shows the gross open balances awaiting elimination.
+ */
+export type IntercompanyLine = {
+  entryId: string;
+  entryNumber: string;
+  entryDate: string;
+  lineId: string;
+  fromEntityId: string | null;
+  toEntityId: string;
+  accountId: string;
+  debit: number;
+  credit: number;
+};
+
+export async function getIntercompanyLines(): Promise<IntercompanyLine[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      entryId: schema.journalEntries.id,
+      entryNumber: schema.journalEntries.entryNumber,
+      entryDate: schema.journalEntries.entryDate,
+      lineId: schema.journalLines.id,
+      fromEntityId: schema.journalEntries.firmEntityId,
+      toEntityId: schema.journalLines.intercompanyCounterpartEntityId,
+      accountId: schema.journalLines.accountId,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        isNull(schema.journalEntries.eliminationEntryId),
+        isNotNull(schema.journalLines.intercompanyCounterpartEntityId),
+      ),
+    );
+
+  return rows
+    .filter((r): r is typeof r & { toEntityId: string } => r.toEntityId != null)
+    .map((r) => ({
+      entryId: r.entryId,
+      entryNumber: r.entryNumber,
+      entryDate: r.entryDate,
+      lineId: r.lineId,
+      fromEntityId: r.fromEntityId,
+      toEntityId: r.toEntityId,
+      accountId: r.accountId,
+      debit: parseAmount(r.debit),
+      credit: parseAmount(r.credit),
+    }));
+}
+
+/**
+ * Aggregated intercompany balances per ordered (from, to) pair. For each
+ * pair:
+ *   dueFrom = sum(debits) — entity A is owed by entity B
+ *   dueTo   = sum(credits) — entity A owes entity B
+ * Net = dueFrom - dueTo (from the "from" entity's perspective).
+ *
+ * Reconciliation: across the matched pair (A↔B) the dueFrom on one side
+ * should mirror the dueTo on the other. Mismatches are flagged red on
+ * the report.
+ */
+export type IntercompanyPairBalance = {
+  fromEntityId: string | null;
+  toEntityId: string;
+  dueFrom: number;
+  dueTo: number;
+  net: number;
+  lineCount: number;
+};
+
+export async function getIntercompanyPairBalances(): Promise<
+  IntercompanyPairBalance[]
+> {
+  const lines = await getIntercompanyLines();
+  const map = new Map<string, IntercompanyPairBalance>();
+  for (const l of lines) {
+    const key = `${l.fromEntityId ?? "_firm"}|${l.toEntityId}`;
+    const cur =
+      map.get(key) ??
+      ({
+        fromEntityId: l.fromEntityId,
+        toEntityId: l.toEntityId,
+        dueFrom: 0,
+        dueTo: 0,
+        net: 0,
+        lineCount: 0,
+      } as IntercompanyPairBalance);
+    cur.dueFrom += l.debit;
+    cur.dueTo += l.credit;
+    cur.net = cur.dueFrom - cur.dueTo;
+    cur.lineCount += 1;
+    map.set(key, cur);
+  }
+  return Array.from(map.values());
+}
+
 // --------- Derived: aging ---------
 
 export async function getArAging(today: Date) {
@@ -2006,8 +2128,13 @@ async function getSignedBalancesInRange(
     gte(schema.journalEntries.entryDate, start),
     lte(schema.journalEntries.entryDate, end),
   ];
-  if (scope === null) conds.push(isNull(schema.journalEntries.firmEntityId));
-  else if (scope !== "all") conds.push(eq(schema.journalEntries.firmEntityId, scope));
+  if (scope === null) {
+    conds.push(isNull(schema.journalEntries.firmEntityId));
+    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  } else if (scope !== "all") {
+    conds.push(eq(schema.journalEntries.firmEntityId, scope));
+    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  }
   const rows = await q.where(and(...conds));
 
   const balances = new Map<string, number>();
@@ -2043,8 +2170,13 @@ export async function getSignedBalancesAsOf(
     eq(schema.journalEntries.status, "posted"),
     lte(schema.journalEntries.entryDate, asOf),
   ];
-  if (scope === null) conds.push(isNull(schema.journalEntries.firmEntityId));
-  else if (scope !== "all") conds.push(eq(schema.journalEntries.firmEntityId, scope));
+  if (scope === null) {
+    conds.push(isNull(schema.journalEntries.firmEntityId));
+    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  } else if (scope !== "all") {
+    conds.push(eq(schema.journalEntries.firmEntityId, scope));
+    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  }
   const rows = await q.where(and(...conds));
 
   const balances = new Map<string, number>();
@@ -2196,9 +2328,12 @@ export async function getMonthlyIncomeStatement(
     gte(schema.journalEntries.entryDate, start),
     lte(schema.journalEntries.entryDate, end),
   ];
-  if (scope === null) conds.push(isNull(schema.journalEntries.firmEntityId));
-  else if (scope && scope !== "all") {
+  if (scope === null) {
+    conds.push(isNull(schema.journalEntries.firmEntityId));
+    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  } else if (scope && scope !== "all") {
     conds.push(eq(schema.journalEntries.firmEntityId, scope));
+    conds.push(isNull(schema.journalEntries.eliminationEntryId));
   }
 
   const rows = await db

@@ -34,6 +34,8 @@ type Line = {
   debit: string;
   credit: string;
   dimensions: Record<string, string>;
+  /** Counterpart firm entity (office) — marks this line as intercompany. */
+  counterpartEntityId: string;
 };
 
 function blankLine(): Line {
@@ -43,6 +45,7 @@ function blankLine(): Line {
     debit: "",
     credit: "",
     dimensions: {},
+    counterpartEntityId: "",
   };
 }
 
@@ -139,6 +142,7 @@ export function NewEntryForm({
           debit: jl.debit != null && jl.debit > 0 ? jl.debit.toFixed(2) : "",
           credit: jl.credit != null && jl.credit > 0 ? jl.credit.toFixed(2) : "",
           dimensions: {},
+          counterpartEntityId: "",
         }));
         // Always keep at least 2 rows.
         while (next.length < 2) next.push(blankLine());
@@ -186,6 +190,15 @@ export function NewEntryForm({
     () => new Map(accounts.map((a) => [a.id, a] as const)),
     [accounts],
   );
+  const counterpartOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      firmEntities.map((e) => ({
+        value: e.id,
+        label: `${e.code} — ${e.name}`,
+        search: e.code,
+      })),
+    [firmEntities],
+  );
   const dimensionOptions = useMemo(() => {
     const m = new Map<string, SmartSelectOption[]>();
     for (const { dimension, values } of lineDimensions) {
@@ -232,6 +245,10 @@ export function NewEntryForm({
     for (const c of lineControls) if (c) set.add(c);
     return Array.from(set);
   }, [lineControls]);
+  const hasIntercompany = lines.some(
+    (l) => l.counterpartEntityId && parseAmount(l.debit) + parseAmount(l.credit) > 0,
+  );
+
   const formRef = useRef<HTMLFormElement>(null);
   const [pendingPost, setPendingPost] = useState(false);
 
@@ -283,7 +300,7 @@ export function NewEntryForm({
   const dimColCount = lineDimensions.length;
   const cols = `40px minmax(220px, 1.5fr) minmax(180px, 2fr) ${
     dimColCount > 0 ? "repeat(" + dimColCount + ", minmax(120px, 0.7fr))" : ""
-  } 110px 110px 32px`;
+  } minmax(150px, 0.8fr) 110px 110px 32px`;
 
   return (
     <form
@@ -445,6 +462,13 @@ export function NewEntryForm({
             </div>
           ))}
           <div
+            className="px-3 py-1.5"
+            style={{ ...HEADER_LABEL, fontSize: 10.5 }}
+            title="Counterpart firm entity for intercompany transactions"
+          >
+            Counterpart
+          </div>
+          <div
             className="px-3 py-1.5 text-right"
             style={{
               ...HEADER_LABEL,
@@ -535,6 +559,18 @@ export function NewEntryForm({
                 />
               </div>
             ))}
+            <div className="flex items-center" style={cellBorder(true)}>
+              <SmartSelect
+                name={`lines[${i}][counterpartEntityId]`}
+                value={line.counterpartEntityId}
+                onChange={(v) => updateLine(i, { counterpartEntityId: v })}
+                options={counterpartOptions}
+                emptyLabel="—"
+                clearable
+                variant="cell"
+                ariaLabel="Counterpart entity"
+              />
+            </div>
             <div className="flex items-center" style={cellBorder(true)}>
               <input
                 type="text"
@@ -649,6 +685,7 @@ export function NewEntryForm({
           {lineDimensions.map(({ dimension }) => (
             <div key={dimension.id} />
           ))}
+          <div />
           <div
             className="px-3 py-1.5 text-right"
             style={{
@@ -753,6 +790,20 @@ export function NewEntryForm({
         </div>
       )}
 
+      {hasIntercompany && (
+        <div
+          className="rounded-md px-3 py-2 text-[12px]"
+          style={{
+            background: "var(--p-active-bg)",
+            color: "var(--p-active-fg)",
+            border: "1px solid var(--p-active-fg)",
+          }}
+        >
+          Intercompany entry — counterpart entity is set on at least one
+          line. It will appear on the intercompany report and be eligible
+          for elimination.
+        </div>
+      )}
     </form>
   );
 }

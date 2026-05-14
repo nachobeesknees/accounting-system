@@ -149,6 +149,13 @@ const COLUMNS: ColumnSpec[] = [
   { table: "journal_entries", column: "period_override_reason", type: "text" },
   { table: "invoices", column: "period_override_reason", type: "text" },
   { table: "bills", column: "period_override_reason", type: "text" },
+
+  // ---- Intercompany + eliminations ----
+  // Per-line counterpart firm entity for intercompany transactions.
+  { table: "journal_lines", column: "intercompany_counterpart_entity_id", type: "text" },
+  // On the JE head: if set, this entry is an elimination (consolidation
+  // adjustment). Self-FK → journal_entries.id (pointer to a source IC JE).
+  { table: "journal_entries", column: "elimination_entry_id", type: "text" },
 ];
 
 const TABLES = [

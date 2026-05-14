@@ -53,6 +53,8 @@ export type JournalLine = {
   description: string | null;
   debit: string;
   credit: string;
+  /** Counterpart firm entity (office) when this line is intercompany. */
+  intercompanyCounterpartEntityId?: string | null;
   /** Read side always populates from DB JSONB (defaults to {}). */
   dimensions?: DimensionMap;
 };
@@ -81,6 +83,11 @@ export type JournalEntry = {
   bypassControlWarning?: boolean;
   /** Reason recorded when posted into a soft-closed accounting period. */
   periodOverrideReason?: string | null;
+  /**
+   * When set, this JE is an elimination entry — filtered out of single-
+   * entity scoped views, included in the firm-level consolidated view.
+   */
+  eliminationEntryId?: string | null;
   lines: JournalLine[];
 };
 

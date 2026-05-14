@@ -12,6 +12,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAccounts,
   getDimensionsWithValues,
+  getFirmEntities,
   getJournalEntryByNumber,
   getPeriods,
   getUserById,
@@ -57,17 +58,35 @@ export default async function Page({
   const entry = await getJournalEntryByNumber(entryNumber);
   if (!entry) notFound();
 
-  const [periods, accounts, postedByUser, dimensionsWithValues] =
+  const [periods, accounts, postedByUser, dimensionsWithValues, firmEntities] =
     await Promise.all([
       getPeriods(),
       getAccounts(),
       entry.postedBy ? getUserById(entry.postedBy) : Promise.resolve(null),
       getDimensionsWithValues(),
+      getFirmEntities(),
     ]);
   const period = entry.fiscalPeriodId
     ? periods.find((p) => p.id === entry.fiscalPeriodId)
     : null;
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
+  const firmEntityById = new Map(firmEntities.map((e) => [e.id, e] as const));
+
+  // Intercompany counterparts referenced anywhere on this entry.
+  const counterpartIds = new Set<string>();
+  for (const l of entry.lines) {
+    if (l.intercompanyCounterpartEntityId) {
+      counterpartIds.add(l.intercompanyCounterpartEntityId);
+    }
+  }
+  const isIntercompany = counterpartIds.size > 0;
+  const counterpartLabels = Array.from(counterpartIds)
+    .map((id) => {
+      const e = firmEntityById.get(id);
+      return e ? `${e.code} — ${e.name}` : id;
+    })
+    .sort();
+  const isElimination = entry.eliminationEntryId != null;
 
   // Lookups for resolving dimension keys/value ids → labels on the readback.
   const dimensionByKey = new Map(
@@ -204,6 +223,8 @@ export default async function Page({
               {entry.bypassControlWarning && (
                 <Pill variant="review">Direct post (bypass)</Pill>
               )}
+              {isIntercompany && <Pill variant="formation">Intercompany</Pill>}
+              {isElimination && <Pill variant="active">Elimination</Pill>}
             </>
           }
         >
@@ -237,6 +258,13 @@ export default async function Page({
                 k="Voided"
                 v={formatDateTime(entry.voidedAt)}
                 sub={entry.voidReason ?? null}
+              />
+            )}
+            {isIntercompany && (
+              <KV
+                k="Counterpart entities"
+                v={counterpartLabels.join(", ")}
+                sub="Intercompany — see /reports/intercompany"
               />
             )}
           </KVGrid>
@@ -282,6 +310,7 @@ export default async function Page({
                   <TH>Account</TH>
                   <TH>Name</TH>
                   <TH>Description</TH>
+                  {isIntercompany && <TH>Counterpart</TH>}
                   <TH num>Debit</TH>
                   <TH num>Credit</TH>
                 </TR>
@@ -291,6 +320,9 @@ export default async function Page({
                   const account = accountById.get(line.accountId);
                   const d = parseAmount(line.debit);
                   const c = parseAmount(line.credit);
+                  const cp = line.intercompanyCounterpartEntityId
+                    ? firmEntityById.get(line.intercompanyCounterpartEntityId)
+                    : null;
                   return (
                     <TR key={line.id}>
                       <TD
@@ -323,6 +355,16 @@ export default async function Page({
                           ) : null;
                         })()}
                       </TD>
+                      {isIntercompany && (
+                        <TD
+                          style={{
+                            color: cp ? "var(--ink)" : "var(--ink-4)",
+                            fontSize: 11.5,
+                          }}
+                        >
+                          {cp ? `${cp.code} — ${cp.name}` : "—"}
+                        </TD>
+                      )}
                       <TD num>{d === 0 ? "—" : formatMoney(d, "USD")}</TD>
                       <TD num>{c === 0 ? "—" : formatMoney(c, "USD")}</TD>
                     </TR>
@@ -333,6 +375,7 @@ export default async function Page({
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD>Totals</TD>
+                  {isIntercompany && <TD>{""}</TD>}
                   <TD num>{formatMoney(debitTotal, "USD")}</TD>
                   <TD num>{formatMoney(creditTotal, "USD")}</TD>
                 </TR>
