@@ -88,22 +88,25 @@ function navItemStyle(active: boolean) {
 export function Sidebar({
   counts,
   urgentItems,
+  user,
 }: {
   counts?: Record<string, number>;
   urgentItems?: Record<string, boolean>;
+  user?: { fullName: string; email: string; role: string };
 }) {
   const path = usePathname();
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
   return (
     <aside
-      className="sidebar overflow-y-auto"
+      className="sidebar overflow-y-auto flex flex-col"
       style={{
         background: "var(--rail)",
         borderRight: "1px solid var(--line)",
         padding: "8px 6px",
       }}
     >
+      <div className="flex-1 min-h-0">
       {SECTIONS.map((sec) => (
         <div key={sec.heading} className="mt-2.5 first:mt-0">
           <div
@@ -153,6 +156,53 @@ export function Sidebar({
           })}
         </div>
       ))}
+      </div>
+
+      {user && (
+        <div
+          className="mt-2 pt-2.5 px-2.5"
+          style={{ borderTop: "1px solid var(--line)" }}
+        >
+          <div style={{ fontSize: 12, color: "var(--ink)", fontWeight: 500 }}>
+            {user.fullName}
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--ink-4)",
+              marginTop: 2,
+              wordBreak: "break-all",
+            }}
+          >
+            {user.email}
+          </div>
+          <div
+            className="mt-1"
+            style={{
+              fontSize: 10.5,
+              color: "var(--ink-3)",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+            }}
+          >
+            {user.role}
+          </div>
+          <form action="/api/logout" method="post" className="mt-2">
+            <button
+              type="submit"
+              className="w-full text-left px-2 py-1 rounded-md text-[12px]"
+              style={{
+                background: "var(--paper)",
+                border: "1px solid var(--line-2)",
+                color: "var(--ink-2)",
+                cursor: "pointer",
+              }}
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
+      )}
     </aside>
   );
 }
