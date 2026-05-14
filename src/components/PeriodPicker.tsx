@@ -75,9 +75,11 @@ export function PeriodPicker() {
         Period
       </label>
       <select
+        name="preset"
         value={preset}
         onChange={(e) => setPreset(e.target.value as PeriodPreset)}
         style={SELECT_STYLE}
+        aria-label="Period preset"
       >
         {PERIOD_PRESET_OPTIONS.map((o) => (
           <option key={o.value} value={o.value}>

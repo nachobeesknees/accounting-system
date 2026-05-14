@@ -843,14 +843,30 @@ async function TrialBalanceCard() {
           </TR>
         </THead>
         <TBody>
-          {trial.map((row) => (
-            <TR key={row.accountId}>
-              <TD mono>{row.code}</TD>
-              <TD>{row.name}</TD>
-              <TD num>{row.debit === 0 ? "—" : formatUSD(row.debit)}</TD>
-              <TD num>{row.credit === 0 ? "—" : formatUSD(row.credit)}</TD>
-            </TR>
-          ))}
+          {trial.map((row) => {
+            // Each TB row drills into the journal filtered to that account.
+            const href = drillToAccount(row.accountId);
+            return (
+              <TR key={row.accountId}>
+                <TD mono>{row.code}</TD>
+                <TD>{row.name}</TD>
+                <TD num>
+                  {row.debit === 0 ? (
+                    "—"
+                  ) : (
+                    <DrillNumber value={row.debit} href={href} currencyCode={null} />
+                  )}
+                </TD>
+                <TD num>
+                  {row.credit === 0 ? (
+                    "—"
+                  ) : (
+                    <DrillNumber value={row.credit} href={href} currencyCode={null} />
+                  )}
+                </TD>
+              </TR>
+            );
+          })}
           <TR total hover={false}>
             <TD colSpan={2} style={{ fontWeight: 600, color: "var(--ink)" }}>
               Totals
