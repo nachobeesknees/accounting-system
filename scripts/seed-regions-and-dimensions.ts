@@ -52,7 +52,20 @@ async function main() {
     let regionId: string | null = null;
     const j = (o.jurisdiction ?? "").toLowerCase();
     const code = o.code.toLowerCase();
-    if (j.includes("delaware") || j.includes("us") || j.includes("united states") || code.includes("us")) {
+    // North America catches the US firm entities under any naming —
+    // TW-US (the firm-entity demo), OFC-NY / OFC-SF (the post-seed
+    // shape), or any "Thistlewood" office. Wider patterns first so
+    // they don't get masked by more specific later branches.
+    if (
+      j.includes("delaware") ||
+      j.includes("us") ||
+      j.includes("united states") ||
+      code.includes("us") ||
+      code.includes("ofc-ny") ||
+      code.includes("ofc-sf") ||
+      code.includes("nyc") ||
+      code.includes("sfo")
+    ) {
       regionId = "rgn-north-america";
     } else if (j.includes("cayman") || code.includes("cay")) {
       regionId = "rgn-caribbean";
