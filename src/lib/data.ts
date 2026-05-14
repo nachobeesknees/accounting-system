@@ -1132,6 +1132,25 @@ export async function getCustomerAssignments(
   }));
 }
 
+/** Full list of customer↔user assignments. Used by AR Aging's employee view. */
+export async function getAllCustomerAssignments(): Promise<
+  import("./types").CustomerAssignment[]
+> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.customerAssignments)
+    .orderBy(desc(schema.customerAssignments.isPrimary));
+  return rows.map((r) => ({
+    id: r.id,
+    customerId: r.customerId,
+    userId: r.userId,
+    isPrimary: r.isPrimary,
+    canApprove: r.canApprove,
+    role: r.role,
+  }));
+}
+
 export async function getRecurringPayments(): Promise<import("./types").RecurringPayment[]> {
   const db = getDb();
   const rows = await db.select().from(schema.recurringPayments).orderBy(asc(schema.recurringPayments.nextPaymentDate));
