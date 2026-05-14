@@ -70,15 +70,93 @@ export const assetKindEnum = pgEnum("asset_kind", [
   "other",
 ]);
 
+/**
+ * Application roles. Coarse-grained — fine-grained scoping happens through
+ * the user_entity_access / user_client_access tables. The role drives the
+ * `permissions.ts` matrix.
+ *   super_admin — unrestricted, including unlocking locked periods
+ *   admin       — everything except unlocking locked periods
+ *   manager     — approve invoices/bills, view reports; no settings
+ *   accountant  — create/edit JEs/invoices/bills; no approvals
+ *   viewer      — read-only everywhere
+ *   employee    — read-only on own clients/invoices only
+ */
+export const userRoleEnum = pgEnum("user_role", [
+  "super_admin",
+  "admin",
+  "manager",
+  "accountant",
+  "viewer",
+  "employee",
+]);
+
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
   fullName: text("full_name").notNull(),
   passwordHash: text("password_hash").notNull(),
-  role: text("role").notNull().default("user"),
+  /** See userRoleEnum. Kept as text in DB to allow forward-compatible role names. */
+  role: text("role").notNull().default("viewer"),
   isSuperuser: boolean("is_superuser").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
+  /** Set on every successful login by the Auth.js authorize() callback. */
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Per-user entity scoping. If a user has at least one row here, they can
+ * only see / act on those entities (subject to accessLevel). If there are
+ * NO rows for a user, they see all entities — the admin default.
+ *
+ * accessLevel "full" → can post/edit; "read_only" → can view only.
+ */
+export const accessLevelEnum = pgEnum("access_level", ["full", "read_only"]);
+
+export const userEntityAccess = pgTable("user_entity_access", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  entityId: text("entity_id").notNull(),
+  accessLevel: accessLevelEnum("access_level").notNull().default("full"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Per-user client scoping. Same shape as userEntityAccess but keyed on
+ * customers.id. Used by the "employee" role so each employee only sees
+ * the clients they're assigned to.
+ */
+export const userClientAccess = pgTable("user_client_access", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  customerId: text("customer_id").notNull(),
+  accessLevel: accessLevelEnum("access_level").notNull().default("full"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * Immutable audit trail. Denormalises user identity at the time of the
+ * event so deleting / renaming a user later doesn't rewrite history.
+ * Indexed by (timestamp DESC) for the audit log viewer.
+ *
+ * action examples: "user.login", "user.logout", "user.login_failed",
+ *   "journal_entry.create", "invoice.update", "period.close", "csv.export",
+ *   "journal_entry.bypass_control_warning"
+ */
+export const auditLog = pgTable("audit_log", {
+  id: text("id").primaryKey(),
+  timestamp: timestamp("timestamp", { withTimezone: true }).defaultNow().notNull(),
+  userId: text("user_id"),
+  userEmail: text("user_email"),
+  userRole: text("user_role"),
+  action: text("action").notNull(),
+  resourceType: text("resource_type"),
+  resourceId: text("resource_id"),
+  resourceName: text("resource_name"),
+  changes: jsonb("changes"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  metadata: jsonb("metadata"),
 });
 
 export const accounts = pgTable("accounts", {
@@ -959,3 +1037,6 @@ export type CustomFieldValue = typeof customFieldValues.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type InvoiceNote = typeof invoiceNotes.$inferSelect;
 export type AccountingPeriod = typeof accountingPeriods.$inferSelect;
+export type UserEntityAccess = typeof userEntityAccess.$inferSelect;
+export type UserClientAccess = typeof userClientAccess.$inferSelect;
+export type AuditLog = typeof auditLog.$inferSelect;
