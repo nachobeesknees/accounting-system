@@ -20,6 +20,8 @@ import {
   totalCredits,
   totalDebits,
 } from "@/lib/data";
+import { getSessionUser } from "@/lib/session";
+import { getAllowedEntityIds } from "@/lib/entity-access";
 import { formatMoney, parseAmount } from "@/lib/money";
 import { postEntry, voidEntry } from "./actions";
 import { duplicateJournalEntryAction } from "../../duplicate-actions";
@@ -57,6 +59,17 @@ export default async function Page({
   const { tab, error } = await searchParams;
   const entry = await getJournalEntryByNumber(entryNumber);
   if (!entry) notFound();
+
+  // user_entity_access — 404 on JEs tagged to a client entity outside scope.
+  const sessionUser = await getSessionUser();
+  const allowedEntityIds = await getAllowedEntityIds(sessionUser);
+  if (
+    allowedEntityIds !== null &&
+    entry.entityId != null &&
+    !allowedEntityIds.has(entry.entityId)
+  ) {
+    notFound();
+  }
 
   const [periods, accounts, postedByUser, dimensionsWithValues, firmEntities] =
     await Promise.all([

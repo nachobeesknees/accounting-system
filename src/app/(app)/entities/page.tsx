@@ -14,6 +14,8 @@ import {
   getRegionGroups,
   getRegions,
 } from "@/lib/data";
+import { getSessionUser } from "@/lib/session";
+import { getAllowedEntityIds } from "@/lib/entity-access";
 import { formatDate } from "@/lib/format";
 import type { Entity, EntityKind } from "@/lib/types";
 
@@ -74,12 +76,20 @@ export default async function Page({
   const regionId = params.region ?? "";
   const regionGroupId = params.regionGroup ?? "";
 
-  const [allEntities, customers, regions, regionGroups] = await Promise.all([
-    getEntities(),
-    getCustomers(),
-    getRegions(),
-    getRegionGroups(),
-  ]);
+  const user = await getSessionUser();
+  const [allEntitiesRaw, customers, regions, regionGroups, allowedEntityIds] =
+    await Promise.all([
+      getEntities(),
+      getCustomers(),
+      getRegions(),
+      getRegionGroups(),
+      getAllowedEntityIds(user),
+    ]);
+  // user_entity_access scoping. null → unrestricted (admin default).
+  const allEntities =
+    allowedEntityIds === null
+      ? allEntitiesRaw
+      : allEntitiesRaw.filter((e) => allowedEntityIds.has(e.id));
   const customersById = new Map(customers.map((c) => [c.id, c] as const));
   const regionById = new Map(regions.map((r) => [r.id, r] as const));
   const regionGroupById = new Map(regionGroups.map((g) => [g.id, g] as const));

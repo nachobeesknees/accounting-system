@@ -18,6 +18,8 @@ import {
   getRegionGroups,
   getRegions,
 } from "@/lib/data";
+import { getSessionUser } from "@/lib/session";
+import { getAllowedEntityIds } from "@/lib/entity-access";
 import { CustomFields } from "@/components/CustomFields";
 import { Attachments } from "@/components/Attachments";
 import type { EntityKind } from "@/lib/types";
@@ -74,7 +76,8 @@ export default async function Page({
 }) {
   const { id } = await params;
   const { saved, error } = await searchParams;
-  const [entity, customers, currencies, fees, regions, regionGroups] =
+  const user = await getSessionUser();
+  const [entity, customers, currencies, fees, regions, regionGroups, allowedEntityIds] =
     await Promise.all([
       getEntityById(id),
       getCustomers(),
@@ -82,8 +85,11 @@ export default async function Page({
       getEntityFeesByEntityId(id),
       getRegions(),
       getRegionGroups(),
+      getAllowedEntityIds(user),
     ]);
   if (!entity) notFound();
+  // user_entity_access — restricted users see 404 on entities they can't reach.
+  if (allowedEntityIds !== null && !allowedEntityIds.has(entity.id)) notFound();
   const client = customers.find((c) => c.id === entity.clientId);
   const regionGroupById = new Map(regionGroups.map((g) => [g.id, g] as const));
   const regionsByGroup = new Map<string | null, typeof regions>();

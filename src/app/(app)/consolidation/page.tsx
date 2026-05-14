@@ -11,23 +11,37 @@ import {
   getEntityPlRollup,
   getLatestFxRates,
 } from "@/lib/data";
+import { getSessionUser } from "@/lib/session";
+import { getAllowedEntityIds } from "@/lib/entity-access";
 import { formatAmount } from "@/lib/money";
 
 export default async function Page() {
-  const [rollup, entities, customers, base, fxRates] = await Promise.all([
-    getEntityPlRollup(),
-    getEntities(),
-    getCustomers(),
-    getBaseCurrency(),
-    getLatestFxRates(),
-  ]);
+  const user = await getSessionUser();
+  const [rollup, entities, customers, base, fxRates, allowedEntityIds] =
+    await Promise.all([
+      getEntityPlRollup(),
+      getEntities(),
+      getCustomers(),
+      getBaseCurrency(),
+      getLatestFxRates(),
+      getAllowedEntityIds(user),
+    ]);
   const baseCode = base?.code ?? "USD";
   const baseSymbol = base?.symbol ?? "$";
   const entityById = new Map(entities.map((e) => [e.id, e] as const));
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
 
+  // user_entity_access — drop rollup rows for entities outside the user's
+  // scope. The "firm" bucket (entityId === null) is always visible.
+  const scopedRollup =
+    allowedEntityIds === null
+      ? rollup
+      : rollup.filter(
+          (r) => r.entityId == null || allowedEntityIds.has(r.entityId),
+        );
+
   // Convert each row to base currency using the entity's functional ccy.
-  const rows = rollup.map((r) => {
+  const rows = scopedRollup.map((r) => {
     const entity = r.entityId ? entityById.get(r.entityId) : undefined;
     const ccy = entity?.currencyCode ?? baseCode;
     const conv = (n: number) =>

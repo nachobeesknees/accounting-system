@@ -14,6 +14,8 @@ import {
   getJournalEntryTemplates,
   totalDebits,
 } from "@/lib/data";
+import { getSessionUser } from "@/lib/session";
+import { getAllowedEntityIds } from "@/lib/entity-access";
 import { formatMoney } from "@/lib/money";
 import type { JournalEntry } from "@/lib/types";
 import { DrillNumber } from "@/components/DrillNumber";
@@ -111,10 +113,20 @@ export default async function Page({
   const view = params.view === "templates" ? "templates" : "entries";
   const error = params.error ?? "";
 
-  const [allEntries, templates] = await Promise.all([
+  const user = await getSessionUser();
+  const [allEntriesRaw, templates, allowedEntityIds] = await Promise.all([
     getJournalEntries(),
     getJournalEntryTemplates(),
+    getAllowedEntityIds(user),
   ]);
+  // user_entity_access — drop JEs tagged to a client entity outside the
+  // user's scope. Firm-level (entityId null) entries are always visible.
+  const allEntries =
+    allowedEntityIds === null
+      ? allEntriesRaw
+      : allEntriesRaw.filter(
+          (e) => e.entityId == null || allowedEntityIds.has(e.entityId),
+        );
   const todayIso = DEMO_TODAY.toISOString().slice(0, 10);
   const dueTemplates = templates.filter((t) => isTemplateDue(t, todayIso));
 
