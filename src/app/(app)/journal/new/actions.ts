@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getSessionUser } from "@/lib/session";
 import { createJournalEntry } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
+import { stripPeriodErrorPrefix } from "@/lib/periods";
 
 export type CreateEntryState = { error: string | null };
 
@@ -76,6 +77,9 @@ export async function createEntry(
   const sourceRaw = String(formData.get("source") ?? "manual");
   const fiscalPeriodId = String(formData.get("fiscalPeriodId") ?? "");
   const firmEntityId = String(formData.get("firmEntityId") ?? "");
+  const periodOverrideReason = String(
+    formData.get("periodOverrideReason") ?? "",
+  ).trim();
   const action = String(formData.get("action") ?? "draft");
   const bypassControlWarning =
     String(formData.get("bypassControlWarning") ?? "") === "1";
@@ -107,6 +111,8 @@ export async function createEntry(
       firmEntityId: firmEntityId === "" ? null : firmEntityId,
       status: action === "post" ? "posted" : "draft",
       bypassControlWarning,
+      periodOverrideReason:
+        periodOverrideReason === "" ? null : periodOverrideReason,
       lines: lines.map((l) => ({
         accountId: l.accountId,
         description: l.description.trim() === "" ? null : l.description.trim(),
@@ -130,8 +136,8 @@ export async function createEntry(
     ) {
       throw err;
     }
-    const message =
+    const raw =
       err instanceof Error ? err.message : "Failed to create entry.";
-    return { error: message };
+    return { error: stripPeriodErrorPrefix(raw) };
   }
 }

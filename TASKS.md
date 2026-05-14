@@ -34,6 +34,7 @@ Agents: read this file before starting work. Check off items as you complete the
 - [x] Payment recommendation/selection tool — select bills to pay on AP aging, show live cash forecast impact, CSV export
 - [x] Smart searchable dropdowns (SmartSelect/Combobox) — `SmartSelect` + `SmartSelectField` at `src/components/ui/SmartSelect.tsx`; typed search, keyboard nav, grouped options, ARIA, portal positioning. Migrated every native `<select>` plus all large-list `SelectField` call-sites (accounts, customers, vendors, entities, contacts, currencies, offices, users, regions, region-groups, employees on AR aging). Small enum fields (status/kind/role/frequency) stay on native `SelectField`.
 - [x] Document OCR — upload PDF/image on new invoice/bill/contact/journal forms, Claude Haiku extracts fields and pre-fills the form; raw text saved on the record and indexed by ⌘K
+- [x] Period close / lock — `accounting_periods` table (monthly, auto-seeded for current + next year), admin actions on `/settings/periods` (Close / Lock / Reopen-with-reason), warning banner on JE / invoice / bill new forms with `periodOverrideReason` audit field, hard block when locked, dashboard widget showing the last 3 periods + quick-close on the current open period
 
 ---
 

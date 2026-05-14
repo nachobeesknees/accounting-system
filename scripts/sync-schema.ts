@@ -141,9 +141,37 @@ const COLUMNS: ColumnSpec[] = [
   // Audit flag: set to true when the user explicitly confirmed past a
   // controlled-account posting warning (direct posting to AR/AP/Cash).
   { table: "journal_entries", column: "bypass_control_warning", type: "boolean", notNull: true, default: "false" },
+
+  // ---- Period close override reason ----
+  // Set when a user posts a JE/invoice/bill into a soft-closed period —
+  // captures the reason for audit. Locked periods always hard-block, so
+  // there's nothing to record for those.
+  { table: "journal_entries", column: "period_override_reason", type: "text" },
+  { table: "invoices", column: "period_override_reason", type: "text" },
+  { table: "bills", column: "period_override_reason", type: "text" },
 ];
 
 const TABLES = [
+  {
+    // Monthly period close. Status starts "open"; admins move to "closed"
+    // (soft warning + override w/ reason on new entries) or "locked" (hard
+    // block). Auto-seeded for the current year + next year by the
+    // settings/periods page on first load.
+    name: "accounting_periods",
+    ddl: `CREATE TABLE IF NOT EXISTS accounting_periods (
+      id text PRIMARY KEY,
+      name text UNIQUE NOT NULL,
+      start_date date NOT NULL,
+      end_date date NOT NULL,
+      status text DEFAULT 'open' NOT NULL,
+      closed_at timestamp with time zone,
+      closed_by text,
+      locked_at timestamp with time zone,
+      locked_by text,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
   {
     // Append-only invoice notes — used by the invoice detail page to log
     // ad-hoc comments from CSMs / collections (no edits, no deletes).

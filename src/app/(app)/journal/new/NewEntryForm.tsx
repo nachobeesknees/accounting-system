@@ -18,12 +18,14 @@ import {
 import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
 import type { OcrExtraction } from "@/lib/ocr";
 import type {
+  AccountingPeriod,
   Account,
   Dimension,
   DimensionValue,
   FiscalPeriod,
   Office,
 } from "@/lib/types";
+import { PeriodStatusBanner } from "@/components/PeriodStatusBanner";
 import { createEntry, type CreateEntryState } from "./actions";
 
 type Line = {
@@ -84,12 +86,14 @@ const HEADER_INPUT: React.CSSProperties = {
 export function NewEntryForm({
   accounts,
   periods,
+  accountingPeriods,
   firmEntities,
   today,
   dimensionsWithValues,
 }: {
   accounts: Account[];
   periods: FiscalPeriod[];
+  accountingPeriods: AccountingPeriod[];
   firmEntities: Office[];
   today: string;
   dimensionsWithValues: Array<{ dimension: Dimension; values: DimensionValue[] }>;
@@ -303,6 +307,7 @@ export function NewEntryForm({
 
       <OcrUpload formType="journal_entry" onExtracted={applyOcr} />
       {showReview && <ReviewBanner onDismiss={() => setShowReview(false)} />}
+      <PeriodStatusBanner date={entryDate} periods={accountingPeriods} />
 
       {/* Header — single dense row, no Card chrome around the inputs. */}
       <div

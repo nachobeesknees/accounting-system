@@ -107,6 +107,29 @@ export const fiscalPeriods = pgTable("fiscal_periods", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Monthly period close. A date that falls inside a "closed" period yields a
+ * soft warning the user can override (with a reason); a "locked" period
+ * hard-blocks any new entry/invoice/bill posting unless a superadmin
+ * reopens it. Periods are auto-seeded for the current year + next year
+ * the first time `/settings/periods` is loaded.
+ */
+export const accountingPeriods = pgTable("accounting_periods", {
+  id: text("id").primaryKey(),
+  /** Human label, e.g. "January 2026". Unique. */
+  name: text("name").notNull().unique(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  /** open | closed | locked */
+  status: text("status").notNull().default("open"),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  closedBy: text("closed_by"),
+  lockedAt: timestamp("locked_at", { withTimezone: true }),
+  lockedBy: text("locked_by"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const journalEntries = pgTable("journal_entries", {
   id: text("id").primaryKey(),
   entryNumber: text("entry_number").notNull().unique(),
@@ -131,6 +154,8 @@ export const journalEntries = pgTable("journal_entries", {
    * for entries that bypass the recommended invoice/bill/bank-txn flows.
    */
   bypassControlWarning: boolean("bypass_control_warning").notNull().default(false),
+  /** Reason given when posting into a soft-closed accounting period. */
+  periodOverrideReason: text("period_override_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -663,6 +688,8 @@ export const invoices = pgTable("invoices", {
   journalEntryId: text("journal_entry_id"),
   /** Which of our firm's corporate entities issued this invoice. */
   firmEntityId: text("firm_entity_id"),
+  /** Reason given when posting into a soft-closed accounting period. */
+  periodOverrideReason: text("period_override_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -741,6 +768,8 @@ export const bills = pgTable("bills", {
   rebillAmount: numeric("rebill_amount", { precision: 15, scale: 2 }),
   chargebackInvoiceId: text("chargeback_invoice_id"),
   chargebackNotes: text("chargeback_notes"),
+  /** Reason given when approving into a soft-closed accounting period. */
+  periodOverrideReason: text("period_override_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -896,3 +925,4 @@ export type CustomFieldDefinition = typeof customFieldDefinitions.$inferSelect;
 export type CustomFieldValue = typeof customFieldValues.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
 export type InvoiceNote = typeof invoiceNotes.$inferSelect;
+export type AccountingPeriod = typeof accountingPeriods.$inferSelect;

@@ -16,10 +16,12 @@ import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
 import type { OcrExtraction } from "@/lib/ocr";
 import type {
   Account,
+  AccountingPeriod,
   Customer,
   Dimension,
   DimensionValue,
 } from "@/lib/types";
+import { PeriodStatusBanner } from "@/components/PeriodStatusBanner";
 import {
   createInvoiceAction,
   type CreateInvoiceState,
@@ -51,12 +53,14 @@ export function NewInvoiceForm({
   today,
   dueDefault,
   dimensionsWithValues,
+  accountingPeriods,
 }: {
   customers: Customer[];
   revenueAccounts: Account[];
   today: string;
   dueDefault: string;
   dimensionsWithValues: Array<{ dimension: Dimension; values: DimensionValue[] }>;
+  accountingPeriods: AccountingPeriod[];
 }) {
   const [state, formAction] = useFormState(createInvoiceAction, INITIAL_STATE);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
@@ -175,6 +179,7 @@ export function NewInvoiceForm({
       <OcrUpload formType="invoice" onExtracted={applyOcr} />
       {showReview && <ReviewBanner onDismiss={() => setShowReview(false)} />}
       <input type="hidden" name="ocrText" value={ocrText} />
+      <PeriodStatusBanner date={invoiceDate} periods={accountingPeriods} />
 
       <Card title="Header" bodyPadding>
         <div className="flex flex-col gap-3">

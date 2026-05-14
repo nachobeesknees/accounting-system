@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getSessionUser } from "@/lib/session";
 import { createInvoice, postInvoice, type DraftInvoiceLine } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
+import { stripPeriodErrorPrefix } from "@/lib/periods";
 
 export type CreateInvoiceState = { error: string | null };
 
@@ -82,6 +83,9 @@ export async function createInvoiceAction(
   const dueDate = String(formData.get("dueDate") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
   const ocrText = String(formData.get("ocrText") ?? "").trim();
+  const periodOverrideReason = String(
+    formData.get("periodOverrideReason") ?? "",
+  ).trim();
   const action = String(formData.get("action") ?? "draft");
 
   if (!customerId) return { error: "Customer is required." };
@@ -116,11 +120,16 @@ export async function createInvoiceAction(
       dueDate,
       notes: notes === "" ? null : notes,
       ocrText: ocrText === "" ? null : ocrText,
+      periodOverrideReason:
+        periodOverrideReason === "" ? null : periodOverrideReason,
       lines,
     });
 
     if (action === "post") {
-      await postInvoice(user, created.id);
+      await postInvoice(user, created.id, {
+        periodOverrideReason:
+          periodOverrideReason === "" ? null : periodOverrideReason,
+      });
     }
 
     revalidatePath("/invoices");
@@ -129,8 +138,8 @@ export async function createInvoiceAction(
     redirect(`/invoices/${created.id}`);
   } catch (err) {
     if (isRedirectError(err)) throw err;
-    return {
-      error: err instanceof Error ? err.message : "Failed to create invoice.",
-    };
+    const raw =
+      err instanceof Error ? err.message : "Failed to create invoice.";
+    return { error: stripPeriodErrorPrefix(raw) };
   }
 }
