@@ -12,10 +12,10 @@
 
 import "server-only";
 
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
-import { sumCredits, sumDebits, toDecimalString } from "./money";
+import { parseAmount, sumCredits, sumDebits, toDecimalString } from "./money";
 import type { JournalEntry, SessionUser } from "./types";
 import { getJournalEntryById } from "./data";
 import { getEntityScope } from "./entity-scope";
@@ -115,6 +115,8 @@ export type DraftJournalLine = {
   credit: number;
   /** Dimension map: { [dimension.key]: dimension_value.id }. Defaults to {}. */
   dimensions?: Record<string, string>;
+  /** If set, marks this line as an intercompany leg; FK → offices.id. */
+  intercompanyCounterpartEntityId?: string | null;
 };
 
 export type CreateJournalEntryInput = {
@@ -135,6 +137,8 @@ export type CreateJournalEntryInput = {
    * reason is required and stored alongside the entry for audit.
    */
   periodOverrideReason?: string | null;
+  /** When set, this JE is an elimination entry (consolidation adjustment). */
+  eliminationEntryId?: string | null;
   lines: DraftJournalLine[];
 };
 
@@ -198,6 +202,7 @@ export async function createJournalEntry(
       firmEntityId: input.firmEntityId ?? null,
       bypassControlWarning: input.bypassControlWarning ?? false,
       periodOverrideReason: overrideRecorded,
+      eliminationEntryId: input.eliminationEntryId ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -212,6 +217,8 @@ export async function createJournalEntry(
         credit: toDecimalString(l.credit ?? 0),
         entityId: input.entityId ?? null,
         firmEntityId: input.firmEntityId ?? null,
+        intercompanyCounterpartEntityId:
+          l.intercompanyCounterpartEntityId ?? null,
         dimensions: l.dimensions ?? {},
       })),
     );
@@ -345,6 +352,122 @@ export async function voidJournalEntry(
   const updated = await getJournalEntryById(entryId);
   if (!updated) throw new Error("Entry vanished after void.");
   return updated;
+}
+
+// --------- Intercompany eliminations ---------
+
+/**
+ * Generate an elimination JE that zeroes out the open intercompany balance
+ * between two firm entities. We pull every non-eliminated IC line on
+ * posted JEs between (entityA, entityB) — in either direction — and
+ * produce a single JE with the reverse debit/credit on each account
+ * involved.
+ *
+ * The new JE is marked with `eliminationEntryId` (pointer to the first
+ * source IC JE), `firmEntityId = null` so it's a firm-level adjustment,
+ * and `status = "posted"` so it lands on the firm-level consolidated view
+ * immediately. Per the elimination filter on report queries, it is
+ * EXCLUDED from any single-entity scoped view.
+ *
+ * Throws if there is nothing to eliminate.
+ */
+export async function generateIntercompanyElimination(
+  user: SessionUser,
+  entityAId: string,
+  entityBId: string,
+): Promise<JournalEntry> {
+  if (entityAId === entityBId) {
+    throw new Error("Pick two distinct firm entities.");
+  }
+  const db = getDb();
+
+  // Pull every non-eliminated IC line between the two entities, in either
+  // direction. The from-side comes from journalEntries.firmEntityId; the
+  // to-side comes from journalLines.intercompanyCounterpartEntityId.
+  const rows = await db
+    .select({
+      entryId: schema.journalEntries.id,
+      lineId: schema.journalLines.id,
+      fromEntityId: schema.journalEntries.firmEntityId,
+      toEntityId: schema.journalLines.intercompanyCounterpartEntityId,
+      accountId: schema.journalLines.accountId,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        isNull(schema.journalEntries.eliminationEntryId),
+        or(
+          and(
+            eq(schema.journalEntries.firmEntityId, entityAId),
+            eq(
+              schema.journalLines.intercompanyCounterpartEntityId,
+              entityBId,
+            ),
+          ),
+          and(
+            eq(schema.journalEntries.firmEntityId, entityBId),
+            eq(
+              schema.journalLines.intercompanyCounterpartEntityId,
+              entityAId,
+            ),
+          ),
+        ),
+      ),
+    );
+
+  if (rows.length === 0) {
+    throw new Error("No open intercompany balance between this pair.");
+  }
+
+  // Net per account. We post the REVERSE of each side's accumulated net.
+  const netByAccount = new Map<string, number>();
+  for (const r of rows) {
+    const n = parseAmount(r.debit) - parseAmount(r.credit);
+    netByAccount.set(r.accountId, (netByAccount.get(r.accountId) ?? 0) + n);
+  }
+  const eliminationLines: DraftJournalLine[] = [];
+  for (const [accountId, net] of netByAccount.entries()) {
+    if (Math.abs(net) < 0.005) continue;
+    // Reverse sign — debit balance → post credit; credit balance → post debit.
+    if (net > 0) {
+      eliminationLines.push({ accountId, debit: 0, credit: net });
+    } else {
+      eliminationLines.push({ accountId, debit: -net, credit: 0 });
+    }
+  }
+  if (eliminationLines.length < 2) {
+    // Already net zero — nothing to eliminate.
+    throw new Error("Intercompany balance is already zero for this pair.");
+  }
+  // Sanity: ensure overall balance — should already be balanced since the
+  // underlying postings were each balanced and we're just reversing nets.
+  const dt = eliminationLines.reduce((s, l) => s + (l.debit ?? 0), 0);
+  const ct = eliminationLines.reduce((s, l) => s + (l.credit ?? 0), 0);
+  if (Math.abs(dt - ct) > 0.005) {
+    throw new Error(
+      `Computed elimination is unbalanced: ${dt.toFixed(2)} vs ${ct.toFixed(2)}.`,
+    );
+  }
+
+  // Reference one source IC JE so eliminationEntryId has a meaningful FK.
+  const sourceEntryId = rows[0].entryId;
+
+  return createJournalEntry(user, {
+    entryDate: new Date().toISOString().slice(0, 10),
+    description: `Intercompany elimination · ${entityAId} ↔ ${entityBId}`,
+    source: "manual",
+    firmEntityId: null,
+    status: "posted",
+    eliminationEntryId: sourceEntryId,
+    lines: eliminationLines,
+  });
 }
 
 // --------- Attachments + activity log ---------
