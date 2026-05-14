@@ -723,9 +723,9 @@ export default async function Page({
                   {invoice.taxExempt
                     ? " (exempt)"
                     : invoice.taxRate && parseFloat(invoice.taxRate) > 0
-                      ? ` (${(parseFloat(invoice.taxRate) * 100).toFixed(
-                          parseFloat(invoice.taxRate) * 100 % 1 === 0 ? 0 : 2,
-                        )}%)`
+                      ? ` (${(parseFloat(invoice.taxRate) * 100)
+                          .toFixed(3)
+                          .replace(/\.?0+$/, "")}%)`
                       : ""}
                 </TD>
                 <TD>{""}</TD>
