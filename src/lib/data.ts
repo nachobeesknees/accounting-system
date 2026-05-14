@@ -120,6 +120,7 @@ function mapEntity(r: typeof schema.entities.$inferSelect): Entity {
     registrationNumber: r.registrationNumber,
     notes: r.notes,
     currencyCode: r.currencyCode,
+    regionId: (r as { regionId?: string | null }).regionId ?? null,
   };
 }
 
@@ -475,6 +476,7 @@ function mapCustomer(r: typeof schema.customers.$inferSelect): Customer {
     billingAddress: r.billingAddress,
     paymentTerms: r.paymentTerms,
     assignedUserId: r.assignedUserId,
+    regionId: (r as { regionId?: string | null }).regionId ?? null,
     isActive: r.isActive,
     notes: r.notes,
   };

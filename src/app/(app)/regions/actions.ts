@@ -8,6 +8,8 @@ import {
   createRegionGroup,
   deleteRegion,
   deleteRegionGroup,
+  setCustomerRegion,
+  setEntityRegion,
   setOfficeRegion,
   updateRegion,
   updateRegionGroup,
@@ -159,4 +161,48 @@ export async function setOfficeRegionAction(formData: FormData) {
   revalidatePath("/offices");
   revalidatePath("/regions");
   redirect("/offices?saved=1");
+}
+
+// ---- Entity region picker (used from /entities and /entities/[id]) ----
+
+export async function setEntityRegionAction(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  const entityId = String(formData.get("entityId") ?? "").trim();
+  const raw = String(formData.get("regionId") ?? "").trim();
+  const regionId = raw ? raw : null;
+  if (!entityId) redirect("/entities");
+  try {
+    await setEntityRegion(user, entityId, regionId);
+  } catch (err) {
+    if (isRedirect(err)) throw err;
+    const msg = err instanceof Error ? err.message : "Update failed";
+    redirect(`/entities/${entityId}?error=` + encodeURIComponent(msg));
+  }
+  revalidatePath("/entities");
+  revalidatePath(`/entities/${entityId}`);
+  revalidatePath("/regions");
+  redirect(`/entities/${entityId}?saved=1`);
+}
+
+// ---- Customer region picker (used from /customers and /customers/[id]) ----
+
+export async function setCustomerRegionAction(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  const customerId = String(formData.get("customerId") ?? "").trim();
+  const raw = String(formData.get("regionId") ?? "").trim();
+  const regionId = raw ? raw : null;
+  if (!customerId) redirect("/customers");
+  try {
+    await setCustomerRegion(user, customerId, regionId);
+  } catch (err) {
+    if (isRedirect(err)) throw err;
+    const msg = err instanceof Error ? err.message : "Update failed";
+    redirect(`/customers/${customerId}?error=` + encodeURIComponent(msg));
+  }
+  revalidatePath("/customers");
+  revalidatePath(`/customers/${customerId}`);
+  revalidatePath("/regions");
+  redirect(`/customers/${customerId}?saved=1`);
 }

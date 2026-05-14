@@ -732,6 +732,7 @@ export type CreateEntityInput = {
   registrationNumber?: string | null;
   notes?: string | null;
   currencyCode?: string;
+  regionId?: string | null;
 };
 
 export async function createEntity(_user: SessionUser, input: CreateEntityInput) {
@@ -760,6 +761,7 @@ export async function createEntity(_user: SessionUser, input: CreateEntityInput)
       registrationNumber: input.registrationNumber ?? null,
       notes: input.notes ?? null,
       currencyCode: input.currencyCode ?? "USD",
+      regionId: input.regionId ?? null,
     })
     .returning();
   return created;
@@ -800,6 +802,7 @@ export async function updateEntity(
       ...(input.registrationNumber !== undefined && { registrationNumber: input.registrationNumber }),
       ...(input.notes !== undefined && { notes: input.notes }),
       ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
+      ...(input.regionId !== undefined && { regionId: input.regionId }),
       updatedAt: new Date(),
     })
     .where(eq(schema.entities.id, id))
@@ -3116,11 +3119,20 @@ export async function updateRegion(
 
 export async function deleteRegion(_user: SessionUser, id: string) {
   const db = getDb();
-  // Detach offices first so they don't end up with a dangling region_id.
+  // Detach offices, entities, and customers first so we don't leave dangling
+  // region_id references behind.
   await db
     .update(schema.offices)
     .set({ regionId: null, updatedAt: new Date() })
     .where(eq(schema.offices.regionId, id));
+  await db
+    .update(schema.entities)
+    .set({ regionId: null, updatedAt: new Date() })
+    .where(eq(schema.entities.regionId, id));
+  await db
+    .update(schema.customers)
+    .set({ regionId: null, updatedAt: new Date() })
+    .where(eq(schema.customers.regionId, id));
   await db.delete(schema.regions).where(eq(schema.regions.id, id));
 }
 
@@ -3134,6 +3146,30 @@ export async function setOfficeRegion(
     .update(schema.offices)
     .set({ regionId, updatedAt: new Date() })
     .where(eq(schema.offices.id, officeId));
+}
+
+export async function setEntityRegion(
+  _user: SessionUser,
+  entityId: string,
+  regionId: string | null,
+) {
+  const db = getDb();
+  await db
+    .update(schema.entities)
+    .set({ regionId, updatedAt: new Date() })
+    .where(eq(schema.entities.id, entityId));
+}
+
+export async function setCustomerRegion(
+  _user: SessionUser,
+  customerId: string,
+  regionId: string | null,
+) {
+  const db = getDb();
+  await db
+    .update(schema.customers)
+    .set({ regionId, updatedAt: new Date() })
+    .where(eq(schema.customers.id, customerId));
 }
 
 // --------- Dimensions ---------

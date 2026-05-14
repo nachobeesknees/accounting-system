@@ -89,6 +89,8 @@ export type Entity = {
   registrationNumber?: string | null;
   notes: string | null;
   currencyCode: string;
+  /** Optional region (soft FK → regions.id). */
+  regionId?: string | null;
 };
 
 export type Currency = {
@@ -460,6 +462,8 @@ export type Customer = {
    * is_primary in the customer_assignments table after the migration.
    */
   assignedUserId: string | null;
+  /** Optional region (soft FK → regions.id). */
+  regionId?: string | null;
   isActive: boolean;
   notes: string | null;
 };

@@ -426,6 +426,8 @@ export const customers = pgTable("customers", {
   // Used by the invoice approval workflow: after CFO approval, the assigned
   // user must approve the invoice before it transitions to "sent".
   assignedUserId: text("assigned_user_id"),
+  /** Optional region (e.g. "North America"). Soft FK → regions.id. */
+  regionId: text("region_id"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -446,6 +448,8 @@ export const entities = pgTable("entities", {
   registrationNumber: text("registration_number"),
   notes: text("notes"),
   currencyCode: text("currency_code").notNull().default("USD"),
+  /** Optional region (e.g. "North America"). Soft FK → regions.id. */
+  regionId: text("region_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

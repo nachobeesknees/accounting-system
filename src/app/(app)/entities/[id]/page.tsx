@@ -14,6 +14,8 @@ import {
   getCustomers,
   getEntityById,
   getEntityFeesByEntityId,
+  getRegionGroups,
+  getRegions,
 } from "@/lib/data";
 import { CustomFields } from "@/components/CustomFields";
 import { Attachments } from "@/components/Attachments";
@@ -71,14 +73,26 @@ export default async function Page({
 }) {
   const { id } = await params;
   const { saved, error } = await searchParams;
-  const [entity, customers, currencies, fees] = await Promise.all([
-    getEntityById(id),
-    getCustomers(),
-    getCurrencies(),
-    getEntityFeesByEntityId(id),
-  ]);
+  const [entity, customers, currencies, fees, regions, regionGroups] =
+    await Promise.all([
+      getEntityById(id),
+      getCustomers(),
+      getCurrencies(),
+      getEntityFeesByEntityId(id),
+      getRegions(),
+      getRegionGroups(),
+    ]);
   if (!entity) notFound();
   const client = customers.find((c) => c.id === entity.clientId);
+  const regionGroupById = new Map(regionGroups.map((g) => [g.id, g] as const));
+  const regionsByGroup = new Map<string | null, typeof regions>();
+  for (const r of regions) {
+    const key = r.groupId ?? null;
+    const arr = regionsByGroup.get(key) ?? [];
+    arr.push(r);
+    regionsByGroup.set(key, arr);
+  }
+  const orderedRegionGroupIds = regionGroups.map((g) => g.id);
   // Sort fees: active before draft/billed; primary services first.
   const sortedFees = [...fees].sort((a, b) => {
     const order = { active: 0, draft: 1, billed: 2, paid: 3, void: 4 } as Record<string, number>;
@@ -233,7 +247,32 @@ export default async function Page({
                       </option>
                     ))}
                 </SelectField>
-                <div />
+                <SelectField
+                  label="Region"
+                  name="regionId"
+                  defaultValue={entity.regionId ?? ""}
+                >
+                  <option value="">— None —</option>
+                  {(regionsByGroup.get(null) ?? []).map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                  {orderedRegionGroupIds.map((gid) => {
+                    const g = regionGroupById.get(gid);
+                    const rs = regionsByGroup.get(gid) ?? [];
+                    if (!g || rs.length === 0) return null;
+                    return (
+                      <optgroup key={gid} label={g.name}>
+                        {rs.map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    );
+                  })}
+                </SelectField>
               </Row>
               <TextareaField
                 label="Notes"

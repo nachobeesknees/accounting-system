@@ -115,6 +115,16 @@ export default async function Page() {
               Department, project, cost-center slicers attached to journal,
               invoice and bill line items.
             </span>
+            <Link
+              href="/settings/regions"
+              style={{ color: "var(--ink)", textDecoration: "underline" }}
+            >
+              Regions &amp; region groups →
+            </Link>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+              Tag offices, entities, and clients with a region (e.g. North
+              America, EMEA) for slicing reports and lists.
+            </span>
           </div>
         </Section>
 

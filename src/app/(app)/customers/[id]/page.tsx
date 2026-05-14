@@ -16,6 +16,8 @@ import {
   getEntitiesByClientId,
   getInvoices,
   getPendingChargebacksForClient,
+  getRegionGroups,
+  getRegions,
   getUserById,
   getUsers,
   getVendors,
@@ -64,6 +66,7 @@ import {
   removeAssignmentAction,
   setAssignedUserAction,
 } from "./actions";
+import { setCustomerRegionAction } from "../../regions/actions";
 
 // Local accessor: surface the `assignedUserId` column even if the shared
 // `Customer` type and `data.ts` mapper haven't yet been extended with the
@@ -97,6 +100,8 @@ export default async function Page({
     assignments,
     pendingChargebacks,
     vendors,
+    regions,
+    regionGroups,
   ] = await Promise.all([
     getInvoices(),
     getEntitiesByClientId(customer.id),
@@ -106,7 +111,20 @@ export default async function Page({
     getCustomerAssignments(customer.id),
     getPendingChargebacksForClient(customer.id),
     getVendors(),
+    getRegions(),
+    getRegionGroups(),
   ]);
+  const regionGroupById = new Map(regionGroups.map((g) => [g.id, g] as const));
+  const regionsByGroup = new Map<string | null, typeof regions>();
+  for (const r of regions) {
+    const key = r.groupId ?? null;
+    const arr = regionsByGroup.get(key) ?? [];
+    arr.push(r);
+    regionsByGroup.set(key, arr);
+  }
+  const orderedRegionGroupIds = regionGroups.map((g) => g.id);
+  const customerRegionId =
+    (customer as { regionId?: string | null }).regionId ?? null;
   const vendorById = new Map(vendors.map((v) => [v.id, v] as const));
   const chargebackRows = pendingChargebacks
     .filter(
@@ -213,6 +231,51 @@ export default async function Page({
               }
             />
             <KV k="Payment terms" v={`Net ${customer.paymentTerms}`} />
+            <KV
+              k="Region"
+              v={
+                <form
+                  action={setCustomerRegionAction}
+                  className="flex items-center gap-1.5"
+                >
+                  <input type="hidden" name="customerId" value={customer.id} />
+                  <select
+                    name="regionId"
+                    defaultValue={customerRegionId ?? ""}
+                    className="rounded-md px-2 py-1 text-[12.5px]"
+                    style={{
+                      background: "var(--surface)",
+                      border: "1px solid var(--line)",
+                      color: "var(--ink)",
+                    }}
+                  >
+                    <option value="">— None —</option>
+                    {(regionsByGroup.get(null) ?? []).map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                    {orderedRegionGroupIds.map((gid) => {
+                      const g = regionGroupById.get(gid);
+                      const rs = regionsByGroup.get(gid) ?? [];
+                      if (!g || rs.length === 0) return null;
+                      return (
+                        <optgroup key={gid} label={g.name}>
+                          {rs.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      );
+                    })}
+                  </select>
+                  <Button variant="ghost" type="submit">
+                    Save
+                  </Button>
+                </form>
+              }
+            />
           </KVGrid>
         </Card>
 

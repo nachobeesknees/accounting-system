@@ -7,7 +7,12 @@ import { Field, SelectField } from "@/components/ui/Field";
 import { IconBuilding } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { getCustomers, getEntities } from "@/lib/data";
+import {
+  getCustomers,
+  getEntities,
+  getRegionGroups,
+  getRegions,
+} from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import type { Entity, EntityKind } from "@/lib/types";
 
@@ -28,12 +33,18 @@ function filterEntities(
   kind: string,
   status: string,
   clientId: string,
+  regionId: string,
+  regionIdsInGroup: Set<string> | null,
 ): Entity[] {
   const needle = q.trim().toLowerCase();
   return entities.filter((e) => {
     if (kind && e.kind !== kind) return false;
     if (status && e.status !== status) return false;
     if (clientId && e.clientId !== clientId) return false;
+    if (regionId && (e.regionId ?? "") !== regionId) return false;
+    if (regionIdsInGroup) {
+      if (!e.regionId || !regionIdsInGroup.has(e.regionId)) return false;
+    }
     if (needle) {
       const hay = `${e.code} ${e.name} ${e.jurisdiction ?? ""} ${e.ein ?? ""}`.toLowerCase();
       if (!hay.includes(needle)) return false;
@@ -45,17 +56,53 @@ function filterEntities(
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; kind?: string; status?: string; client?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    kind?: string;
+    status?: string;
+    client?: string;
+    region?: string;
+    regionGroup?: string;
+  }>;
 }) {
   const params = await searchParams;
   const q = params.q ?? "";
   const kind = params.kind ?? "";
   const status = params.status ?? "";
   const clientId = params.client ?? "";
+  const regionId = params.region ?? "";
+  const regionGroupId = params.regionGroup ?? "";
 
-  const [allEntities, customers] = await Promise.all([getEntities(), getCustomers()]);
+  const [allEntities, customers, regions, regionGroups] = await Promise.all([
+    getEntities(),
+    getCustomers(),
+    getRegions(),
+    getRegionGroups(),
+  ]);
   const customersById = new Map(customers.map((c) => [c.id, c] as const));
-  const rows = filterEntities(allEntities, q, kind, status, clientId);
+  const regionById = new Map(regions.map((r) => [r.id, r] as const));
+  const regionGroupById = new Map(regionGroups.map((g) => [g.id, g] as const));
+  // Bucket regions by group for the picker <optgroup>s and group-filter logic.
+  const regionsByGroup = new Map<string | null, typeof regions>();
+  for (const r of regions) {
+    const key = r.groupId ?? null;
+    const arr = regionsByGroup.get(key) ?? [];
+    arr.push(r);
+    regionsByGroup.set(key, arr);
+  }
+  const regionIdsInGroup =
+    regionGroupId && !regionId
+      ? new Set((regionsByGroup.get(regionGroupId) ?? []).map((r) => r.id))
+      : null;
+  const rows = filterEntities(
+    allEntities,
+    q,
+    kind,
+    status,
+    clientId,
+    regionId,
+    regionIdsInGroup,
+  );
 
   return (
     <>
@@ -106,6 +153,39 @@ export default async function Page({
               </option>
             ))}
           </SelectField>
+          <SelectField
+            label="Region group"
+            name="regionGroup"
+            defaultValue={regionGroupId}
+          >
+            <option value="">All</option>
+            {regionGroups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField label="Region" name="region" defaultValue={regionId}>
+            <option value="">All</option>
+            {(regionsByGroup.get(null) ?? []).map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+            {regionGroups.map((g) => {
+              const rs = regionsByGroup.get(g.id) ?? [];
+              if (rs.length === 0) return null;
+              return (
+                <optgroup key={g.id} label={g.name}>
+                  {rs.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
+          </SelectField>
           <Button variant="primary" type="submit">
             Apply
           </Button>
@@ -144,6 +224,7 @@ export default async function Page({
                   <TH>Name</TH>
                   <TH>Client</TH>
                   <TH>Kind</TH>
+                  <TH>Region</TH>
                   <TH>Jurisdiction</TH>
                   <TH>Formation</TH>
                   <TH>Status</TH>
@@ -152,6 +233,15 @@ export default async function Page({
               <TBody>
                 {rows.map((e) => {
                   const client = customersById.get(e.clientId);
+                  const region = e.regionId ? regionById.get(e.regionId) : null;
+                  const group = region?.groupId
+                    ? regionGroupById.get(region.groupId)
+                    : null;
+                  const regionLabel = region
+                    ? group
+                      ? `${region.name} · ${group.name}`
+                      : region.name
+                    : "—";
                   return (
                     <TR key={e.id} href={`/entities/${e.id}`}>
                       <TD mono>
@@ -178,6 +268,7 @@ export default async function Page({
                       <TD style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
                         {KIND_LABEL[e.kind]}
                       </TD>
+                      <TD style={{ color: "var(--ink-3)" }}>{regionLabel}</TD>
                       <TD style={{ color: "var(--ink-3)" }}>
                         {e.jurisdiction ?? "—"}
                       </TD>
