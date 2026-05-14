@@ -35,6 +35,7 @@ import {
   submitInvoiceForApprovalAction,
   voidInvoiceAction,
 } from "./actions";
+import { duplicateInvoiceAction } from "../../duplicate-actions";
 import { Attachments } from "@/components/Attachments";
 
 function todayISO(): string {
@@ -224,6 +225,12 @@ export default async function Page({
       <ButtonLink href="/invoices" variant="secondary">
         ← All invoices
       </ButtonLink>
+      <form action={duplicateInvoiceAction} style={{ display: "inline-flex" }}>
+        <input type="hidden" name="invoiceId" value={invoice.id} />
+        <Button variant="secondary" type="submit">
+          Duplicate
+        </Button>
+      </form>
       {isDraft && (
         <form action={submitInvoiceForApprovalAction}>
           <input type="hidden" name="invoiceId" value={invoice.id} />
