@@ -60,6 +60,10 @@ export type JournalEntry = {
   updatedAt: string;
   /** null = firm-level journal; non-null = entity-scoped. */
   entityId: string | null;
+  /** Which firm corporate entity issued this entry (drives scope). */
+  firmEntityId?: string | null;
+  /** Audit flag: user confirmed past an AR/AP/Cash direct-posting warning. */
+  bypassControlWarning?: boolean;
   lines: JournalLine[];
 };
 

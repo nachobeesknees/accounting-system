@@ -621,6 +621,8 @@ function mapJournalEntry(
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     entityId: r.entityId,
+    firmEntityId: r.firmEntityId ?? null,
+    bypassControlWarning: r.bypassControlWarning ?? false,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }

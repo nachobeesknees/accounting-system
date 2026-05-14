@@ -127,6 +127,8 @@ export type CreateJournalEntryInput = {
   /** Which firm corporate entity issued this entry (drives the topbar scope). */
   firmEntityId?: string | null;
   status?: "draft" | "posted";
+  /** User confirmed past an AR/AP/Cash direct-posting warning. */
+  bypassControlWarning?: boolean;
   lines: DraftJournalLine[];
 };
 
@@ -179,6 +181,7 @@ export async function createJournalEntry(
       createdBy: user.userId,
       entityId: input.entityId ?? null,
       firmEntityId: input.firmEntityId ?? null,
+      bypassControlWarning: input.bypassControlWarning ?? false,
       createdAt: now,
       updatedAt: now,
     });

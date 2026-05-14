@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFormState } from "react-dom";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
@@ -9,6 +9,12 @@ import {
   type SmartSelectOption,
 } from "@/components/ui/SmartSelect";
 import { OcrUpload, ReviewBanner } from "@/components/OcrUpload";
+import {
+  controlClassLabel,
+  controlWarningInline,
+  getAccountControlClass,
+  type AccountControlClass,
+} from "@/lib/account-controls";
 import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
 import type { OcrExtraction } from "@/lib/ocr";
 import type {
@@ -172,6 +178,10 @@ export function NewEntryForm({
       })),
     [accounts],
   );
+  const accountById = useMemo(
+    () => new Map(accounts.map((a) => [a.id, a] as const)),
+    [accounts],
+  );
   const dimensionOptions = useMemo(() => {
     const m = new Map<string, SmartSelectOption[]>();
     for (const { dimension, values } of lineDimensions) {
@@ -200,6 +210,39 @@ export function NewEntryForm({
     [lines],
   );
   const balanced = Math.abs(debitTotal - creditTotal) < 0.005 && debitTotal > 0;
+
+  // Controlled-account detection per line — drives both the inline warning
+  // badge and the pre-post confirmation summary.
+  const lineControls = useMemo<Array<AccountControlClass | null>>(
+    () =>
+      lines.map((l) => {
+        if (!l.accountId) return null;
+        const a = accountById.get(l.accountId);
+        if (!a) return null;
+        return getAccountControlClass(a);
+      }),
+    [lines, accountById],
+  );
+  const controlSummary = useMemo(() => {
+    const set = new Set<AccountControlClass>();
+    for (const c of lineControls) if (c) set.add(c);
+    return Array.from(set);
+  }, [lineControls]);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [pendingPost, setPendingPost] = useState(false);
+
+  function confirmPostAndSubmit() {
+    setPendingPost(false);
+    const fd = formRef.current;
+    if (!fd) return;
+    const bypass = fd.querySelector<HTMLInputElement>(
+      "input[name=bypassControlWarning]",
+    );
+    if (bypass) bypass.value = "1";
+    const action = fd.querySelector<HTMLInputElement>("input[name=action]");
+    if (action) action.value = "post";
+    fd.requestSubmit();
+  }
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -239,7 +282,12 @@ export function NewEntryForm({
   } 110px 110px 32px`;
 
   return (
-    <form action={formAction} className="flex flex-col gap-3.5 px-6 py-3.5 pb-8">
+    <form
+      ref={formRef}
+      action={formAction}
+      className="flex flex-col gap-3.5 px-6 py-3.5 pb-8"
+    >
+      <input type="hidden" name="bypassControlWarning" value="0" />
       {state.error && (
         <div
           className="rounded-md px-3 py-2 text-[12.5px]"
@@ -418,11 +466,13 @@ export function NewEntryForm({
         {lines.map((line, i) => (
           <div
             key={i}
-            className="grid items-stretch"
             style={{
-              gridTemplateColumns: cols,
               borderTop: i === 0 ? "none" : "1px solid var(--line)",
             }}
+          >
+          <div
+            className="grid items-stretch"
+            style={{ gridTemplateColumns: cols }}
           >
             <div
               className="flex items-center px-3"
@@ -529,6 +579,20 @@ export function NewEntryForm({
               </button>
             </div>
           </div>
+          {lineControls[i] ? (
+            <div
+              className="px-3 py-1"
+              style={{
+                fontSize: 11,
+                color: "var(--p-review-fg)",
+                background: "var(--p-review-bg)",
+                borderTop: "1px dashed var(--line)",
+              }}
+            >
+              {controlWarningInline(lineControls[i]!)}
+            </div>
+          ) : null}
+          </div>
         ))}
 
         {/* Add row */}
@@ -606,17 +670,84 @@ export function NewEntryForm({
         </div>
       </div>
 
+      {/* Hidden action so we can re-trigger requestSubmit() from the
+          confirmation step without losing which button was clicked. */}
+      <input type="hidden" name="action" value="draft" />
+
       <div className="flex gap-2 items-center">
-        <Button variant="secondary" type="submit" name="action" value="draft">
+        <Button
+          variant="secondary"
+          type="submit"
+          onClick={() => {
+            const a = formRef.current?.querySelector<HTMLInputElement>(
+              "input[name=action]",
+            );
+            if (a) a.value = "draft";
+          }}
+        >
           Save as draft
         </Button>
-        <Button variant="primary" type="submit" name="action" value="post">
+        <Button
+          variant="primary"
+          type={controlSummary.length > 0 ? "button" : "submit"}
+          onClick={(e) => {
+            const a = formRef.current?.querySelector<HTMLInputElement>(
+              "input[name=action]",
+            );
+            if (a) a.value = "post";
+            if (controlSummary.length > 0) {
+              e.preventDefault();
+              setPendingPost(true);
+            }
+          }}
+        >
           Save & post
         </Button>
         <ButtonLink variant="ghost" href="/journal">
           Cancel
         </ButtonLink>
       </div>
+
+      {pendingPost && controlSummary.length > 0 && (
+        <div
+          className="rounded-md px-3 py-2.5 flex flex-col gap-2"
+          style={{
+            background: "var(--p-review-bg)",
+            color: "var(--p-review-fg)",
+            border: "1px solid var(--p-review-fg)",
+            fontSize: 12.5,
+          }}
+          role="alertdialog"
+        >
+          <div style={{ fontWeight: 600 }}>
+            This entry posts directly to{" "}
+            {controlSummary.map(controlClassLabel).join(" / ")} accounts. Are you
+            sure?
+          </div>
+          <div style={{ fontSize: 11.5, opacity: 0.85 }}>
+            These accounts are normally updated by invoices, bills, or bank
+            transactions. Posting directly is recorded as an audit-trail
+            override (bypassControlWarning = true).
+          </div>
+          <div className="flex gap-2 items-center mt-1">
+            <Button
+              variant="primary"
+              type="button"
+              onClick={confirmPostAndSubmit}
+            >
+              Yes, post anyway
+            </Button>
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => setPendingPost(false)}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      )}
+
     </form>
   );
 }

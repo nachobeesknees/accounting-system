@@ -136,6 +136,11 @@ const COLUMNS: ColumnSpec[] = [
   // The vendor's own invoice number recorded on a bill (separate from our
   // internal bill_number). Used for duplicate detection per (vendor, number).
   { table: "bills", column: "vendor_invoice_number", type: "text" },
+
+  // ---- Posting controls ----
+  // Audit flag: set to true when the user explicitly confirmed past a
+  // controlled-account posting warning (direct posting to AR/AP/Cash).
+  { table: "journal_entries", column: "bypass_control_warning", type: "boolean", notNull: true, default: "false" },
 ];
 
 const TABLES = [
