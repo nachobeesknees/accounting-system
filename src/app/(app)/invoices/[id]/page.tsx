@@ -35,7 +35,10 @@ import {
   submitInvoiceForApprovalAction,
   voidInvoiceAction,
 } from "./actions";
-import { duplicateInvoiceAction } from "../../duplicate-actions";
+import {
+  duplicateInvoiceAction,
+  generateNextRecurringInvoiceAction,
+} from "../../duplicate-actions";
 import { Attachments } from "@/components/Attachments";
 
 function todayISO(): string {
@@ -205,12 +208,21 @@ export default async function Page({
   const balance = parseAmount(invoice.balanceDue);
   const isOverdue = status === "overdue";
 
-  const isDraft = status === "draft";
+  const isTemplate = invoice.isTemplate === true || status === "template";
+  const isDraft = status === "draft" && !isTemplate;
   const isPendingCfo = status === "pending_cfo";
   const isPendingAssigned = status === "pending_assigned";
   const isPending = isPendingCfo || isPendingAssigned;
-  const canPay = status === "sent" || status === "partial" || status === "overdue";
-  const canVoid = status !== "paid" && status !== "void";
+  const canPay =
+    !isTemplate &&
+    (status === "sent" || status === "partial" || status === "overdue");
+  const canVoid = !isTemplate && status !== "paid" && status !== "void";
+
+  const templateEnded =
+    isTemplate &&
+    invoice.recurringEndDate != null &&
+    invoice.recurringNextDate != null &&
+    invoice.recurringNextDate > invoice.recurringEndDate;
 
   const isCfo =
     !!sessionUser && (sessionUser.role === "CFO" || sessionUser.isSuperuser);
@@ -225,12 +237,33 @@ export default async function Page({
       <ButtonLink href="/invoices" variant="secondary">
         ← All invoices
       </ButtonLink>
-      <form action={duplicateInvoiceAction} style={{ display: "inline-flex" }}>
-        <input type="hidden" name="invoiceId" value={invoice.id} />
-        <Button variant="secondary" type="submit">
-          Duplicate
-        </Button>
-      </form>
+      {isTemplate ? (
+        <form
+          action={generateNextRecurringInvoiceAction}
+          style={{ display: "inline-flex" }}
+        >
+          <input type="hidden" name="templateId" value={invoice.id} />
+          <Button
+            variant="primary"
+            type="submit"
+            disabled={templateEnded || !invoice.recurringNextDate}
+            title={
+              templateEnded
+                ? "Template has ended"
+                : "Generate next invoice from this template"
+            }
+          >
+            Generate next invoice
+          </Button>
+        </form>
+      ) : (
+        <form action={duplicateInvoiceAction} style={{ display: "inline-flex" }}>
+          <input type="hidden" name="invoiceId" value={invoice.id} />
+          <Button variant="secondary" type="submit">
+            Duplicate
+          </Button>
+        </form>
+      )}
       {isDraft && (
         <form action={submitInvoiceForApprovalAction}>
           <input type="hidden" name="invoiceId" value={invoice.id} />
@@ -457,6 +490,25 @@ export default async function Page({
               }
             />
             <KV k="Notes" v={invoice.notes ?? "—"} />
+            {invoice.billingPeriodStart && invoice.billingPeriodEnd && (
+              <KV
+                k="Billing period"
+                v={`${formatDate(invoice.billingPeriodStart)} – ${formatDate(invoice.billingPeriodEnd)}`}
+              />
+            )}
+            {invoice.recurringParentId && (
+              <KV
+                k="Source template"
+                v={
+                  <Link
+                    href={`/invoices/${invoice.recurringParentId}`}
+                    style={{ color: "var(--ink)", textDecoration: "none" }}
+                  >
+                    View template →
+                  </Link>
+                }
+              />
+            )}
             {journalEntry && (
               <KV
                 k="Linked JE"
@@ -647,6 +699,51 @@ export default async function Page({
                 </div>
               </div>
             </form>
+          </Card>
+        )}
+
+        {isTemplate && (
+          <Card title="Recurring schedule">
+            <KVGrid>
+              <KV
+                k="Frequency"
+                v={
+                  (
+                    {
+                      weekly: "Weekly",
+                      biweekly: "Biweekly",
+                      monthly: "Monthly",
+                      quarterly: "Quarterly",
+                      annually: "Annually",
+                    } as Record<string, string>
+                  )[invoice.recurringFrequency ?? ""] ?? "—"
+                }
+              />
+              {invoice.recurringDayOfMonth != null && (
+                <KV k="Day of month" v={String(invoice.recurringDayOfMonth)} />
+              )}
+              <KV
+                k="Next invoice"
+                v={
+                  invoice.recurringNextDate
+                    ? formatDate(invoice.recurringNextDate)
+                    : "—"
+                }
+                sub={
+                  templateEnded
+                    ? "Template has reached its end date"
+                    : undefined
+                }
+              />
+              <KV
+                k="End date"
+                v={
+                  invoice.recurringEndDate
+                    ? formatDate(invoice.recurringEndDate)
+                    : "No end"
+                }
+              />
+            </KVGrid>
           </Card>
         )}
 

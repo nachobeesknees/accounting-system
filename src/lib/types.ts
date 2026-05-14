@@ -538,7 +538,15 @@ export type InvoiceStatus =
   | "partial"
   | "paid"
   | "overdue"
-  | "void";
+  | "void"
+  | "template";
+
+export type InvoiceRecurringFrequency =
+  | "weekly"
+  | "biweekly"
+  | "monthly"
+  | "quarterly"
+  | "annually";
 
 export type InvoiceLine = {
   id: string;
@@ -582,6 +590,17 @@ export type Invoice = {
   expectedPaymentDate?: string | null;
   notes: string | null;
   journalEntryId: string | null;
+  /** Recurring template fields (set on is_template=true rows). */
+  isTemplate?: boolean;
+  recurringFrequency?: InvoiceRecurringFrequency | null;
+  recurringDayOfMonth?: number | null;
+  recurringNextDate?: string | null;
+  recurringEndDate?: string | null;
+  /** On a generated invoice: id of the template it came from. */
+  recurringParentId?: string | null;
+  /** On a generated invoice: start/end of the billing period it represents. */
+  billingPeriodStart?: string | null;
+  billingPeriodEnd?: string | null;
   lines: InvoiceLine[];
 };
 

@@ -24,6 +24,7 @@ function filterEntries(
   userId: string,
   clientId: string,
   billable: string,
+  billed: string,
 ): TimeEntry[] {
   const needle = q.trim().toLowerCase();
   return entries.filter((t) => {
@@ -31,6 +32,8 @@ function filterEntries(
     if (clientId && t.clientId !== clientId) return false;
     if (billable === "yes" && !t.isBillable) return false;
     if (billable === "no" && t.isBillable) return false;
+    if (billed === "yes" && !t.invoiceId) return false;
+    if (billed === "no" && t.invoiceId) return false;
     if (needle && !t.description.toLowerCase().includes(needle)) return false;
     return true;
   });
@@ -39,13 +42,20 @@ function filterEntries(
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; user?: string; client?: string; billable?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    user?: string;
+    client?: string;
+    billable?: string;
+    billed?: string;
+  }>;
 }) {
   const params = await searchParams;
   const q = params.q ?? "";
   const userId = params.user ?? "";
   const clientId = params.client ?? "";
   const billable = params.billable ?? "";
+  const billed = params.billed ?? "";
 
   const [allEntries, users, customers, entities] = await Promise.all([
     getTimeEntries(),
@@ -57,7 +67,7 @@ export default async function Page({
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
   const entityById = new Map(entities.map((e) => [e.id, e] as const));
 
-  const rows = filterEntries(allEntries, q, userId, clientId, billable);
+  const rows = filterEntries(allEntries, q, userId, clientId, billable, billed);
   const totalHours = rows.reduce((s, t) => s + parseAmount(t.durationHours), 0);
   const billableValue = rows
     .filter((t) => t.isBillable)
@@ -126,6 +136,11 @@ export default async function Page({
             <option value="">All</option>
             <option value="yes">Billable</option>
             <option value="no">Non-billable</option>
+          </SelectField>
+          <SelectField label="Billed" name="billed" defaultValue={billed}>
+            <option value="">All</option>
+            <option value="yes">Billed</option>
+            <option value="no">Unbilled</option>
           </SelectField>
           <Button variant="primary" type="submit">
             Apply
@@ -244,9 +259,20 @@ export default async function Page({
                           : "—"}
                       </TD>
                       <TD>
-                        <Pill variant={t.isBillable ? "active" : "neutral"}>
-                          {t.isBillable ? "Billable" : "Internal"}
-                        </Pill>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Pill variant={t.isBillable ? "active" : "neutral"}>
+                            {t.isBillable ? "Billable" : "Internal"}
+                          </Pill>
+                          {t.invoiceId && (
+                            <Link
+                              href={`/invoices/${t.invoiceId}`}
+                              title="View invoice"
+                              style={{ textDecoration: "none" }}
+                            >
+                              <Pill variant="active">Billed</Pill>
+                            </Link>
+                          )}
+                        </div>
                       </TD>
                     </TR>
                   );

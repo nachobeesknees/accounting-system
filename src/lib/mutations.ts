@@ -17,6 +17,7 @@ import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { parseAmount, sumCredits, sumDebits, toDecimalString } from "./money";
 import type {
+  InvoiceRecurringFrequency,
   JournalEntry,
   RecurringFrequency,
   SessionUser,
@@ -105,13 +106,28 @@ export async function nextTemplateNumber(): Promise<string> {
 
 export async function nextInvoiceNumber(): Promise<string> {
   const db = getDb();
+  // Exclude templates from the lookup — they live in the parallel
+  // "INVTPL-XXXXXX" sequence and would otherwise sort above "INV-".
   const [row] = await db
     .select({ invoiceNumber: schema.invoices.invoiceNumber })
     .from(schema.invoices)
+    .where(eq(schema.invoices.isTemplate, false))
     .orderBy(desc(schema.invoices.invoiceNumber))
     .limit(1);
   const n = parseTrailingInt(row?.invoiceNumber) + 1;
   return `INV-${pad(n, 6)}`;
+}
+
+export async function nextInvoiceTemplateNumber(): Promise<string> {
+  const db = getDb();
+  const [row] = await db
+    .select({ invoiceNumber: schema.invoices.invoiceNumber })
+    .from(schema.invoices)
+    .where(eq(schema.invoices.isTemplate, true))
+    .orderBy(desc(schema.invoices.invoiceNumber))
+    .limit(1);
+  const n = parseTrailingInt(row?.invoiceNumber) + 1;
+  return `INVTPL-${pad(n, 6)}`;
 }
 
 export async function nextBillNumber(): Promise<string> {
@@ -2265,6 +2281,17 @@ export type CreateInvoiceInput = {
   /** Optional tax exemption override. Snapshots from customer when omitted. */
   taxExempt?: boolean;
   lines: DraftInvoiceLine[];
+  /** When true, persisted as a recurring template (status forced to "template"). */
+  isTemplate?: boolean;
+  recurringFrequency?: InvoiceRecurringFrequency | null;
+  recurringDayOfMonth?: number | null;
+  recurringNextDate?: string | null;
+  recurringEndDate?: string | null;
+  recurringParentId?: string | null;
+  billingPeriodStart?: string | null;
+  billingPeriodEnd?: string | null;
+  /** Time entries to mark as billed against the new invoice once created. */
+  timeEntryIds?: string[];
 };
 
 export async function createInvoice(user: SessionUser, input: CreateInvoiceInput) {
@@ -2276,15 +2303,31 @@ export async function createInvoice(user: SessionUser, input: CreateInvoiceInput
     if (!l.description.trim()) throw new Error(`Line ${i + 1}: description is required.`);
   }
 
+  const isTemplate = input.isTemplate === true;
+  if (isTemplate) {
+    if (!input.recurringFrequency) {
+      throw new Error("Recurring frequency is required for a template.");
+    }
+    if (!input.recurringNextDate) {
+      throw new Error("Recurring start date is required for a template.");
+    }
+  }
+
   // Period close enforcement on the invoice date (see src/lib/periods.ts).
-  const periodCheck = await checkPeriodForPost(
-    input.invoiceDate,
-    input.periodOverrideReason,
-  );
+  // Templates never hit the ledger themselves, so skip the check — it'll
+  // fire when each generated draft is posted.
+  const periodCheck = isTemplate
+    ? { overrideRecorded: null as string | null }
+    : await checkPeriodForPost(
+        input.invoiceDate,
+        input.periodOverrideReason,
+      );
 
   const db = getDb();
   const id = uid("i");
-  const invoiceNumber = await nextInvoiceNumber();
+  const invoiceNumber = isTemplate
+    ? await nextInvoiceTemplateNumber()
+    : await nextInvoiceNumber();
   const subtotal = input.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
   const now = new Date();
   // Inherit currency + firm from the active entity scope. This way an invoice
@@ -2321,20 +2364,28 @@ export async function createInvoice(user: SessionUser, input: CreateInvoiceInput
       customerId: input.customerId,
       invoiceDate: input.invoiceDate,
       dueDate: input.dueDate,
-      status: "draft",
+      status: isTemplate ? "template" : "draft",
       subtotal: toDecimalString(subtotal),
       taxRate: taxRate.toFixed(5),
       taxExempt,
       taxAmount: toDecimalString(taxAmount),
       total: toDecimalString(total),
       amountPaid: "0.00",
-      balanceDue: toDecimalString(total),
+      balanceDue: isTemplate ? "0.00" : toDecimalString(total),
       currencyCode,
       firmEntityId,
       notes: input.notes ?? null,
       ocrText: input.ocrText ?? null,
       periodOverrideReason: periodCheck.overrideRecorded,
       journalEntryId: null,
+      isTemplate,
+      recurringFrequency: isTemplate ? input.recurringFrequency ?? null : null,
+      recurringDayOfMonth: isTemplate ? input.recurringDayOfMonth ?? null : null,
+      recurringNextDate: isTemplate ? input.recurringNextDate ?? null : null,
+      recurringEndDate: isTemplate ? input.recurringEndDate ?? null : null,
+      recurringParentId: input.recurringParentId ?? null,
+      billingPeriodStart: input.billingPeriodStart ?? null,
+      billingPeriodEnd: input.billingPeriodEnd ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -2352,6 +2403,14 @@ export async function createInvoice(user: SessionUser, input: CreateInvoiceInput
         createdAt: now,
       })),
     );
+    // Mark selected unbilled time entries as billed to this invoice. Done
+    // inside the same txn so a failed insert rolls them back too.
+    if (input.timeEntryIds && input.timeEntryIds.length > 0 && !isTemplate) {
+      await tx
+        .update(schema.timeEntries)
+        .set({ invoiceId: id, updatedAt: now })
+        .where(inArray(schema.timeEntries.id, input.timeEntryIds));
+    }
   });
   await logAuditEvent(user, {
     action: "invoice.create",
@@ -4074,6 +4133,274 @@ export async function duplicateInvoice(
   });
 
   return { id, invoiceNumber };
+}
+
+/**
+ * Advance a yyyy-mm-dd date by one invoice-recurring step. Weekly/biweekly
+ * shift by 7/14 days; monthly/quarterly/annually use `dayOfMonth` clamped
+ * to the last day of the target month (so a day=31 template against
+ * February doesn't overflow into March).
+ */
+export function advanceInvoiceRecurringDate(
+  iso: string,
+  frequency: InvoiceRecurringFrequency,
+  dayOfMonth?: number | null,
+): string {
+  const [yStr, mStr, dStr] = iso.split("-");
+  let y = parseInt(yStr, 10);
+  let m = parseInt(mStr, 10);
+  const d = parseInt(dStr, 10);
+  if (frequency === "weekly" || frequency === "biweekly") {
+    const ms = new Date(Date.UTC(y, m - 1, d)).getTime();
+    const days = frequency === "weekly" ? 7 : 14;
+    const next = new Date(ms + days * 24 * 60 * 60 * 1000);
+    return next.toISOString().slice(0, 10);
+  }
+  let monthsToAdd = 1;
+  if (frequency === "quarterly") monthsToAdd = 3;
+  if (frequency === "annually") monthsToAdd = 12;
+  m += monthsToAdd;
+  while (m > 12) {
+    m -= 12;
+    y += 1;
+  }
+  const desiredDay = dayOfMonth ?? d;
+  const lastDayOfMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const nd = Math.min(desiredDay, lastDayOfMonth);
+  return `${pad(y, 4)}-${pad(m, 2)}-${pad(nd, 2)}`;
+}
+
+const MONTH_SHORT = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+function formatPeriodDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map((s) => parseInt(s, 10));
+  return `${MONTH_SHORT[m - 1]} ${d}, ${y}`;
+}
+
+/**
+ * Compute the billing period that a generated recurring invoice represents,
+ * given the new invoice's issue date and the template's frequency. For
+ * monthly/quarterly/annually this is the *prior* period (e.g. an invoice
+ * generated on Feb 1 monthly bills January 1–31). For weekly it's the
+ * preceding 7-day window ending yesterday. Biweekly mirrors weekly but
+ * over 14 days.
+ */
+export function computeBillingPeriod(
+  issueDateIso: string,
+  frequency: InvoiceRecurringFrequency,
+): { start: string; end: string; label: string } {
+  const [y, m, d] = issueDateIso.split("-").map((s) => parseInt(s, 10));
+  if (frequency === "weekly" || frequency === "biweekly") {
+    const days = frequency === "weekly" ? 7 : 14;
+    const issueMs = Date.UTC(y, m - 1, d);
+    const endMs = issueMs - 24 * 60 * 60 * 1000;
+    const startMs = endMs - (days - 1) * 24 * 60 * 60 * 1000;
+    const start = new Date(startMs).toISOString().slice(0, 10);
+    const end = new Date(endMs).toISOString().slice(0, 10);
+    return {
+      start,
+      end,
+      label: `${formatPeriodDate(start)} – ${formatPeriodDate(end)}`,
+    };
+  }
+  let priorMonth = m - 1;
+  let priorYear = y;
+  let monthsBack = 1;
+  if (frequency === "quarterly") monthsBack = 3;
+  if (frequency === "annually") monthsBack = 12;
+  let startMonth = m - monthsBack;
+  let startYear = y;
+  while (startMonth < 1) {
+    startMonth += 12;
+    startYear -= 1;
+  }
+  // End is the last day of the month immediately before the issue date.
+  priorMonth = m - 1;
+  priorYear = y;
+  while (priorMonth < 1) {
+    priorMonth += 12;
+    priorYear -= 1;
+  }
+  const lastDayOfPriorMonth = new Date(
+    Date.UTC(priorYear, priorMonth, 0),
+  ).getUTCDate();
+  const start = `${pad(startYear, 4)}-${pad(startMonth, 2)}-01`;
+  const end = `${pad(priorYear, 4)}-${pad(priorMonth, 2)}-${pad(
+    lastDayOfPriorMonth,
+    2,
+  )}`;
+  return {
+    start,
+    end,
+    label: `${formatPeriodDate(start)} – ${formatPeriodDate(end)}`,
+  };
+}
+
+/**
+ * Generate the next draft invoice from a recurring template, then advance
+ * the template's `recurringNextDate`. The new invoice copies header fields
+ * and lines verbatim, is dated `recurringNextDate`, gets a fresh
+ * invoice-number, and starts as status="draft" so the user can review
+ * before posting. Line descriptions are suffixed with "Services: <period
+ * label>" so the generated invoice tells the customer what they're paying
+ * for. Returns the new invoice's id + invoiceNumber for redirecting.
+ */
+export async function generateNextRecurringInvoice(
+  _user: SessionUser,
+  templateId: string,
+): Promise<{ id: string; invoiceNumber: string }> {
+  const db = getDb();
+  const [tpl] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, templateId))
+    .limit(1);
+  if (!tpl) throw new Error("Template not found.");
+  if (!tpl.isTemplate) throw new Error("Source invoice is not a template.");
+  if (!tpl.recurringFrequency || !tpl.recurringNextDate) {
+    throw new Error("Template is missing a frequency or next date.");
+  }
+  if (
+    tpl.recurringEndDate &&
+    tpl.recurringNextDate > tpl.recurringEndDate
+  ) {
+    throw new Error("Template has reached its end date.");
+  }
+
+  const tplLines = await db
+    .select()
+    .from(schema.invoiceLines)
+    .where(eq(schema.invoiceLines.invoiceId, templateId))
+    .orderBy(schema.invoiceLines.lineNumber);
+  if (tplLines.length === 0) {
+    throw new Error("Template must have at least 1 line.");
+  }
+
+  // Customer payment terms drive the due-date offset; fall back to Net 30.
+  const [cust] = await db
+    .select({ paymentTerms: schema.customers.paymentTerms })
+    .from(schema.customers)
+    .where(eq(schema.customers.id, tpl.customerId))
+    .limit(1);
+  const paymentTerms = cust?.paymentTerms ?? 30;
+
+  const issueDate = tpl.recurringNextDate;
+  const frequency = tpl.recurringFrequency as InvoiceRecurringFrequency;
+  const period = computeBillingPeriod(issueDate, frequency);
+  const dueDateMs =
+    new Date(`${issueDate}T00:00:00Z`).getTime() +
+    paymentTerms * 24 * 60 * 60 * 1000;
+  const dueDate = new Date(dueDateMs).toISOString().slice(0, 10);
+  const advance = advanceInvoiceRecurringDate(
+    issueDate,
+    frequency,
+    tpl.recurringDayOfMonth ?? null,
+  );
+
+  const id = uid("i");
+  const invoiceNumber = await nextInvoiceNumber();
+  const now = new Date();
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.invoices).values({
+      id,
+      invoiceNumber,
+      customerId: tpl.customerId,
+      entityId: tpl.entityId,
+      clientId: tpl.clientId,
+      invoiceDate: issueDate,
+      dueDate,
+      status: "draft",
+      subtotal: tpl.subtotal,
+      taxRate: tpl.taxRate,
+      taxExempt: tpl.taxExempt,
+      taxAmount: tpl.taxAmount,
+      total: tpl.total,
+      amountPaid: "0.00",
+      balanceDue: tpl.total,
+      currencyCode: tpl.currencyCode,
+      firmEntityId: tpl.firmEntityId,
+      notes: tpl.notes,
+      journalEntryId: null,
+      isTemplate: false,
+      recurringParentId: tpl.id,
+      billingPeriodStart: period.start,
+      billingPeriodEnd: period.end,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await tx.insert(schema.invoiceLines).values(
+      tplLines.map((l, i) => ({
+        id: `${id}-l${i + 1}`,
+        invoiceId: id,
+        lineNumber: i + 1,
+        description: `${l.description} — Services: ${period.label}`,
+        quantity: l.quantity,
+        unitPrice: l.unitPrice,
+        amount: l.amount,
+        accountId: l.accountId,
+        dimensions: l.dimensions,
+        createdAt: now,
+      })),
+    );
+    await tx
+      .update(schema.invoices)
+      .set({ recurringNextDate: advance, updatedAt: now })
+      .where(eq(schema.invoices.id, templateId));
+  });
+
+  return { id, invoiceNumber };
+}
+
+/**
+ * Generate every invoice template that's due today (recurringNextDate <=
+ * today AND not past recurringEndDate). Returns counts for the cron route
+ * response. Skips templates that fail individually so a single bad row
+ * doesn't block the whole run.
+ */
+export async function generateDueRecurringInvoices(
+  user: SessionUser,
+  todayIso: string,
+): Promise<{ generated: number; skipped: number; errors: string[] }> {
+  const db = getDb();
+  const templates = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.isTemplate, true));
+  const due = templates.filter((t) => {
+    if (!t.recurringNextDate) return false;
+    if (t.recurringEndDate && t.recurringNextDate > t.recurringEndDate) {
+      return false;
+    }
+    return t.recurringNextDate <= todayIso;
+  });
+  let generated = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+  for (const tpl of due) {
+    try {
+      await generateNextRecurringInvoice(user, tpl.id);
+      generated += 1;
+    } catch (err) {
+      skipped += 1;
+      const msg = err instanceof Error ? err.message : String(err);
+      errors.push(`${tpl.invoiceNumber}: ${msg}`);
+    }
+  }
+  return { generated, skipped, errors };
 }
 
 /**

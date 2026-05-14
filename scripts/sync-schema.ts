@@ -194,6 +194,21 @@ const COLUMNS: ColumnSpec[] = [
   // The "as of" date for the asset's current carrying value. Independent
   // from asset_value_snapshots — drives the AUA report's as-of-date filter.
   { table: "assets", column: "valuation_date", type: "date" },
+
+  // ---- Recurring client invoice templates ----
+  // Same shape as journal_entries recurring fields. is_template=true rows
+  // are blueprints — they never hit AR. Generated invoices land as drafts
+  // dated by recurring_next_date and back-link via recurring_parent_id.
+  // billing_period_start/end are stamped on generated invoices to record
+  // which period the invoice is billing for ("Jan 1 – Jan 31, 2026").
+  { table: "invoices", column: "is_template", type: "boolean", notNull: true, default: "false" },
+  { table: "invoices", column: "recurring_frequency", type: "text" },
+  { table: "invoices", column: "recurring_day_of_month", type: "integer" },
+  { table: "invoices", column: "recurring_next_date", type: "date" },
+  { table: "invoices", column: "recurring_end_date", type: "date" },
+  { table: "invoices", column: "recurring_parent_id", type: "text" },
+  { table: "invoices", column: "billing_period_start", type: "date" },
+  { table: "invoices", column: "billing_period_end", type: "date" },
 ];
 
 const TABLES = [
