@@ -182,6 +182,18 @@ const COLUMNS: ColumnSpec[] = [
   { table: "customers", column: "tax_exempt", type: "boolean", notNull: true, default: "false" },
   { table: "invoices",  column: "tax_rate", type: "numeric(6,5)", notNull: true, default: "0" },
   { table: "invoices",  column: "tax_exempt", type: "boolean", notNull: true, default: "false" },
+
+  // ---- Ownership % on entities and bank accounts ----
+  // Beneficial ownership of the entity / account by the linked client,
+  // expressed as a percent (0–100). NULL = unspecified (treated as 100%
+  // for AUA rollup; shown as "— ownership" in the UI).
+  { table: "entities",      column: "ownership_percent", type: "numeric(5,2)" },
+  { table: "bank_accounts", column: "ownership_percent", type: "numeric(5,2)" },
+
+  // ---- Asset valuation date ----
+  // The "as of" date for the asset's current carrying value. Independent
+  // from asset_value_snapshots — drives the AUA report's as-of-date filter.
+  { table: "assets", column: "valuation_date", type: "date" },
 ];
 
 const TABLES = [

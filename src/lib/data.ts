@@ -121,6 +121,8 @@ function mapEntity(r: typeof schema.entities.$inferSelect): Entity {
     notes: r.notes,
     currencyCode: r.currencyCode,
     regionId: (r as { regionId?: string | null }).regionId ?? null,
+    ownershipPercent:
+      (r as { ownershipPercent?: string | null }).ownershipPercent ?? null,
   };
 }
 
@@ -156,6 +158,7 @@ function mapAsset(r: typeof schema.assets.$inferSelect): Asset {
     currencyCode: r.currencyCode,
     externalRef: r.externalRef,
     acquiredDate: r.acquiredDate,
+    valuationDate: (r as { valuationDate?: string | null }).valuationDate ?? null,
     notes: r.notes,
   };
 }
@@ -515,6 +518,8 @@ function mapBankAccount(r: typeof schema.bankAccounts.$inferSelect): BankAccount
     clientId: r.clientId,
     currentBalance: r.currentBalance,
     balanceAsOf: r.balanceAsOf,
+    ownershipPercent:
+      (r as { ownershipPercent?: string | null }).ownershipPercent ?? null,
   };
 }
 
@@ -1313,6 +1318,28 @@ export async function getLatestSnapshotByAsset(): Promise<
   const rows = await db
     .select()
     .from(schema.assetValueSnapshots)
+    .orderBy(desc(schema.assetValueSnapshots.snapshotDate));
+  const latest = new Map<string, AssetValueSnapshot>();
+  for (const r of rows) {
+    if (latest.has(r.assetId)) continue;
+    latest.set(r.assetId, mapSnapshot(r));
+  }
+  return latest;
+}
+
+/**
+ * Like getLatestSnapshotByAsset but restricted to snapshots with
+ * `snapshotDate <= asOfDate`. Powers the AUA report's "as of date"
+ * picker so the rollup reflects values frozen at a chosen point.
+ */
+export async function getLatestSnapshotByAssetAsOf(
+  asOfDate: string,
+): Promise<Map<string, AssetValueSnapshot>> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.assetValueSnapshots)
+    .where(lte(schema.assetValueSnapshots.snapshotDate, asOfDate))
     .orderBy(desc(schema.assetValueSnapshots.snapshotDate));
   const latest = new Map<string, AssetValueSnapshot>();
   for (const r of rows) {

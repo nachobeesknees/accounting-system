@@ -8,6 +8,7 @@ import {
   getPriceLists,
   getPriceListEntries,
 } from "@/lib/data";
+import { getEntityScope } from "@/lib/entity-scope";
 import {
   ensureAccountingPeriods,
   getAccountingPeriods,
@@ -70,6 +71,7 @@ export default async function Page() {
     bills,
     vendors,
     priceLists,
+    firmEntityId,
   ] = await Promise.all([
     getCustomers(),
     getAccounts(),
@@ -78,6 +80,7 @@ export default async function Page() {
     getBills(),
     getVendors(),
     getPriceLists(),
+    getEntityScope(),
   ]);
   const revenueAccounts = accounts
     .filter((a) => a.accountType === "revenue" && a.isActive)
@@ -108,8 +111,17 @@ export default async function Page() {
     chargebacksByCustomer[b.chargebackClientId] = arr;
   }
 
-  // Current price list entries.
+  // Current price list entries — prefer the one scoped to the active firm
+  // entity (office) so a user invoicing from "Office NY" sees NY pricing,
+  // not whichever office happened to sort first. Falls back to any current
+  // list if no scope is set or the scoped office has no list.
+  const inScope = firmEntityId
+    ? priceLists.filter((pl) => pl.officeId === firmEntityId)
+    : priceLists;
   const currentPriceList =
+    inScope.find((pl) => pl.isCurrent && pl.isActive) ??
+    inScope.find((pl) => pl.isCurrent) ??
+    inScope[0] ??
     priceLists.find((pl) => pl.isCurrent && pl.isActive) ??
     priceLists.find((pl) => pl.isCurrent) ??
     priceLists[0];

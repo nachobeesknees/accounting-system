@@ -122,7 +122,16 @@ export function NewBankAccountForm({
                 emptyLabel="Internal / inherit from entity"
                 clearable
               />
-              <div />
+              <Field
+                label="Ownership %"
+                name="ownershipPercent"
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                placeholder="100"
+                help="Client's beneficial ownership of this account (0–100). Leave blank if unspecified."
+              />
             </Row>
           </div>
         </Card>

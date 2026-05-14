@@ -46,6 +46,7 @@ export async function updateAssetAction(formData: FormData) {
   const currencyCode = String(formData.get("currencyCode") ?? "").trim();
   const externalRef = String(formData.get("externalRef") ?? "").trim();
   const acquiredDate = String(formData.get("acquiredDate") ?? "").trim();
+  const valuationDate = String(formData.get("valuationDate") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
 
   try {
@@ -59,6 +60,7 @@ export async function updateAssetAction(formData: FormData) {
       currencyCode: currencyCode || undefined,
       externalRef: externalRef || null,
       acquiredDate: acquiredDate || null,
+      valuationDate: valuationDate || null,
       notes: notes || null,
     });
   } catch (err) {

@@ -24,6 +24,11 @@ export async function createBankAccountAction(
   const clientId = String(formData.get("clientId") ?? "").trim();
   const balanceRaw = String(formData.get("currentBalance") ?? "").trim();
   const balanceAsOf = String(formData.get("balanceAsOf") ?? "").trim();
+  const ownershipRaw = String(formData.get("ownershipPercent") ?? "").trim();
+  const ownershipPercent =
+    ownershipRaw === ""
+      ? null
+      : Math.max(0, Math.min(100, parseFloat(ownershipRaw)));
 
   if (!name) return { error: "Name is required." };
   if (!accountId) return { error: "GL account is required." };
@@ -39,6 +44,7 @@ export async function createBankAccountAction(
       clientId: clientId || null,
       currentBalance: balanceRaw ? parseAmount(balanceRaw) : null,
       balanceAsOf: balanceAsOf || null,
+      ownershipPercent,
     });
     revalidatePath("/bank");
     redirect(`/bank/${created.id}`);

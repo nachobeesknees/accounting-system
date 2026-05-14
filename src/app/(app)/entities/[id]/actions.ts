@@ -47,6 +47,11 @@ export async function updateEntityAction(formData: FormData) {
   const currencyCode = String(formData.get("currencyCode") ?? "").trim().toUpperCase();
   const regionIdRaw = String(formData.get("regionId") ?? "").trim();
   const regionId = regionIdRaw === "" ? null : regionIdRaw;
+  const ownershipRaw = String(formData.get("ownershipPercent") ?? "").trim();
+  const ownershipPercent =
+    ownershipRaw === ""
+      ? null
+      : Math.max(0, Math.min(100, parseFloat(ownershipRaw)));
 
   try {
     await updateEntity(user, id, {
@@ -66,6 +71,7 @@ export async function updateEntityAction(formData: FormData) {
       notes: notes || null,
       currencyCode: currencyCode || undefined,
       regionId,
+      ownershipPercent,
     });
   } catch (err) {
     if (isRedirect(err)) throw err;

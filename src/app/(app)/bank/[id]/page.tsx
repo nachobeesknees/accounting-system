@@ -201,6 +201,19 @@ export default async function Page({
                       emptyLabel="Internal / inherit from entity"
                       clearable
                     />
+                    <Field
+                      label="Ownership %"
+                      name="ownershipPercent"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      defaultValue={bank.ownershipPercent ?? ""}
+                      placeholder="100"
+                      help="Client's beneficial ownership (0–100). Blank = unspecified."
+                    />
+                  </Row>
+                  <Row>
                     <label className="flex items-end gap-2 text-[13px]">
                       <input
                         type="checkbox"
@@ -209,6 +222,7 @@ export default async function Page({
                       />
                       <span style={{ color: "var(--ink-2)" }}>Active</span>
                     </label>
+                    <div />
                   </Row>
                 </div>
                 <div className="flex justify-end gap-2 mt-3.5">
@@ -257,6 +271,23 @@ export default async function Page({
                   >
                     {client.name}
                   </Link>
+                </div>
+              )}
+              {bank.ownershipPercent != null && (
+                <div style={{ color: "var(--ink-3)" }}>
+                  Ownership:{" "}
+                  <span
+                    style={{
+                      fontFamily: "var(--font-mono)",
+                      fontVariantNumeric: "tabular-nums",
+                      color: "var(--ink-2)",
+                    }}
+                  >
+                    {(() => {
+                      const pct = parseFloat(bank.ownershipPercent);
+                      return pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(2);
+                    })()}%
+                  </span>
                 </div>
               )}
               <div style={{ color: "var(--ink-4)" }}>

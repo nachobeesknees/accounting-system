@@ -190,6 +190,16 @@ export default async function Page({
                       defaultValue={asset.acquiredDate ?? ""}
                     />
                   </Row>
+                  <Row>
+                    <Field
+                      label="Valuation date"
+                      name="valuationDate"
+                      type="date"
+                      defaultValue={asset.valuationDate ?? ""}
+                      help="Date the carrying value is as-of. Used by the AUA report's as-of filter."
+                    />
+                    <div />
+                  </Row>
                   <TextareaField
                     label="Notes"
                     name="notes"

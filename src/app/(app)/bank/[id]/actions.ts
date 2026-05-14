@@ -40,6 +40,11 @@ export async function updateBankAccountAction(formData: FormData) {
   const balanceRaw = String(formData.get("currentBalance") ?? "").trim();
   const balanceAsOf = String(formData.get("balanceAsOf") ?? "").trim();
   const isActive = formData.get("isActive") === "on";
+  const ownershipRaw = String(formData.get("ownershipPercent") ?? "").trim();
+  const ownershipPercent =
+    ownershipRaw === ""
+      ? null
+      : Math.max(0, Math.min(100, parseFloat(ownershipRaw)));
 
   try {
     await updateBankAccount(user, id, {
@@ -53,6 +58,7 @@ export async function updateBankAccountAction(formData: FormData) {
       currentBalance: balanceRaw === "" ? null : parseAmount(balanceRaw),
       balanceAsOf: balanceAsOf || null,
       isActive,
+      ownershipPercent,
     });
   } catch (err) {
     if (isRedirect(err)) throw err;

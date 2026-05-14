@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { ButtonLink } from "@/components/ui/Button";
+import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
+import { Field } from "@/components/ui/Field";
 import { IconBox } from "@/components/ui/Icon";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
@@ -12,7 +13,7 @@ import {
   getCustomers,
   getEntities,
   getLatestFxRates,
-  getLatestSnapshotByAsset,
+  getLatestSnapshotByAssetAsOf,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatAmount, parseAmount } from "@/lib/money";
@@ -74,11 +75,23 @@ function Tile({
   );
 }
 
-export default async function Page() {
+function isValidIsoDate(s: string | undefined): s is string {
+  return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
+}
+
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ asOf?: string }>;
+}) {
+  const params = await searchParams;
+  const today = new Date().toISOString().slice(0, 10);
+  const asOf = isValidIsoDate(params.asOf) ? params.asOf : today;
+
   const [assets, latestByAsset, entities, customers, base, fxRates] =
     await Promise.all([
       getAssets(),
-      getLatestSnapshotByAsset(),
+      getLatestSnapshotByAssetAsOf(asOf),
       getEntities(),
       getCustomers(),
       getBaseCurrency(),
@@ -150,13 +163,45 @@ export default async function Page() {
     <>
       <PageHeader
         title="Assets Under Administration"
-        meta={`${assets.length} assets across ${entities.length} entities`}
-        actions={
-          <ButtonLink variant="primary" href="/aua/new">
-            + New asset
-          </ButtonLink>
-        }
+        meta={`As of ${formatDate(asOf)} · ${assets.length} assets across ${entities.length} entities`}
       />
+
+      <div
+        className="px-6 py-2 flex gap-2 flex-wrap items-end"
+        style={{
+          background: "var(--rail)",
+          borderBottom: "1px solid var(--line)",
+        }}
+      >
+        <form method="GET" className="flex gap-2 flex-wrap items-end">
+          <Field
+            label="As of date"
+            name="asOf"
+            type="date"
+            defaultValue={asOf}
+          />
+          <Button variant="primary" type="submit">
+            Apply
+          </Button>
+          {asOf !== today && (
+            <a
+              href="/aua"
+              className="px-3 py-1.5 text-[13px] rounded-md"
+              style={{
+                border: "1px solid var(--line-2)",
+                color: "var(--ink-2)",
+                textDecoration: "none",
+              }}
+            >
+              Reset to today
+            </a>
+          )}
+          <span style={{ color: "var(--ink-3)", fontSize: 11.5, marginLeft: 8 }}>
+            Assets are managed under each entity. To add an asset, open an
+            entity and use its Assets section.
+          </span>
+        </form>
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 px-6 my-3.5">
         <Tile
@@ -256,24 +301,12 @@ export default async function Page() {
       </div>
 
       <div className="px-6 pb-8">
-        <Card
-          title="All assets"
-          actions={
-            <ButtonLink variant="ghost" href="/aua/new">
-              + New asset
-            </ButtonLink>
-          }
-        >
+        <Card title="All assets">
           {assets.length === 0 ? (
             <Empty
               icon={<IconBox size={20} />}
               title="No assets under administration yet"
-              body="Track real estate, securities, art, and private interests held by your entities or directly by a client."
-              cta={
-                <ButtonLink variant="primary" href="/aua/new">
-                  + New asset
-                </ButtonLink>
-              }
+              body="Assets are managed inside entities. Open an entity from /entities and use the Assets section to add one."
             />
           ) : (
             <Table>

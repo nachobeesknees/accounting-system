@@ -38,6 +38,11 @@ export async function createEntityAction(
   const registrationNumber = String(formData.get("registrationNumber") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const currencyCode = String(formData.get("currencyCode") ?? "USD").trim().toUpperCase();
+  const ownershipRaw = String(formData.get("ownershipPercent") ?? "").trim();
+  const ownershipPercent =
+    ownershipRaw === ""
+      ? null
+      : Math.max(0, Math.min(100, parseFloat(ownershipRaw)));
 
   if (!code) return { error: "Code is required." };
   if (!name) return { error: "Name is required." };
@@ -62,6 +67,7 @@ export async function createEntityAction(
       registrationNumber: registrationNumber || null,
       notes: notes || null,
       currencyCode: currencyCode || "USD",
+      ownershipPercent,
     });
     revalidatePath("/entities");
     redirect(`/entities/${created.id}`);

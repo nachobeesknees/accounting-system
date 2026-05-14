@@ -1109,6 +1109,8 @@ export type CreateEntityInput = {
   notes?: string | null;
   currencyCode?: string;
   regionId?: string | null;
+  /** 0–100 (percent). NULL = unspecified. */
+  ownershipPercent?: number | null;
 };
 
 export async function createEntity(_user: SessionUser, input: CreateEntityInput) {
@@ -1138,6 +1140,10 @@ export async function createEntity(_user: SessionUser, input: CreateEntityInput)
       notes: input.notes ?? null,
       currencyCode: input.currencyCode ?? "USD",
       regionId: input.regionId ?? null,
+      ownershipPercent:
+        input.ownershipPercent == null
+          ? null
+          : toDecimalString(input.ownershipPercent),
     })
     .returning();
   return created;
@@ -1179,6 +1185,12 @@ export async function updateEntity(
       ...(input.notes !== undefined && { notes: input.notes }),
       ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
       ...(input.regionId !== undefined && { regionId: input.regionId }),
+      ...(input.ownershipPercent !== undefined && {
+        ownershipPercent:
+          input.ownershipPercent == null
+            ? null
+            : toDecimalString(input.ownershipPercent),
+      }),
       updatedAt: new Date(),
     })
     .where(eq(schema.entities.id, id))
@@ -1211,6 +1223,7 @@ export type CreateAssetInput = {
   currencyCode?: string;
   externalRef?: string | null;
   acquiredDate?: string | null;
+  valuationDate?: string | null;
   notes?: string | null;
 };
 
@@ -1232,6 +1245,7 @@ export async function createAsset(_user: SessionUser, input: CreateAssetInput) {
       currencyCode: input.currencyCode ?? "USD",
       externalRef: input.externalRef ?? null,
       acquiredDate: input.acquiredDate ?? null,
+      valuationDate: input.valuationDate ?? null,
       notes: input.notes ?? null,
     })
     .returning();
@@ -1256,6 +1270,7 @@ export async function updateAsset(
       ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
       ...(input.externalRef !== undefined && { externalRef: input.externalRef }),
       ...(input.acquiredDate !== undefined && { acquiredDate: input.acquiredDate }),
+      ...(input.valuationDate !== undefined && { valuationDate: input.valuationDate }),
       ...(input.notes !== undefined && { notes: input.notes }),
       updatedAt: new Date(),
     })
@@ -3364,6 +3379,8 @@ export type CreateBankAccountInput = {
   clientId?: string | null;
   currentBalance?: number | null;
   balanceAsOf?: string | null;
+  /** 0–100 (percent). NULL = unspecified. */
+  ownershipPercent?: number | null;
 };
 
 export async function createBankAccount(
@@ -3387,6 +3404,10 @@ export async function createBankAccount(
       currentBalance:
         input.currentBalance == null ? null : toDecimalString(input.currentBalance),
       balanceAsOf: input.balanceAsOf ?? null,
+      ownershipPercent:
+        input.ownershipPercent == null
+          ? null
+          : toDecimalString(input.ownershipPercent),
     })
     .returning();
   return created;
@@ -3420,6 +3441,12 @@ export async function updateBankAccount(
             : toDecimalString(input.currentBalance),
       }),
       ...(input.balanceAsOf !== undefined && { balanceAsOf: input.balanceAsOf }),
+      ...(input.ownershipPercent !== undefined && {
+        ownershipPercent:
+          input.ownershipPercent == null
+            ? null
+            : toDecimalString(input.ownershipPercent),
+      }),
     })
     .where(eq(schema.bankAccounts.id, id))
     .returning();

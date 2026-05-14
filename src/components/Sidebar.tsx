@@ -28,7 +28,6 @@ const SECTIONS: Section[] = [
       { href: "/invoices", label: "Invoices" },
       { href: "/customers", label: "Clients" },
       { href: "/entities", label: "Entities" },
-      { href: "/aua", label: "Assets / AUA" },
     ],
   },
   {
@@ -63,6 +62,7 @@ const SECTIONS: Section[] = [
       { href: "/cash-forecast", label: "Cash Forecast" },
       { href: "/consolidation", label: "Consolidation" },
       { href: "/reports/intercompany", label: "Intercompany" },
+      { href: "/aua", label: "AUA Report" },
     ],
   },
   {

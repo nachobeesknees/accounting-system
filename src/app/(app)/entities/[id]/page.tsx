@@ -11,10 +11,12 @@ import { SmartSelectField, type SmartSelectOption } from "@/components/ui/SmartS
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
+  getAssetsByEntityId,
   getCurrencies,
   getCustomers,
   getEntityById,
   getEntityFeesByEntityId,
+  getLatestSnapshotByAsset,
   getRegionGroups,
   getRegions,
 } from "@/lib/data";
@@ -22,7 +24,8 @@ import { getSessionUser } from "@/lib/session";
 import { getAllowedEntityIds } from "@/lib/entity-access";
 import { CustomFields } from "@/components/CustomFields";
 import { Attachments } from "@/components/Attachments";
-import type { EntityKind } from "@/lib/types";
+import type { AssetKind, EntityKind } from "@/lib/types";
+import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
 import { deleteEntityAction, updateEntityAction } from "./actions";
 
@@ -67,6 +70,18 @@ const KIND_LABEL: Record<EntityKind, string> = {
   other: "Other",
 };
 
+const ASSET_KIND_LABEL: Record<AssetKind, string> = {
+  real_estate: "Real Estate",
+  securities: "Securities",
+  cash: "Cash",
+  private_equity: "Private Equity",
+  art: "Art",
+  vehicle: "Vehicle",
+  business_interest: "Business Interest",
+  intellectual_property: "IP",
+  other: "Other",
+};
+
 export default async function Page({
   params,
   searchParams,
@@ -77,16 +92,27 @@ export default async function Page({
   const { id } = await params;
   const { saved, error } = await searchParams;
   const user = await getSessionUser();
-  const [entity, customers, currencies, fees, regions, regionGroups, allowedEntityIds] =
-    await Promise.all([
-      getEntityById(id),
-      getCustomers(),
-      getCurrencies(),
-      getEntityFeesByEntityId(id),
-      getRegions(),
-      getRegionGroups(),
-      getAllowedEntityIds(user),
-    ]);
+  const [
+    entity,
+    customers,
+    currencies,
+    fees,
+    regions,
+    regionGroups,
+    allowedEntityIds,
+    assets,
+    latestByAsset,
+  ] = await Promise.all([
+    getEntityById(id),
+    getCustomers(),
+    getCurrencies(),
+    getEntityFeesByEntityId(id),
+    getRegions(),
+    getRegionGroups(),
+    getAllowedEntityIds(user),
+    getAssetsByEntityId(id),
+    getLatestSnapshotByAsset(),
+  ]);
   if (!entity) notFound();
   // user_entity_access — restricted users see 404 on entities they can't reach.
   if (allowedEntityIds !== null && !allowedEntityIds.has(entity.id)) notFound();
@@ -240,6 +266,20 @@ export default async function Page({
                 </SelectField>
               </Row>
               <Row>
+                <Field
+                  label="Ownership %"
+                  name="ownershipPercent"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                  defaultValue={entity.ownershipPercent ?? ""}
+                  placeholder="100"
+                  help="Client's beneficial ownership of this entity (0–100). Blank = unspecified."
+                />
+                <div />
+              </Row>
+              <Row>
                 <SmartSelectField
                   label="Functional currency"
                   name="currencyCode"
@@ -340,6 +380,76 @@ export default async function Page({
                         <Pill variant={statusVariant(f.status)}>
                           {statusLabel(f.status)}
                         </Pill>
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          )}
+        </Card>
+
+        <Card
+          title={`Assets (${assets.length})`}
+          actions={
+            <Link
+              href={`/aua/new?entity=${entity.id}`}
+              style={{ color: "var(--ink-3)", textDecoration: "none", fontSize: 11.5 }}
+            >
+              + New asset →
+            </Link>
+          }
+        >
+          {assets.length === 0 ? (
+            <Empty
+              title="No assets recorded for this entity"
+              body="Track real estate, securities, art, and private interests held inside this entity."
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Name</TH>
+                  <TH>Class</TH>
+                  <TH>External ref</TH>
+                  <TH>Acquired</TH>
+                  <TH>Valuation date</TH>
+                  <TH num>Latest value</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {assets.map((a) => {
+                  const snap = latestByAsset.get(a.id);
+                  return (
+                    <TR key={a.id} href={`/aua/${a.id}`}>
+                      <TD>
+                        <Link
+                          href={`/aua/${a.id}`}
+                          style={{ color: "var(--ink)", textDecoration: "none" }}
+                        >
+                          {a.name}
+                        </Link>
+                      </TD>
+                      <TD style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                        {ASSET_KIND_LABEL[a.kind]}
+                      </TD>
+                      <TD mono style={{ color: "var(--ink-3)" }}>
+                        {a.externalRef ?? "—"}
+                      </TD>
+                      <TD style={{ color: "var(--ink-3)" }}>
+                        {a.acquiredDate ? formatDate(a.acquiredDate) : "—"}
+                      </TD>
+                      <TD style={{ color: "var(--ink-3)" }}>
+                        {a.valuationDate ? formatDate(a.valuationDate) : "—"}
+                      </TD>
+                      <TD num>
+                        {snap
+                          ? formatMoney(
+                              parseAmount(snap.value),
+                              snap.currencyCode || a.currencyCode,
+                              { compact: true, paren: true },
+                            )
+                          : "—"}
                       </TD>
                     </TR>
                   );

@@ -130,6 +130,9 @@ export type Entity = {
   currencyCode: string;
   /** Optional region (soft FK → regions.id). */
   regionId?: string | null;
+  /** Client's beneficial ownership of the entity as a percent (0–100).
+   *  Stored as a numeric string; null = unspecified (treat as 100%). */
+  ownershipPercent?: string | null;
 };
 
 export type Currency = {
@@ -472,6 +475,9 @@ export type Asset = {
   currencyCode: string;
   externalRef: string | null;
   acquiredDate: string | null;
+  /** Date the asset's current carrying value is as-of. Drives the AUA
+   *  report's "as of date" filter. Null = no explicit valuation date. */
+  valuationDate?: string | null;
   notes: string | null;
 };
 
@@ -668,6 +674,9 @@ export type BankAccount = {
   clientId: string | null;
   currentBalance: string | null;
   balanceAsOf: string | null;
+  /** Client's beneficial ownership of this account as a percent (0–100).
+   *  Stored as a numeric string; null = unspecified. */
+  ownershipPercent?: string | null;
 };
 
 export type SigningAuthority = "sole" | "joint" | "limited" | "view_only";

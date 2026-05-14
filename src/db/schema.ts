@@ -603,6 +603,9 @@ export const entities = pgTable("entities", {
   currencyCode: text("currency_code").notNull().default("USD"),
   /** Optional region (e.g. "North America"). Soft FK → regions.id. */
   regionId: text("region_id"),
+  /** Client's beneficial ownership of this entity as a percent (0–100).
+   *  NULL = unspecified (treat as 100% for rollups). Decimal so 33.33 works. */
+  ownershipPercent: numeric("ownership_percent", { precision: 5, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -756,6 +759,11 @@ export const assets = pgTable("assets", {
   currencyCode: text("currency_code").notNull().default("USD"),
   externalRef: text("external_ref"),
   acquiredDate: date("acquired_date"),
+  /** Date the current carrying value is as-of. Used by the AUA report's
+   *  "as of date" filter to pick the most recent valuation ≤ the selected
+   *  date. Independent from asset_value_snapshots.snapshot_date so an
+   *  asset can carry a default valuation date without a snapshot row. */
+  valuationDate: date("valuation_date"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -927,6 +935,9 @@ export const bankAccounts = pgTable("bank_accounts", {
   clientId: text("client_id"),
   currentBalance: numeric("current_balance", { precision: 15, scale: 2 }),
   balanceAsOf: date("balance_as_of"),
+  /** Client's beneficial ownership of this account as a percent (0–100).
+   *  NULL = unspecified. Useful for joint / partially-owned accounts. */
+  ownershipPercent: numeric("ownership_percent", { precision: 5, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

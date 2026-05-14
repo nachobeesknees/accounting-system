@@ -238,6 +238,7 @@ export default async function Page({
                   <TH>Region</TH>
                   <TH>Jurisdiction</TH>
                   <TH>Formation</TH>
+                  <TH num>Ownership</TH>
                   <TH>Status</TH>
                 </TR>
               </THead>
@@ -284,6 +285,36 @@ export default async function Page({
                         {e.jurisdiction ?? "—"}
                       </TD>
                       <TD>{e.formationDate ? formatDate(e.formationDate) : "—"}</TD>
+                      <TD num style={{ color: "var(--ink-3)" }}>
+                        {e.ownershipPercent != null ? (
+                          (() => {
+                            const pct = parseFloat(e.ownershipPercent);
+                            const partial = pct < 100;
+                            return partial ? (
+                              <span
+                                style={{
+                                  background: "var(--p-pending-bg)",
+                                  color: "var(--p-pending-fg)",
+                                  padding: "1px 6px",
+                                  borderRadius: 4,
+                                  fontSize: 10.5,
+                                  fontFamily: "var(--font-mono)",
+                                  fontVariantNumeric: "tabular-nums",
+                                }}
+                                title="Partial ownership"
+                              >
+                                {pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(2)}% owned
+                              </span>
+                            ) : (
+                              <span style={{ fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" }}>
+                                {pct.toFixed(0)}%
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          "—"
+                        )}
+                      </TD>
                       <TD>
                         <Pill variant={statusVariant(e.status)}>
                           {statusLabel(e.status)}

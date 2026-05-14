@@ -133,7 +133,16 @@ export function NewEntityForm({
                     search: c.code,
                   }))}
               />
-              <div />
+              <Field
+                label="Ownership %"
+                name="ownershipPercent"
+                type="number"
+                step="0.01"
+                min="0"
+                max="100"
+                placeholder="100"
+                help="Client's beneficial ownership (0–100). Leave blank if unspecified."
+              />
             </Row>
             <TextareaField label="Notes" name="notes" placeholder="Optional notes" />
           </div>

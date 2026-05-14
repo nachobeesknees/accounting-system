@@ -77,6 +77,7 @@ export default async function Page() {
                   <TH>Institution</TH>
                   <TH>Last 4</TH>
                   <TH>Owner</TH>
+                  <TH num>Ownership</TH>
                   <TH>As of</TH>
                   <TH num>Native balance</TH>
                   <TH num>{baseCode}</TH>
@@ -111,6 +112,39 @@ export default async function Page() {
                         {ent ? `${ent.code} · ` : ""}
                         {cust?.name ?? "Internal"}
                       </TD>
+                      <TD num style={{ color: "var(--ink-3)" }}>
+                        {b.ownershipPercent != null
+                          ? (() => {
+                              const pct = parseFloat(b.ownershipPercent);
+                              const partial = pct < 100;
+                              return partial ? (
+                                <span
+                                  style={{
+                                    background: "var(--p-pending-bg)",
+                                    color: "var(--p-pending-fg)",
+                                    padding: "1px 6px",
+                                    borderRadius: 4,
+                                    fontSize: 10.5,
+                                    fontFamily: "var(--font-mono)",
+                                    fontVariantNumeric: "tabular-nums",
+                                  }}
+                                  title="Partial ownership"
+                                >
+                                  {pct % 1 === 0 ? pct.toFixed(0) : pct.toFixed(2)}% owned
+                                </span>
+                              ) : (
+                                <span
+                                  style={{
+                                    fontFamily: "var(--font-mono)",
+                                    fontVariantNumeric: "tabular-nums",
+                                  }}
+                                >
+                                  {pct.toFixed(0)}%
+                                </span>
+                              );
+                            })()
+                          : "—"}
+                      </TD>
                       <TD style={{ color: "var(--ink-3)" }}>
                         {b.balanceAsOf ? formatDate(b.balanceAsOf) : "—"}
                       </TD>
@@ -137,7 +171,7 @@ export default async function Page() {
                   );
                 })}
                 <TR total hover={false}>
-                  <TD colSpan={5}>Total ({baseCode})</TD>
+                  <TD colSpan={6}>Total ({baseCode})</TD>
                   <TD num>{""}</TD>
                   <TD num>{formatBase(totalBase)}</TD>
                   <TD>{""}</TD>
