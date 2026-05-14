@@ -38,6 +38,12 @@ Agents: read this file before starting work. Check off items as you complete the
 - [x] Posting controls — AR/AP/Cash direct-posting warnings on the JE form. Inline yellow badge per controlled line + a pre-post confirmation. User can still post; entry is stamped with `bypassControlWarning=true` for the audit trail. Detection via account `subType` AND code-range (1000-1099 cash, 1100-1199 AR, 2000-2099 AP); helper at `src/lib/account-controls.ts`.
 - [x] Intercompany + eliminations — per-line "Counterpart entity" picker on JE form marks IC legs; `/reports/intercompany` shows the entity-pair matrix (due-from / due-to / net + reconcile flag); "Generate elimination" button posts a firm-level elimination JE flagged with `eliminationEntryId`. Elimination JEs are EXCLUDED from any single-entity scoped balance sheet / P&L view and INCLUDED at the firm-level consolidated view (standard consolidation accounting). JE detail page surfaces an "Intercompany" / "Elimination" pill and lists counterparts.
 - [x] Recurring journal entries — Recurring toggle on the JE form, Templates tab on /journal, "Generate next entry" creates a draft and advances the schedule, "Recurring due" card on the dashboard. Seeded with monthly depreciation + quarterly tax accrual templates.
+- [x] Real authentication & security module — Auth.js v5 + bcrypt credentials, /login page styled to match app, middleware protecting /(app) routes, logout in sidebar, `users` table with role enum (super_admin/admin/manager/accountant/viewer/employee), seeded demo accounts (admin@thistlewood.com/Admin123!, accountant@thistlewood.com/Demo123!, viewer@thistlewood.com/Demo123!)
+- [x] RBAC + permission matrix — `src/lib/permissions.ts` role→action matrix with `hasPermission`/`requirePermission` helpers. Wrapped sensitive mutations (period close/lock, JE create/post/void, invoice/bill create/approve/payment, entity/contact CRUD). Sidebar hides Admin section for non-admin roles.
+- [x] Per-user entity access — `user_entity_access` rows narrow which entities a user can see (no rows = sees all). Filter applied to `getEntities` / `getEntityById`. Per-user UI on /settings/users.
+- [x] Immutable audit log — `audit_log` table denormalises user identity at write time. `logAuditEvent` helper wired into login/logout/login_failed, period close/lock/reopen/unlock, JE create/post/void/bypass_control_warning, invoice/bill create/approve/payment, entity/contact CRUD, CSV exports (AP aging, financial statements, import/export, audit log).
+- [x] Settings > Users (/settings/users) — list (name/email/role/status/lastLogin), create, edit role, activate/deactivate, reset password (one-time temp shown once), per-user entity access assignment with full/read-only levels.
+- [x] Settings > Audit Log (/settings/audit-log) — filterable by date range / user / action / resource, expandable rows with before/after JSON, CSV export.
 
 ---
 
@@ -50,7 +56,6 @@ Agents: read this file before starting work. Check off items as you complete the
 ## 📋 Pending
 
 ### Features
-- [ ] Real authentication — replace demo/cookie auth with proper login (user accounts, passwords or SSO)
 - [ ] Plaid bank account integration (Phase 2) — daily balance sync
 
 ### Quality / Polish
