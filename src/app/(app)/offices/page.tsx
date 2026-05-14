@@ -13,10 +13,18 @@ import { setOfficeRegionAction } from "../regions/actions";
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; error?: string }>;
+  searchParams: Promise<{
+    saved?: string;
+    error?: string;
+    region?: string;
+    regionGroup?: string;
+  }>;
 }) {
-  const { saved, error } = await searchParams;
-  const [offices, priceLists, regions, regionGroups] = await Promise.all([
+  const { saved, error, region: regionParam, regionGroup: regionGroupParam } =
+    await searchParams;
+  const regionId = regionParam ?? "";
+  const regionGroupId = regionGroupParam ?? "";
+  const [allOffices, priceLists, regions, regionGroups] = await Promise.all([
     getOffices(),
     getPriceLists(),
     getRegions(),
@@ -36,10 +44,75 @@ export default async function Page({
     regionsByGroup.set(key, arr);
   }
   const orderedGroupIds = regionGroups.map((g) => g.id);
+  const regionIdsInGroup =
+    regionGroupId && !regionId
+      ? new Set((regionsByGroup.get(regionGroupId) ?? []).map((r) => r.id))
+      : null;
+  const offices = allOffices.filter((o) => {
+    if (regionId && (o.regionId ?? "") !== regionId) return false;
+    if (regionIdsInGroup) {
+      if (!o.regionId || !regionIdsInGroup.has(o.regionId)) return false;
+    }
+    return true;
+  });
 
   return (
     <>
-      <PageHeader title="Offices" meta={`${offices.length} offices`} />
+      <PageHeader
+        title="Offices"
+        meta={`${offices.length} of ${allOffices.length} offices`}
+      />
+
+      <div
+        className="px-6 py-2 flex gap-2 flex-wrap items-end"
+        style={{
+          background: "var(--rail)",
+          borderBottom: "1px solid var(--line)",
+        }}
+      >
+        <form method="GET" className="flex gap-2 flex-wrap items-end">
+          <SelectField
+            label="Region group"
+            name="regionGroup"
+            defaultValue={regionGroupId}
+          >
+            <option value="">All</option>
+            {regionGroups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField label="Region" name="region" defaultValue={regionId}>
+            <option value="">All</option>
+            {(regionsByGroup.get(null) ?? []).map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+            {orderedGroupIds.map((gid) => {
+              const g = groupById.get(gid);
+              const rs = regionsByGroup.get(gid) ?? [];
+              if (!g || rs.length === 0) return null;
+              return (
+                <optgroup key={gid} label={g.name}>
+                  {rs.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
+          </SelectField>
+          <Button variant="primary" type="submit">
+            Apply
+          </Button>
+          <ButtonLink variant="ghost" href="/offices">
+            Reset
+          </ButtonLink>
+        </form>
+      </div>
 
       <div className="px-6 my-3.5 flex flex-col gap-3.5 pb-8">
         {error && (

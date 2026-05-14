@@ -105,8 +105,12 @@ const COLUMNS: ColumnSpec[] = [
 
   // ---- Office regions ----
   // Offices (firm corporate entities) can be grouped into regions and
-  // regions into region groups for reporting. Both are optional.
+  // regions into region groups for reporting. Both are optional. The same
+  // soft FK is mirrored on entities and customers so clients/legal
+  // entities can be sliced by region too.
   { table: "offices", column: "region_id", type: "text" },
+  { table: "entities", column: "region_id", type: "text" },
+  { table: "customers", column: "region_id", type: "text" },
 
   // ---- Dimensions on transactional lines (JSONB key/value) ----
   // {"department": "dv-dep-eng", "project": "dv-proj-ledger-tool"}

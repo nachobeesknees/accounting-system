@@ -82,6 +82,56 @@ async function main() {
     }
   }
 
+  // --- Attach existing entities to regions (best-effort by jurisdiction) --
+  const entities = await sql<Array<{ id: string; code: string; jurisdiction: string | null; region_id: string | null }>>`
+    SELECT id, code, jurisdiction, region_id FROM entities
+  `;
+  for (const e of entities) {
+    if (e.region_id) continue;
+    let regionId: string | null = null;
+    const j = (e.jurisdiction ?? "").toLowerCase();
+    if (
+      j.includes("delaware") ||
+      j.includes("us") ||
+      j.includes("united states") ||
+      j.includes("ny") ||
+      j.includes("ca") ||
+      j.includes("fl") ||
+      j.includes("nj") ||
+      j.includes("tx") ||
+      j.includes("nevada") ||
+      j.includes("wyoming")
+    ) {
+      regionId = "rgn-north-america";
+    } else if (j.includes("cayman") || j.includes("bvi") || j.includes("bahamas")) {
+      regionId = "rgn-caribbean";
+    } else if (j.includes("luxembourg") || j.includes("netherlands") || j.includes("germany") || j.includes("france") || j.includes("swiss") || j.includes("switzerland")) {
+      regionId = "rgn-western-europe";
+    } else if (j.includes("uk") || j.includes("ireland") || j.includes("britain") || j.includes("england") || j.includes("scotland")) {
+      regionId = "rgn-uk-ireland";
+    } else if (j.includes("singapore") || j.includes("japan") || j.includes("hong kong") || j.includes("china")) {
+      regionId = "rgn-asia";
+    } else {
+      // Default firm-favored bucket so demo data has full coverage.
+      regionId = "rgn-north-america";
+    }
+    await sql`UPDATE entities SET region_id = ${regionId}, updated_at = NOW() WHERE id = ${e.id}`;
+    console.log(`+ entity ${e.code} → ${regionId}`);
+  }
+
+  // --- Attach existing customers to regions (default North America) ------
+  // Customers don't carry an authoritative jurisdiction in the demo data,
+  // so the safest behavior is to default any un-tagged client to North
+  // America. The Settings > Regions UI lets users re-point individuals.
+  const customers = await sql<Array<{ id: string; code: string; region_id: string | null }>>`
+    SELECT id, code, region_id FROM customers
+  `;
+  for (const c of customers) {
+    if (c.region_id) continue;
+    await sql`UPDATE customers SET region_id = 'rgn-north-america', updated_at = NOW() WHERE id = ${c.id}`;
+    console.log(`+ customer ${c.code} → rgn-north-america`);
+  }
+
   // --- Department dimension + sample values -------------------------------
   const deptDim = await sql<Row[]>`SELECT id FROM dimensions WHERE key = 'department'`;
   if (deptDim.length === 0) {
