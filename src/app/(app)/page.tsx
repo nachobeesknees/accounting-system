@@ -143,6 +143,7 @@ function AgingRow({
           href={href}
           currencyCode={null}
           neg={neg && amount > 0}
+          compact
         />
       </TD>
     </TR>
@@ -394,6 +395,7 @@ export default async function Page() {
                         value={inv.total}
                         href={`/invoices/${inv.id}`}
                         currencyCode={null}
+                        compact
                       />
                     </TD>
                     <TD>
@@ -750,6 +752,7 @@ export default async function Page() {
                         value={bal}
                         href={`/bills/${b.id}`}
                         currencyCode={null}
+                        compact
                       />
                     </TD>
                   </TR>
@@ -794,6 +797,7 @@ export default async function Page() {
                           href={`/invoices/${inv.id}`}
                           currencyCode={null}
                           neg
+                          compact
                         />
                       </TD>
                     </TR>
