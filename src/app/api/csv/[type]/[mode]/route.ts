@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ADAPTERS, type CsvTypeKey } from "@/lib/csv-adapters";
 import { serializeCsv } from "@/lib/csv";
 import { getSessionUser } from "@/lib/session";
+import { logAuditEvent } from "@/lib/audit";
 
 export async function GET(
   _request: Request,
@@ -31,6 +32,15 @@ export async function GET(
   }
   const body = serializeCsv(headers, rows);
   const today = new Date().toISOString().slice(0, 10);
+  if (mode === "export") {
+    await logAuditEvent(user, {
+      action: "csv.export",
+      resourceType: "import_export",
+      resourceId: type,
+      resourceName: type,
+      metadata: { rowCount: rows.length },
+    });
+  }
   return new NextResponse(body, {
     status: 200,
     headers: {

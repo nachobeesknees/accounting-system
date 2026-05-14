@@ -72,6 +72,8 @@ const SECTIONS: Section[] = [
       { href: "/settings", label: "Settings" },
       { href: "/settings/periods", label: "Accounting Periods" },
       { href: "/settings/dimensions", label: "Dimensions" },
+      { href: "/settings/users", label: "Users" },
+      { href: "/settings/audit-log", label: "Audit Log" },
     ],
   },
 ];
@@ -97,6 +99,17 @@ export function Sidebar({
   const path = usePathname();
   const isActive = (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
+  // Admin/Reporting section visibility. Manager+ sees reports; admin+ sees
+  // settings. Employees and viewers see neither (the pages still 403 if
+  // accessed directly).
+  const role = user?.role ?? "viewer";
+  const seesAdmin =
+    role === "super_admin" || role === "admin";
+  const visible = SECTIONS.filter((sec) => {
+    if (sec.heading === "Admin") return seesAdmin;
+    return true;
+  });
+
   return (
     <aside
       className="sidebar overflow-y-auto flex flex-col"
@@ -107,7 +120,7 @@ export function Sidebar({
       }}
     >
       <div className="flex-1 min-h-0">
-      {SECTIONS.map((sec) => (
+      {visible.map((sec) => (
         <div key={sec.heading} className="mt-2.5 first:mt-0">
           <div
             className="px-2.5 pt-1.5 pb-1 text-[10.5px] uppercase font-semibold"

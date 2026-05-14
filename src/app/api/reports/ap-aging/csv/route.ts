@@ -11,6 +11,8 @@ import {
 } from "@/lib/data";
 import { formatAmount, parseAmount } from "@/lib/money";
 import { getSessionUser } from "@/lib/session";
+import { logAuditEvent } from "@/lib/audit";
+import { hasPermission } from "@/lib/permissions";
 
 type Bucket = "current" | "d30" | "d60" | "d90" | "d90p";
 
@@ -34,6 +36,9 @@ export async function GET(req: NextRequest): Promise<Response> {
   const user = await getSessionUser();
   if (!user) {
     return new NextResponse("Unauthorized", { status: 401 });
+  }
+  if (!hasPermission(user, "report.export")) {
+    return new NextResponse("Forbidden", { status: 403 });
   }
 
   const url = new URL(req.url);
@@ -133,6 +138,17 @@ export async function GET(req: NextRequest): Promise<Response> {
     "Status",
   ];
   const csv = serializeCsv(headers, rows);
+
+  await logAuditEvent(user, {
+    action: "csv.export",
+    resourceType: "report",
+    resourceId: "ap-aging",
+    resourceName: "AP Aging",
+    metadata: {
+      rowCount: rows.length,
+      idsFilter: idFilter.length > 0 ? idFilter : null,
+    },
+  });
 
   return new NextResponse(csv, {
     status: 200,

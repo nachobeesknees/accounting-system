@@ -1118,7 +1118,8 @@ export type CreateEntityInput = {
   regionId?: string | null;
 };
 
-export async function createEntity(_user: SessionUser, input: CreateEntityInput) {
+export async function createEntity(user: SessionUser, input: CreateEntityInput) {
+  requirePermission(user, "entity.manage");
   const db = getDb();
   const [existing] = await db
     .select({ id: schema.entities.id })
@@ -1147,6 +1148,13 @@ export async function createEntity(_user: SessionUser, input: CreateEntityInput)
       regionId: input.regionId ?? null,
     })
     .returning();
+  await logAuditEvent(user, {
+    action: "entity.create",
+    resourceType: "entity",
+    resourceId: id,
+    resourceName: created.name,
+    changes: { after: { code: created.code, name: created.name, kind: created.kind } },
+  });
   return created;
 }
 
@@ -1155,10 +1163,11 @@ export type UpdateEntityInput = Partial<Omit<CreateEntityInput, "code">> & {
 };
 
 export async function updateEntity(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateEntityInput,
 ) {
+  requirePermission(user, "entity.manage");
   const db = getDb();
   // Code change must remain unique
   if (input.code) {
@@ -1191,12 +1200,31 @@ export async function updateEntity(
     .where(eq(schema.entities.id, id))
     .returning();
   if (!updated) throw new Error("Entity not found.");
+  await logAuditEvent(user, {
+    action: "entity.update",
+    resourceType: "entity",
+    resourceId: id,
+    resourceName: updated.name,
+    changes: { after: input },
+  });
   return updated;
 }
 
-export async function deleteEntity(_user: SessionUser, id: string) {
+export async function deleteEntity(user: SessionUser, id: string) {
+  requirePermission(user, "entity.manage");
   const db = getDb();
+  const [before] = await db
+    .select({ name: schema.entities.name })
+    .from(schema.entities)
+    .where(eq(schema.entities.id, id))
+    .limit(1);
   await db.delete(schema.entities).where(eq(schema.entities.id, id));
+  await logAuditEvent(user, {
+    action: "entity.delete",
+    resourceType: "entity",
+    resourceId: id,
+    resourceName: before?.name ?? null,
+  });
 }
 
 // --------- Assets ---------
@@ -1607,7 +1635,8 @@ export type CreateContactInput = {
   ocrText?: string | null;
 };
 
-export async function createContact(_user: SessionUser, input: CreateContactInput) {
+export async function createContact(user: SessionUser, input: CreateContactInput) {
+  requirePermission(user, "contact.manage");
   const db = getDb();
   const [existing] = await db
     .select({ id: schema.contacts.id })
@@ -1638,16 +1667,23 @@ export async function createContact(_user: SessionUser, input: CreateContactInpu
       ocrText: input.ocrText ?? null,
     })
     .returning();
+  await logAuditEvent(user, {
+    action: "contact.create",
+    resourceType: "contact",
+    resourceId: id,
+    resourceName: created.name,
+  });
   return created;
 }
 
 export type UpdateContactInput = Partial<CreateContactInput> & { isActive?: boolean };
 
 export async function updateContact(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateContactInput,
 ) {
+  requirePermission(user, "contact.manage");
   const db = getDb();
   if (input.code) {
     const [collision] = await db
@@ -1684,14 +1720,33 @@ export async function updateContact(
     .where(eq(schema.contacts.id, id))
     .returning();
   if (!updated) throw new Error("Contact not found.");
+  await logAuditEvent(user, {
+    action: "contact.update",
+    resourceType: "contact",
+    resourceId: id,
+    resourceName: updated.name,
+    changes: { after: input },
+  });
   return updated;
 }
 
-export async function deleteContact(_user: SessionUser, id: string) {
+export async function deleteContact(user: SessionUser, id: string) {
+  requirePermission(user, "contact.manage");
   const db = getDb();
+  const [before] = await db
+    .select({ name: schema.contacts.name })
+    .from(schema.contacts)
+    .where(eq(schema.contacts.id, id))
+    .limit(1);
   await db.transaction(async (tx) => {
     await tx.delete(schema.contactLinks).where(eq(schema.contactLinks.contactId, id));
     await tx.delete(schema.contacts).where(eq(schema.contacts.id, id));
+  });
+  await logAuditEvent(user, {
+    action: "contact.delete",
+    resourceType: "contact",
+    resourceId: id,
+    resourceName: before?.name ?? null,
   });
 }
 

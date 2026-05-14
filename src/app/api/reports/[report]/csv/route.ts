@@ -20,6 +20,8 @@ import {
   type CompareMode,
 } from "@/lib/report-periods";
 import { formatAmount } from "@/lib/money";
+import { logAuditEvent } from "@/lib/audit";
+import { hasPermission } from "@/lib/permissions";
 
 type ReportKey =
   | "trial-balance"
@@ -78,11 +80,20 @@ export async function GET(
   if (!user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  if (!hasPermission(user, "report.export")) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   const { report } = await context.params;
   if (!VALID.includes(report as ReportKey)) {
     return NextResponse.json({ error: "unknown report" }, { status: 404 });
   }
   const key = report as ReportKey;
+  await logAuditEvent(user, {
+    action: "csv.export",
+    resourceType: "report",
+    resourceId: key,
+    resourceName: key,
+  });
   const url = new URL(request.url);
   const sp = url.searchParams;
   const scope = await getEntityScope();
