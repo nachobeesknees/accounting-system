@@ -1931,7 +1931,7 @@ async function getSignedBalancesInRange(
  * Signed-balance helper for everything posted on or before `asOf` — used
  * by balance sheet as-of-date.
  */
-async function getSignedBalancesAsOf(
+export async function getSignedBalancesAsOf(
   asOf: string,
   scope: string | null | "all" = "all",
 ): Promise<Map<string, number>> {

@@ -15,6 +15,7 @@ import {
   getIncomeStatementForPeriod,
   getKpisAsOf,
   getMonthlyIncomeStatement,
+  getSignedBalancesAsOf,
   getTrialBalance,
   type IncomeStatementRow,
   type KpisSummary,
@@ -533,16 +534,13 @@ async function BalanceSheetCard({
 // date-aware, so the totals are accurate even when individual rows
 // can't be split out by date.
 async function currentBalancesAsOf(
-  _asOf: string,
-  _scope: string | null,
+  asOf: string,
+  scope: string | null,
 ): Promise<Map<string, number>> {
-  const tb = await getTrialBalance();
-  const m = new Map<string, number>();
-  for (const r of tb) {
-    const v = r.debit - r.credit;
-    m.set(r.accountId, v);
-  }
-  return m;
+  // Signed balances are debit - credit per account, scoped to the active
+  // firm and filtered to entries dated on or before `asOf`. Callers flip
+  // the sign for credit-normal accounts at render time.
+  return getSignedBalancesAsOf(asOf, scope ?? "all");
 }
 
 // ------- Income Statement -------

@@ -18,7 +18,7 @@ import {
 import { CustomFields } from "@/components/CustomFields";
 import { Attachments } from "@/components/Attachments";
 import type { EntityKind } from "@/lib/types";
-import { formatUSD, parseAmount } from "@/lib/money";
+import { formatMoney, parseAmount } from "@/lib/money";
 import { deleteEntityAction, updateEntityAction } from "./actions";
 
 function periodCount(freq: string | null | undefined): number {
@@ -291,8 +291,8 @@ export default async function Page({
                       <TD>{f.billingYear}</TD>
                       <TD>{frequencyLabel(f.frequency)}</TD>
                       <TD>{f.nextBillingDate ?? "—"}</TD>
-                      <TD num>USD {formatUSD(perPeriod)}</TD>
-                      <TD num>USD {formatUSD(annual)}</TD>
+                      <TD num>{formatMoney(perPeriod, entity.currencyCode)}</TD>
+                      <TD num>{formatMoney(annual, entity.currencyCode)}</TD>
                       <TD num>{f.includedHours}</TD>
                       <TD>
                         <Pill variant={statusVariant(f.status)}>
