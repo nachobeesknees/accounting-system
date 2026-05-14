@@ -2,6 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { SmartSelect } from "@/components/ui/SmartSelect";
 
 type EntityOption = { id: string; code: string; name: string };
 
@@ -18,16 +19,16 @@ export function EntityScopePicker({
   const [isPending, startTransition] = useTransition();
 
   const value = current ?? "all";
-  const activeEntity = current ? entities.find((e) => e.id === current) : undefined;
 
   return (
-    <label
-      className="flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer"
+    <div
+      className="flex items-center gap-1.5 px-2 py-1 rounded-md"
       style={{
         background: current ? "var(--p-formation-bg)" : "transparent",
         color: current ? "var(--p-formation-fg)" : "var(--ink-3)",
         border: "1px solid " + (current ? "transparent" : "var(--line)"),
         fontSize: 12,
+        opacity: isPending ? 0.6 : 1,
       }}
       title="Filter the books to a single entity, or show All entities"
     >
@@ -41,35 +42,38 @@ export function EntityScopePicker({
       >
         Entity
       </span>
-      <select
+      <SmartSelect
         value={value}
-        disabled={isPending}
-        onChange={(e) => {
-          const next = e.target.value === "all" ? null : e.target.value;
+        onChange={(v) => {
+          const next = v === "all" ? null : v;
           startTransition(async () => {
             await onChange(next);
             router.refresh();
           });
         }}
-        style={{
+        disabled={isPending}
+        ariaLabel="Entity scope"
+        options={[
+          { value: "all", label: "All entities" },
+          ...entities.map((e) => ({
+            value: e.id,
+            label: `${e.code} — ${e.name}`,
+            search: e.code,
+          })),
+        ]}
+        triggerStyle={{
           background: "transparent",
           border: "none",
           color: "inherit",
-          fontFamily: activeEntity ? "var(--font-mono)" : "inherit",
+          fontFamily: current ? "var(--font-mono)" : "inherit",
           fontVariantNumeric: "tabular-nums",
           fontSize: 12.5,
           fontWeight: current ? 600 : 400,
-          outline: "none",
-          cursor: "pointer",
+          padding: "0 18px 0 0",
+          minHeight: 22,
+          minWidth: 120,
         }}
-      >
-        <option value="all">All entities</option>
-        {entities.map((e) => (
-          <option key={e.id} value={e.id}>
-            {e.code} — {e.name}
-          </option>
-        ))}
-      </select>
-    </label>
+      />
+    </div>
   );
 }

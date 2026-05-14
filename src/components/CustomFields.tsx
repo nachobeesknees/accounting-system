@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
+import { CustomFieldSelect } from "@/components/CustomFieldSelect";
 import {
   getCustomFieldDefinitions,
   getCustomFieldValuesForRecord,
@@ -73,29 +74,17 @@ export async function CustomFields({
             }
             if (d.fieldType === "select" && d.options) {
               return (
-                <label key={d.id} className="flex flex-col gap-1">
+                <div key={d.id} className="flex flex-col gap-1">
                   <span className="text-[11.5px]" style={{ color: "var(--ink-3)" }}>
                     {d.label}
                     {d.helpText ? ` — ${d.helpText}` : ""}
                   </span>
-                  <select
+                  <CustomFieldSelect
                     name={name}
                     defaultValue={v?.valueText ?? ""}
-                    className="px-2.5 py-1.5 text-[13px] rounded-md"
-                    style={{
-                      background: "var(--paper)",
-                      border: "1px solid var(--line-2)",
-                      color: "var(--ink)",
-                    }}
-                  >
-                    <option value="">—</option>
-                    {d.options.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    options={d.options}
+                  />
+                </div>
               );
             }
             const inputType =

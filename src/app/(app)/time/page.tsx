@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { IconClock } from "@/components/ui/Icon";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -97,22 +98,30 @@ export default async function Page({
             placeholder="Description"
             defaultValue={q}
           />
-          <SelectField label="User" name="user" defaultValue={userId}>
-            <option value="">All</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.fullName}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField label="Client" name="client" defaultValue={clientId}>
-            <option value="">All</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </SelectField>
+          <SmartSelectField
+            label="User"
+            name="user"
+            defaultValue={userId}
+            options={users.map((u) => ({
+              value: u.id,
+              label: u.fullName,
+              search: u.email,
+            }))}
+            emptyLabel="All"
+            clearable
+          />
+          <SmartSelectField
+            label="Client"
+            name="client"
+            defaultValue={clientId}
+            options={customers.map((c) => ({
+              value: c.id,
+              label: c.name,
+              search: c.code,
+            }))}
+            emptyLabel="All"
+            clearable
+          />
           <SelectField label="Billable" name="billable" defaultValue={billable}>
             <option value="">All</option>
             <option value="yes">Billable</option>

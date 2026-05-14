@@ -3,7 +3,8 @@
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
-import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { Field, Row, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { formatMoney, parseAmount } from "@/lib/money";
 import type { Bill, BillChargebackType, Customer, Entity } from "@/lib/types";
 
@@ -110,46 +111,39 @@ export function BillChargebackPanel({
 
         {recipient === "client" && (
           <Row>
-            <SelectField
+            <SmartSelectField
               label="Client"
               name="chargebackClientId"
               required
               defaultValue={bill.chargebackClientId ?? ""}
-            >
-              <option value="" disabled>
-                — Select client —
-              </option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </SelectField>
+              options={customers.map((c) => ({
+                value: c.id,
+                label: c.name,
+                search: c.code,
+              }))}
+              emptyLabel="— Select client —"
+            />
             <div />
           </Row>
         )}
 
         {recipient === "entity" && (
           <Row>
-            <SelectField
+            <SmartSelectField
               label="Entity"
               name="chargebackEntityId"
               required
               defaultValue={bill.chargebackEntityId ?? ""}
-            >
-              <option value="" disabled>
-                — Select entity —
-              </option>
-              {entities.map((e) => {
+              options={entities.map((e) => {
                 const owner = customerById.get(e.clientId);
-                return (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                    {owner ? ` · ${owner.name}` : ""}
-                  </option>
-                );
+                return {
+                  value: e.id,
+                  label: owner ? `${e.name} · ${owner.name}` : e.name,
+                  search: e.code,
+                };
               })}
-            </SelectField>
+              emptyLabel="— Select entity —"
+            />
             <div />
           </Row>
         )}

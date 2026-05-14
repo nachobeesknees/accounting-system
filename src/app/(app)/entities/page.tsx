@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
+import { SmartSelectField, type SmartSelectOption } from "@/components/ui/SmartSelect";
 import { IconBuilding } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -145,47 +146,47 @@ export default async function Page({
             <option value="dormant">Dormant</option>
             <option value="dissolved">Dissolved</option>
           </SelectField>
-          <SelectField label="Client" name="client" defaultValue={clientId}>
-            <option value="">All</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField
+          <SmartSelectField
+            label="Client"
+            name="client"
+            defaultValue={clientId}
+            options={customers.map((c) => ({
+              value: c.id,
+              label: c.name,
+              search: c.code,
+            }))}
+            emptyLabel="All"
+            clearable
+          />
+          <SmartSelectField
             label="Region group"
             name="regionGroup"
             defaultValue={regionGroupId}
-          >
-            <option value="">All</option>
-            {regionGroups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField label="Region" name="region" defaultValue={regionId}>
-            <option value="">All</option>
-            {(regionsByGroup.get(null) ?? []).map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-            {regionGroups.map((g) => {
-              const rs = regionsByGroup.get(g.id) ?? [];
-              if (rs.length === 0) return null;
-              return (
-                <optgroup key={g.id} label={g.name}>
-                  {rs.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
-          </SelectField>
+            options={regionGroups.map((g) => ({ value: g.id, label: g.name }))}
+            emptyLabel="All"
+            clearable
+          />
+          <SmartSelectField
+            label="Region"
+            name="region"
+            defaultValue={regionId}
+            options={[
+              ...(regionsByGroup.get(null) ?? []).map<SmartSelectOption>((r) => ({
+                value: r.id,
+                label: r.name,
+              })),
+              ...regionGroups.flatMap<SmartSelectOption>((g) => {
+                const rs = regionsByGroup.get(g.id) ?? [];
+                return rs.map((r) => ({
+                  value: r.id,
+                  label: r.name,
+                  group: g.name,
+                }));
+              }),
+            ]}
+            emptyLabel="All"
+            clearable
+          />
           <Button variant="primary" type="submit">
             Apply
           </Button>

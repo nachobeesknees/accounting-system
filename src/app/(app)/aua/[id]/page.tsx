@@ -7,6 +7,7 @@ import { ConfirmButton } from "@/components/ui/ConfirmButton";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
@@ -149,30 +150,30 @@ export default async function Page({
                     </SelectField>
                   </Row>
                   <Row>
-                    <SelectField
+                    <SmartSelectField
                       label="Entity (preferred owner)"
                       name="entityId"
                       defaultValue={asset.entityId ?? ""}
-                    >
-                      <option value="">— Direct client hold (no entity) —</option>
-                      {entities.map((e) => (
-                        <option key={e.id} value={e.id}>
-                          {e.code} — {e.name}
-                        </option>
-                      ))}
-                    </SelectField>
-                    <SelectField
+                      options={entities.map((e) => ({
+                        value: e.id,
+                        label: `${e.code} — ${e.name}`,
+                        search: e.code,
+                      }))}
+                      emptyLabel="— Direct client hold (no entity) —"
+                      clearable
+                    />
+                    <SmartSelectField
                       label="Client (used when no entity)"
                       name="clientId"
                       defaultValue={asset.clientId ?? ""}
-                    >
-                      <option value="">— None —</option>
-                      {customers.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </SelectField>
+                      options={customers.map((c) => ({
+                        value: c.id,
+                        label: c.name,
+                        search: c.code,
+                      }))}
+                      emptyLabel="— None —"
+                      clearable
+                    />
                     <div />
                   </Row>
                   <Row>

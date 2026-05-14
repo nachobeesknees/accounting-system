@@ -3,7 +3,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
-import { Field, SelectField } from "@/components/ui/Field";
+import { Field } from "@/components/ui/Field";
+import { SmartSelectField, type SmartSelectOption } from "@/components/ui/SmartSelect";
 import { IconUsers } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -105,40 +106,37 @@ export default async function Page({
             placeholder="Code, name, or email"
             defaultValue={q}
           />
-          <SelectField
+          <SmartSelectField
             label="Region group"
             name="regionGroup"
             defaultValue={regionGroupId}
-          >
-            <option value="">All</option>
-            {regionGroups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </SelectField>
-          <SelectField label="Region" name="region" defaultValue={regionId}>
-            <option value="">All regions</option>
-            {(regionsByGroup.get(null) ?? []).map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
-            ))}
-            {orderedRegionGroupIds.map((gid) => {
-              const g = regionGroupById.get(gid);
-              const rs = regionsByGroup.get(gid) ?? [];
-              if (!g || rs.length === 0) return null;
-              return (
-                <optgroup key={gid} label={g.name}>
-                  {rs.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
-          </SelectField>
+            options={regionGroups.map((g) => ({ value: g.id, label: g.name }))}
+            emptyLabel="All"
+            clearable
+          />
+          <SmartSelectField
+            label="Region"
+            name="region"
+            defaultValue={regionId}
+            options={[
+              ...(regionsByGroup.get(null) ?? []).map<SmartSelectOption>((r) => ({
+                value: r.id,
+                label: r.name,
+              })),
+              ...orderedRegionGroupIds.flatMap<SmartSelectOption>((gid) => {
+                const g = regionGroupById.get(gid);
+                const rs = regionsByGroup.get(gid) ?? [];
+                if (!g) return [];
+                return rs.map((r) => ({
+                  value: r.id,
+                  label: r.name,
+                  group: g.name,
+                }));
+              }),
+            ]}
+            emptyLabel="All regions"
+            clearable
+          />
           <Button variant="primary" type="submit">
             Apply
           </Button>

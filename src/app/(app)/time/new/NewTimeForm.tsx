@@ -4,7 +4,8 @@ import { useActionState, useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { Field, Row, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import { createTimeEntryAction, type CreateTimeState } from "./actions";
 import type {
@@ -102,19 +103,18 @@ export function NewTimeForm({
               />
             </Row>
             <Row>
-              <SelectField
+              <SmartSelectField
                 label="User"
                 name="userId"
                 required
                 value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-              >
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.fullName} ({u.role})
-                  </option>
-                ))}
-              </SelectField>
+                onChange={setUserId}
+                options={users.map((u) => ({
+                  value: u.id,
+                  label: `${u.fullName} (${u.role})`,
+                  search: u.email,
+                }))}
+              />
               <MoneyInput
                 label="Rate (per hr)"
                 name="rateAtLog"
@@ -129,52 +129,50 @@ export function NewTimeForm({
               placeholder="What was the work?"
             />
             <Row>
-              <SelectField
+              <SmartSelectField
                 label="Client"
                 name="clientId"
                 value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-              >
-                <option value="">— None / internal —</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </SelectField>
-              <SelectField
+                onChange={setClientId}
+                options={customers.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                  search: c.code,
+                }))}
+                emptyLabel="— None / internal —"
+                clearable
+              />
+              <SmartSelectField
                 label="Entity"
                 name="entityId"
                 value={entityId}
-                onChange={(e) => {
-                  setEntityId(e.target.value);
+                onChange={(v) => {
+                  setEntityId(v);
                   setEntityFeeId("");
                 }}
-              >
-                <option value="">— None —</option>
-                {filteredEntities.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.code} — {e.name}
-                  </option>
-                ))}
-              </SelectField>
+                options={filteredEntities.map((e) => ({
+                  value: e.id,
+                  label: `${e.code} — ${e.name}`,
+                  search: e.code,
+                }))}
+                emptyLabel="— None —"
+                clearable
+              />
             </Row>
             {entityId && entityFees.length > 0 && (
               <Row>
-                <SelectField
+                <SmartSelectField
                   label="Service (optional)"
                   name="entityFeeId"
                   value={entityFeeId}
-                  onChange={(e) => setEntityFeeId(e.target.value)}
-                >
-                  <option value="">— No specific service —</option>
-                  {entityFees.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.billingYear} ·{" "}
-                      {frequencyShortLabel(f.frequency)} · ${f.annualFee}/yr
-                    </option>
-                  ))}
-                </SelectField>
+                  onChange={setEntityFeeId}
+                  options={entityFees.map((f) => ({
+                    value: f.id,
+                    label: `${f.billingYear} · ${frequencyShortLabel(f.frequency)} · $${f.annualFee}/yr`,
+                  }))}
+                  emptyLabel="— No specific service —"
+                  clearable
+                />
                 <div />
               </Row>
             )}

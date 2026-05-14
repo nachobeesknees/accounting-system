@@ -8,6 +8,7 @@ import { CompareSelect } from "@/components/CompareSelect";
 import { CsvDownloadButton } from "@/components/CsvDownloadButton";
 import { PrintButton } from "@/components/PrintButton";
 import { DrillNumber, drillToAccount } from "@/components/DrillNumber";
+import { YearPicker } from "./YearPicker";
 import {
   DEMO_TODAY,
   accountsByType,
@@ -155,63 +156,6 @@ function GrandTotalRow({
 
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function YearPicker({ year, current }: { year: number; current: number }) {
-  // Server component — just renders a form GET that flips ?year=.
-  const years = [year + 1, year, year - 1, year - 2, year - 3];
-  return (
-    <form
-      method="GET"
-      style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
-    >
-      <input type="hidden" name="tab" value="monthly" />
-      <label
-        className="text-[11.5px] uppercase tracking-wider"
-        style={{ color: "var(--ink-3)" }}
-      >
-        Year
-      </label>
-      <select
-        name="year"
-        defaultValue={current}
-        style={{
-          background: "var(--raised)",
-          color: "var(--ink)",
-          border: "1px solid var(--line-2)",
-          borderRadius: 6,
-          padding: "4px 8px",
-          fontSize: 12.5,
-        }}
-      >
-        {years.map((y) => (
-          <option key={y} value={y}>
-            {y}
-          </option>
-        ))}
-      </select>
-      <noscript>
-        <button type="submit">Go</button>
-      </noscript>
-      {/* Auto-submit on change via a tiny inline handler */}
-      <SubmitOnChange />
-    </form>
-  );
-}
-
-// Tiny client-only auto-submit so the year dropdown reloads the page.
-function SubmitOnChange() {
-  // We can't add an onChange handler from a server component, so emit a
-  // <script> that wires the select to submit its form. It's a single
-  // sibling lookup — small, cache-friendly, and avoids spinning up a
-  // dedicated client component just for this.
-  return (
-    <script
-      dangerouslySetInnerHTML={{
-        __html: `(function(){var s=document.currentScript;if(!s)return;var f=s.closest('form');if(!f)return;var sel=f.querySelector('select[name="year"]');if(!sel)return;sel.addEventListener('change',function(){f.submit();});})();`,
-      }}
-    />
-  );
-}
-
 // ------- main page -------
 
 export default async function Page({
@@ -289,7 +233,7 @@ export default async function Page({
         {/* Controls — hidden in print */}
         <div className="flex flex-wrap items-center gap-3 no-print">
           {tab === "monthly" ? (
-            <YearPicker year={fiscalYear} current={fiscalYear} />
+            <YearPicker current={fiscalYear} />
           ) : tab !== "trial" ? (
             <>
               <PeriodPicker />

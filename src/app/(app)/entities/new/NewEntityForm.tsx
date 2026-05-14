@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { createEntityAction, type CreateEntityState } from "./actions";
 import type { Currency, Customer } from "@/lib/types";
 
@@ -66,16 +67,18 @@ export function NewEntityForm({
               <Field label="Name" name="name" required placeholder="Acme Holdings LLC" />
             </Row>
             <Row>
-              <SelectField label="Client" name="clientId" required defaultValue={defaultClientId ?? ""}>
-                <option value="" disabled>
-                  Select client…
-                </option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </SelectField>
+              <SmartSelectField
+                label="Client"
+                name="clientId"
+                required
+                defaultValue={defaultClientId ?? ""}
+                options={customers.map((c) => ({
+                  value: c.id,
+                  label: c.name,
+                  search: c.code,
+                }))}
+                emptyLabel="Select client…"
+              />
               <SelectField label="Kind" name="kind" required defaultValue="llc">
                 {KIND_OPTIONS.map((k) => (
                   <option key={k.value} value={k.value}>
@@ -118,19 +121,18 @@ export function NewEntityForm({
               </SelectField>
             </Row>
             <Row>
-              <SelectField
+              <SmartSelectField
                 label="Functional currency"
                 name="currencyCode"
                 defaultValue={defaultCurrency}
-              >
-                {currencies
+                options={currencies
                   .filter((c) => c.isActive)
-                  .map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.code} — {c.name}
-                    </option>
-                  ))}
-              </SelectField>
+                  .map((c) => ({
+                    value: c.code,
+                    label: `${c.code} — ${c.name}`,
+                    search: c.code,
+                  }))}
+              />
               <div />
             </Row>
             <TextareaField label="Notes" name="notes" placeholder="Optional notes" />

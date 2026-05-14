@@ -4,7 +4,12 @@ import { useMemo, useState } from "react";
 import { useFormState } from "react-dom";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { Field, Row, TextareaField } from "@/components/ui/Field";
+import {
+  SmartSelect,
+  SmartSelectField,
+  type SmartSelectOption,
+} from "@/components/ui/SmartSelect";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
 import type {
@@ -53,6 +58,37 @@ export function NewInvoiceForm({
 }) {
   const [state, formAction] = useFormState(createInvoiceAction, INITIAL_STATE);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
+  const [customerId, setCustomerId] = useState<string>("");
+
+  const customerOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      customers.map((c) => ({
+        value: c.id,
+        label: c.name,
+        description: `(${c.code})`,
+        search: c.code,
+      })),
+    [customers],
+  );
+  const revenueAccountOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      revenueAccounts.map((a) => ({
+        value: a.id,
+        label: `${a.code} — ${a.name}`,
+        search: a.code,
+      })),
+    [revenueAccounts],
+  );
+  const dimensionOptions = useMemo(() => {
+    const m = new Map<string, SmartSelectOption[]>();
+    for (const { dimension, values } of dimensionsWithValues) {
+      m.set(
+        dimension.key,
+        values.map((v) => ({ value: v.id, label: v.label, search: v.code })),
+      );
+    }
+    return m;
+  }, [dimensionsWithValues]);
 
   const subtotal = useMemo(
     () =>
@@ -95,16 +131,15 @@ export function NewInvoiceForm({
       <Card title="Header" bodyPadding>
         <div className="flex flex-col gap-3">
           <Row>
-            <SelectField label="Customer" name="customerId" required defaultValue="">
-              <option value="" disabled>
-                Select customer…
-              </option>
-              {customers.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name} ({c.code})
-                </option>
-              ))}
-            </SelectField>
+            <SmartSelectField
+              label="Customer"
+              name="customerId"
+              required
+              value={customerId}
+              onChange={setCustomerId}
+              options={customerOptions}
+              emptyLabel="Select customer…"
+            />
             <div />
           </Row>
           <Row>
@@ -190,53 +225,32 @@ export function NewInvoiceForm({
                   </TD>
                   <TD>
                     <div className="flex flex-col gap-1">
-                      <select
+                      <SmartSelect
                         name={`lines[${i}][accountId]`}
                         value={line.accountId}
-                        onChange={(e) =>
-                          updateLine(i, { accountId: e.target.value })
-                        }
-                        className="px-2 py-1 text-[12.5px] rounded-md outline-none w-full"
-                        style={{
-                          background: "var(--paper)",
-                          border: "1px solid var(--line-2)",
-                          color: "var(--ink)",
-                        }}
-                      >
-                        <option value="">— Select revenue account —</option>
-                        {revenueAccounts.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            {a.code} — {a.name}
-                          </option>
-                        ))}
-                      </select>
-                      {dimensionsWithValues.map(({ dimension, values }) => (
-                        <select
+                        onChange={(v) => updateLine(i, { accountId: v })}
+                        options={revenueAccountOptions}
+                        emptyLabel="— Select revenue account —"
+                        ariaLabel="Revenue account"
+                      />
+                      {dimensionsWithValues.map(({ dimension }) => (
+                        <SmartSelect
                           key={dimension.id}
                           name={`lines[${i}][dim][${dimension.key}]`}
                           value={line.dimensions[dimension.key] ?? ""}
-                          onChange={(e) =>
+                          onChange={(v) =>
                             updateLine(i, {
                               dimensions: {
                                 ...line.dimensions,
-                                [dimension.key]: e.target.value,
+                                [dimension.key]: v,
                               },
                             })
                           }
-                          className="px-2 py-1 text-[11.5px] rounded-md outline-none w-full"
-                          style={{
-                            background: "var(--paper)",
-                            border: "1px solid var(--line-2)",
-                            color: "var(--ink-2)",
-                          }}
-                        >
-                          <option value="">— {dimension.label} —</option>
-                          {values.map((v) => (
-                            <option key={v.id} value={v.id}>
-                              {v.label}
-                            </option>
-                          ))}
-                        </select>
+                          options={dimensionOptions.get(dimension.key) ?? []}
+                          emptyLabel={`— ${dimension.label} —`}
+                          clearable
+                          ariaLabel={dimension.label}
+                        />
                       ))}
                     </div>
                   </TD>

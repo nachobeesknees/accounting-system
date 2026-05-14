@@ -4,6 +4,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
+import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { IconReceipt } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
@@ -98,14 +99,18 @@ export default async function Page({
             <option value="overdue">Overdue</option>
             <option value="void">Void</option>
           </SelectField>
-          <SelectField label="Customer" name="customer" defaultValue={customerId}>
-            <option value="">All</option>
-            {customers.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </SelectField>
+          <SmartSelectField
+            label="Customer"
+            name="customer"
+            defaultValue={customerId}
+            options={customers.map((c) => ({
+              value: c.id,
+              label: c.name,
+              search: c.code,
+            }))}
+            emptyLabel="All"
+            clearable
+          />
           <Button variant="primary" type="submit">
             Apply
           </Button>

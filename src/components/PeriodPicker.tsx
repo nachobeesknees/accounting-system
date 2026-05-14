@@ -2,20 +2,22 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTransition } from "react";
+import { SmartSelect } from "@/components/ui/SmartSelect";
 import {
   PERIOD_PRESET_OPTIONS,
   parsePreset,
   type PeriodPreset,
 } from "@/lib/report-periods";
 
-const SELECT_STYLE: React.CSSProperties = {
+const TRIGGER_STYLE: React.CSSProperties = {
   background: "var(--raised)",
   color: "var(--ink)",
   border: "1px solid var(--line-2)",
   borderRadius: 6,
-  padding: "4px 8px",
+  padding: "4px 28px 4px 8px",
   fontSize: 12.5,
-  cursor: "pointer",
+  minHeight: 28,
+  minWidth: 130,
 };
 
 const INPUT_STYLE: React.CSSProperties = {
@@ -51,7 +53,7 @@ export function PeriodPicker() {
     });
   }
 
-  function setPreset(next: PeriodPreset) {
+  function setPreset(next: string) {
     const ps = new URLSearchParams(params.toString());
     ps.set("preset", next);
     if (next !== "custom") {
@@ -74,19 +76,16 @@ export function PeriodPicker() {
       >
         Period
       </label>
-      <select
-        name="preset"
+      <SmartSelect
         value={preset}
-        onChange={(e) => setPreset(e.target.value as PeriodPreset)}
-        style={SELECT_STYLE}
-        aria-label="Period preset"
-      >
-        {PERIOD_PRESET_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        onChange={(v) => setPreset(v as PeriodPreset)}
+        ariaLabel="Period preset"
+        options={PERIOD_PRESET_OPTIONS.map((o) => ({
+          value: o.value,
+          label: o.label,
+        }))}
+        triggerStyle={TRIGGER_STYLE}
+      />
       {preset === "custom" && (
         <>
           <input

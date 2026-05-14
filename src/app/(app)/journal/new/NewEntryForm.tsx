@@ -4,6 +4,10 @@ import { useMemo, useState } from "react";
 import { useFormState } from "react-dom";
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
+import {
+  SmartSelect,
+  type SmartSelectOption,
+} from "@/components/ui/SmartSelect";
 import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
 import type {
   Account,
@@ -92,6 +96,52 @@ export function NewEntryForm({
     () => dimensionsWithValues.filter((d) => d.dimension.key !== "project"),
     [dimensionsWithValues],
   );
+
+  const firmEntityOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      firmEntities.map((e) => ({
+        value: e.id,
+        label: `${e.code} — ${e.name}`,
+        search: e.code,
+      })),
+    [firmEntities],
+  );
+  const periodOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      periods.map((p) => ({
+        value: p.id,
+        label: p.name,
+        description: `(${p.status})`,
+      })),
+    [periods],
+  );
+  const accountOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      accounts.map((a) => ({
+        value: a.id,
+        label: `${a.code} — ${a.name}`,
+        search: a.code,
+      })),
+    [accounts],
+  );
+  const dimensionOptions = useMemo(() => {
+    const m = new Map<string, SmartSelectOption[]>();
+    for (const { dimension, values } of lineDimensions) {
+      m.set(
+        dimension.key,
+        values.map((v) => ({
+          value: v.id,
+          label: v.label,
+          search: v.code,
+        })),
+      );
+    }
+    return m;
+  }, [lineDimensions]);
+
+  const [firmEntityId, setFirmEntityId] = useState<string>("");
+  const [fiscalPeriodId, setFiscalPeriodId] = useState<string>(periods[0]?.id ?? "");
+  const [source, setSource] = useState<string>("manual");
 
   const debitTotal = useMemo(
     () => lines.reduce((s, l) => s + parseAmount(l.debit), 0),
@@ -199,45 +249,48 @@ export function NewEntryForm({
               style={HEADER_INPUT}
             />
           </label>
-          <label className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1">
             <span style={HEADER_LABEL}>Entity</span>
-            <select
+            <SmartSelect
               name="firmEntityId"
-              defaultValue=""
-              style={HEADER_INPUT}
-            >
-              <option value="">— Active scope —</option>
-              {firmEntities.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.code} — {e.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
+              value={firmEntityId}
+              onChange={setFirmEntityId}
+              options={firmEntityOptions}
+              emptyLabel="— Active scope —"
+              clearable
+              triggerStyle={HEADER_INPUT}
+              ariaLabel="Entity"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
             <span style={HEADER_LABEL}>Period</span>
-            <select
+            <SmartSelect
               name="fiscalPeriodId"
-              defaultValue={periods[0]?.id ?? ""}
-              style={HEADER_INPUT}
-            >
-              <option value="">— None —</option>
-              {periods.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name} ({p.status})
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
+              value={fiscalPeriodId}
+              onChange={setFiscalPeriodId}
+              options={periodOptions}
+              emptyLabel="— None —"
+              clearable
+              triggerStyle={HEADER_INPUT}
+              ariaLabel="Fiscal period"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
             <span style={HEADER_LABEL}>Source</span>
-            <select name="source" defaultValue="manual" style={HEADER_INPUT}>
-              <option value="manual">Manual</option>
-              <option value="invoice">Invoice</option>
-              <option value="bill">Bill</option>
-              <option value="reconciliation">Reconciliation</option>
-            </select>
-          </label>
+            <SmartSelect
+              name="source"
+              value={source}
+              onChange={setSource}
+              options={[
+                { value: "manual", label: "Manual" },
+                { value: "invoice", label: "Invoice" },
+                { value: "bill", label: "Bill" },
+                { value: "reconciliation", label: "Reconciliation" },
+              ]}
+              triggerStyle={HEADER_INPUT}
+              ariaLabel="Source"
+            />
+          </div>
         </div>
       </div>
 
@@ -327,21 +380,15 @@ export function NewEntryForm({
               {i + 1}
             </div>
             <div className="flex items-center" style={cellBorder(false)}>
-              <select
+              <SmartSelect
                 name={`lines[${i}][accountId]`}
                 value={line.accountId}
-                onChange={(e) =>
-                  updateLine(i, { accountId: e.target.value })
-                }
-                style={CELL_INPUT}
-              >
-                <option value="">— Select account —</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.code} — {a.name}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => updateLine(i, { accountId: v })}
+                options={accountOptions}
+                emptyLabel="— Select account —"
+                variant="cell"
+                ariaLabel="Account"
+              />
             </div>
             <div className="flex items-center" style={cellBorder(true)}>
               <input
@@ -355,32 +402,26 @@ export function NewEntryForm({
                 style={CELL_INPUT}
               />
             </div>
-            {lineDimensions.map(({ dimension, values }) => (
+            {lineDimensions.map(({ dimension }) => (
               <div
                 key={dimension.id}
                 className="flex items-center"
                 style={cellBorder(true)}
               >
-                <select
+                <SmartSelect
                   name={`lines[${i}][dim][${dimension.key}]`}
                   value={line.dimensions[dimension.key] ?? ""}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     updateLine(i, {
-                      dimensions: {
-                        ...line.dimensions,
-                        [dimension.key]: e.target.value,
-                      },
+                      dimensions: { ...line.dimensions, [dimension.key]: v },
                     })
                   }
-                  style={{ ...CELL_INPUT, color: "var(--ink-2)" }}
-                >
-                  <option value="">—</option>
-                  {values.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.label}
-                    </option>
-                  ))}
-                </select>
+                  options={dimensionOptions.get(dimension.key) ?? []}
+                  emptyLabel="—"
+                  clearable
+                  variant="cell"
+                  ariaLabel={dimension.label}
+                />
               </div>
             ))}
             <div className="flex items-center" style={cellBorder(true)}>
