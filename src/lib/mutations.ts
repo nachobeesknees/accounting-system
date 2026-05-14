@@ -3056,6 +3056,25 @@ export async function setInvoiceExpectedPaymentDate(
     .where(eq(schema.invoices.id, invoiceId));
 }
 
+export async function addInvoiceNote(
+  user: SessionUser,
+  invoiceId: string,
+  note: string,
+) {
+  const trimmed = note.trim();
+  if (trimmed === "") throw new Error("Note cannot be empty.");
+  const db = getDb();
+  const id = uid("inote");
+  await db.insert(schema.invoiceNotes).values({
+    id,
+    invoiceId,
+    note: trimmed,
+    authorName: user.fullName,
+    authorUserId: user.userId,
+  });
+  return { id };
+}
+
 // --------- Regions + region groups ---------
 
 export type CreateRegionGroupInput = { name: string; notes?: string | null };

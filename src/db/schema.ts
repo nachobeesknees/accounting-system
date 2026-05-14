@@ -806,6 +806,22 @@ export const paymentAllocations = pgTable("payment_allocations", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Append-only notes attached to an invoice. Notes are never edited or
+ * deleted from the UI — each save creates a new row, so the log doubles
+ * as an audit trail of who said what about an open A/R balance.
+ */
+export const invoiceNotes = pgTable("invoice_notes", {
+  id: text("id").primaryKey(),
+  invoiceId: text("invoice_id").notNull(),
+  note: text("note").notNull(),
+  /** Author display name (denormalized so notes survive user renames). */
+  authorName: text("author_name").notNull(),
+  /** Optional FK back to the user record for traceability. */
+  authorUserId: text("author_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const activityLog = pgTable("activity_log", {
   id: text("id").primaryKey(),
   actorUserId: text("actor_user_id"),
@@ -850,3 +866,4 @@ export type LookupValue = typeof lookupValues.$inferSelect;
 export type CustomFieldDefinition = typeof customFieldDefinitions.$inferSelect;
 export type CustomFieldValue = typeof customFieldValues.$inferSelect;
 export type Attachment = typeof attachments.$inferSelect;
+export type InvoiceNote = typeof invoiceNotes.$inferSelect;

@@ -16,6 +16,7 @@ import {
   getCustomerById,
   getDimensionsWithValues,
   getInvoiceById,
+  getInvoiceNotes,
   getJournalEntryById,
   getUserById,
 } from "@/lib/data";
@@ -24,6 +25,7 @@ import type { Customer, Invoice, User } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
 import {
+  addInvoiceNoteAction,
   assignedApproveInvoiceAction,
   cfoApproveInvoiceAction,
   postInvoiceAction,
@@ -123,6 +125,7 @@ export default async function Page({
     bankAccounts,
     assignments,
     dimensionsWithValues,
+    invoiceNotes,
   ] = await Promise.all([
     getCustomerById(invoice.customerId),
     invoice.journalEntryId
@@ -132,6 +135,7 @@ export default async function Page({
     getBankAccounts(),
     getCustomerAssignments(invoice.customerId),
     getDimensionsWithValues(),
+    getInvoiceNotes(invoice.id),
   ]);
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
 
@@ -722,6 +726,77 @@ export default async function Page({
               </TR>
             </TBody>
           </Table>
+        </Card>
+
+        <Card title="Notes" actions={<span id="notes" />}>
+          <div className="flex flex-col">
+            {invoiceNotes.length === 0 ? (
+              <div
+                className="px-3.5 py-3 text-[12.5px]"
+                style={{ color: "var(--ink-3)" }}
+              >
+                No notes yet. Use the form below to log a comment — the log
+                is append-only.
+              </div>
+            ) : (
+              <ul
+                className="flex flex-col"
+                style={{ borderBottom: "1px solid var(--line)" }}
+              >
+                {invoiceNotes.map((n) => (
+                  <li
+                    key={n.id}
+                    className="px-3.5 py-2.5"
+                    style={{ borderTop: "1px solid var(--line)" }}
+                  >
+                    <div
+                      className="flex items-baseline justify-between gap-3 text-[11.5px]"
+                      style={{ color: "var(--ink-3)" }}
+                    >
+                      <span style={{ color: "var(--ink-2)", fontWeight: 500 }}>
+                        {n.authorName}
+                      </span>
+                      <span
+                        style={{
+                          fontFamily: "var(--font-mono)",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {formatStamp(n.createdAt)}
+                      </span>
+                    </div>
+                    <div
+                      className="text-[12.5px] mt-1 whitespace-pre-wrap"
+                      style={{ color: "var(--ink)" }}
+                    >
+                      {n.note}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <form
+              action={addInvoiceNoteAction}
+              className="flex flex-col gap-2 p-3.5"
+              style={{
+                background: "var(--rail)",
+                borderTop: "1px solid var(--line)",
+              }}
+            >
+              <input type="hidden" name="invoiceId" value={invoice.id} />
+              <TextareaField
+                label="Add a note"
+                name="note"
+                placeholder="Followed up with controller — payment scheduled for next Friday."
+                required
+              />
+              <div className="flex justify-end">
+                <Button variant="primary" type="submit">
+                  Append note
+                </Button>
+              </div>
+            </form>
+          </div>
         </Card>
 
         <Attachments
