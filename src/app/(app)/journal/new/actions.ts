@@ -75,6 +75,7 @@ export async function createEntry(
   const reference = String(formData.get("reference") ?? "");
   const sourceRaw = String(formData.get("source") ?? "manual");
   const fiscalPeriodId = String(formData.get("fiscalPeriodId") ?? "");
+  const firmEntityId = String(formData.get("firmEntityId") ?? "");
   const action = String(formData.get("action") ?? "draft");
 
   const validSources = ["manual", "invoice", "bill", "reconciliation"] as const;
@@ -101,6 +102,7 @@ export async function createEntry(
       reference: reference.trim() === "" ? null : reference.trim(),
       source,
       fiscalPeriodId: fiscalPeriodId === "" ? null : fiscalPeriodId,
+      firmEntityId: firmEntityId === "" ? null : firmEntityId,
       status: action === "post" ? "posted" : "draft",
       lines: lines.map((l) => ({
         accountId: l.accountId,
