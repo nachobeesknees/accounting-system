@@ -143,6 +143,31 @@ export default async function Page() {
             </span>
           </div>
         </Section>
+
+        <Section title="Security">
+          <div className="flex flex-col gap-1 text-[13px]">
+            <Link
+              href="/settings/users"
+              style={{ color: "var(--ink)", textDecoration: "underline" }}
+            >
+              🔒 Users →
+            </Link>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+              Invite users, change roles, deactivate accounts, reset passwords,
+              assign per-user entity access. Restricted to admins.
+            </span>
+            <Link
+              href="/settings/audit-log"
+              style={{ color: "var(--ink)", textDecoration: "underline" }}
+            >
+              🔒 Audit log →
+            </Link>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+              Immutable record of every login, mutation, and admin action.
+              Restricted to super admins.
+            </span>
+          </div>
+        </Section>
       </div>
     </>
   );
