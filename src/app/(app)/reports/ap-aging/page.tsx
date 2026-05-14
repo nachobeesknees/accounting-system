@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   DEMO_TODAY,
+  getBankAccounts,
   getBills,
   getCustomers,
   getEntities,
@@ -41,17 +42,49 @@ function daysBetween(from: Date, to: Date): number {
 export default async function Page() {
   const today = DEMO_TODAY;
 
-  const [bills, vendors, customers, entities, kpis] = await Promise.all([
-    getBills(),
-    getVendors(),
-    getCustomers(),
-    getEntities(),
-    getKpis(),
-  ]);
+  const [bills, vendors, customers, entities, kpis, bankAccounts] =
+    await Promise.all([
+      getBills(),
+      getVendors(),
+      getCustomers(),
+      getEntities(),
+      getKpis(),
+      getBankAccounts(),
+    ]);
 
   const vendorsById = new Map(vendors.map((v) => [v.id, v] as const));
   const customersById = new Map(customers.map((c) => [c.id, c] as const));
   const entitiesById = new Map(entities.map((e) => [e.id, e] as const));
+
+  // Pick the bank account most likely to fund a given bill: prefer one
+  // tied to the bill's on-behalf-of entity, else the on-behalf-of client,
+  // else fall back to the first active firm bank account (best-effort —
+  // bills don't carry an explicit pay-from field today).
+  const activeBanks = bankAccounts.filter((b) => b.isActive);
+  const bankByEntity = new Map(
+    activeBanks
+      .filter((b) => b.entityId)
+      .map((b) => [b.entityId as string, b] as const),
+  );
+  const bankByClient = new Map(
+    activeBanks
+      .filter((b) => b.clientId && !b.entityId)
+      .map((b) => [b.clientId as string, b] as const),
+  );
+  const fallbackBank = activeBanks.find((b) => !b.entityId && !b.clientId)
+    ?? activeBanks[0];
+  function pickBank(bill: {
+    entityId?: string | null;
+    clientId?: string | null;
+  }) {
+    if (bill.entityId && bankByEntity.has(bill.entityId)) {
+      return bankByEntity.get(bill.entityId);
+    }
+    if (bill.clientId && bankByClient.has(bill.clientId)) {
+      return bankByClient.get(bill.clientId);
+    }
+    return fallbackBank;
+  }
 
   // Per-vendor bucket totals + a flat list of selectable rows.
   type VendorAgingRow = {
@@ -92,6 +125,7 @@ export default async function Page() {
 
     totalPayable += balance;
 
+    const bank = pickBank(bill);
     flatRows.push({
       id: bill.id,
       billNumber: bill.billNumber,
@@ -99,6 +133,7 @@ export default async function Page() {
       vendorId: bill.vendorId,
       clientName: client?.name ?? "—",
       entityName: entity?.name ?? "—",
+      bankAccountName: bank?.name ?? "—",
       billDate: bill.billDate,
       dueDate: bill.dueDate,
       daysOverdue,
@@ -328,7 +363,7 @@ export default async function Page() {
         </Card>
 
         <Card title="Bills to pay">
-          <SelectableBillsTable rows={flatRows} />
+          <SelectableBillsTable rows={flatRows} cashOnHand={cash} />
         </Card>
       </div>
     </>
