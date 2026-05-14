@@ -172,6 +172,16 @@ const COLUMNS: ColumnSpec[] = [
   // ---- Security module: per-user attributes ----
   // Stamped every successful Auth.js login. NULL → never logged in.
   { table: "users", column: "last_login_at", type: "timestamp with time zone" },
+
+  // ---- Sales / VAT tax on client invoices ----
+  // tax_rate is the decimal rate (0.0875 → 8.75%). tax_exempt forces
+  // tax_amount to 0 regardless of rate. The customer row carries the
+  // default; the invoice row snapshots it at create time so historical
+  // numbers stay stable when the customer's default later changes.
+  { table: "customers", column: "tax_rate", type: "numeric(5,4)", notNull: true, default: "0" },
+  { table: "customers", column: "tax_exempt", type: "boolean", notNull: true, default: "false" },
+  { table: "invoices",  column: "tax_rate", type: "numeric(5,4)", notNull: true, default: "0" },
+  { table: "invoices",  column: "tax_exempt", type: "boolean", notNull: true, default: "false" },
 ];
 
 const TABLES = [

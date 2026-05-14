@@ -99,6 +99,14 @@ export async function createInvoiceAction(
   ).trim();
   const action = String(formData.get("action") ?? "draft");
 
+  // Tax: rate comes in as a percent ("8.75"); convert to decimal.
+  // Exempt is a checkbox, absent in FormData when unchecked.
+  const taxRatePctRaw = String(formData.get("taxRatePct") ?? "").trim();
+  const taxRatePct = taxRatePctRaw === "" ? 0 : parseFloat(taxRatePctRaw);
+  const taxRate =
+    Number.isFinite(taxRatePct) && taxRatePct > 0 ? taxRatePct / 100 : 0;
+  const taxExempt = formData.get("taxExempt") === "on";
+
   if (!customerId) return { error: "Customer is required." };
   if (!invoiceDate) return { error: "Invoice date is required." };
   if (!dueDate) return { error: "Due date is required." };
@@ -140,6 +148,8 @@ export async function createInvoiceAction(
       ocrText: ocrText === "" ? null : ocrText,
       periodOverrideReason:
         periodOverrideReason === "" ? null : periodOverrideReason,
+      taxRate,
+      taxExempt,
       lines,
     });
 

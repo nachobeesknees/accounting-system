@@ -95,6 +95,12 @@ export function NewInvoiceForm({
   const [notes, setNotes] = useState("");
   const [ocrText, setOcrText] = useState("");
   const [showReview, setShowReview] = useState(false);
+  // Tax: rate is held as a percent string ("8.75") for input UX; the
+  // server action converts back to decimal. Defaults to whatever the
+  // selected customer carries.
+  const [taxRatePct, setTaxRatePct] = useState<string>("0");
+  const [taxExempt, setTaxExempt] = useState<boolean>(false);
+  const [taxTouched, setTaxTouched] = useState<boolean>(false);
 
   // Selection state for the two new widgets.
   const [selectedBillIds, setSelectedBillIds] = useState<Set<string>>(new Set());
@@ -328,6 +334,18 @@ export function NewInvoiceForm({
                 // Reset chargeback selection state on customer change.
                 setSelectedBillIds(new Set());
                 setChargebackBillIds([]);
+                // Pull tax defaults from the picked customer unless the
+                // user has already overridden them on this form.
+                if (!taxTouched) {
+                  const c = customers.find((cc) => cc.id === v);
+                  if (c) {
+                    const rate = parseFloat(c.taxRate ?? "0") || 0;
+                    setTaxRatePct(
+                      (rate * 100).toFixed(4).replace(/\.?0+$/, "") || "0",
+                    );
+                    setTaxExempt(!!c.taxExempt);
+                  }
+                }
               }}
               options={customerOptions}
               emptyLabel="Select customer…"
@@ -351,6 +369,61 @@ export function NewInvoiceForm({
               value={dueDateState}
               onChange={(e) => setDueDateState(e.target.value)}
             />
+          </Row>
+          {/* Tax. Rate as percent for UX; the action converts to decimal.
+              Defaults from the customer's row on customer-change, unless
+              the user has already edited the tax inputs on this form. */}
+          <Row>
+            <div className="flex flex-col gap-1">
+              <label
+                className="text-[11px] uppercase tracking-wider"
+                style={{ color: "var(--ink-3)" }}
+              >
+                Tax rate (%)
+              </label>
+              <input
+                type="number"
+                name="taxRatePct"
+                step="0.0001"
+                min="0"
+                max="100"
+                value={taxRatePct}
+                onChange={(e) => {
+                  setTaxRatePct(e.target.value);
+                  setTaxTouched(true);
+                }}
+                className="px-2 py-1 text-[12.5px] rounded-md outline-none"
+                style={{
+                  background: "var(--paper)",
+                  border: "1px solid var(--line-2)",
+                  color: "var(--ink)",
+                  fontFamily: "var(--font-mono)",
+                }}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label
+                className="text-[11px] uppercase tracking-wider"
+                style={{ color: "var(--ink-3)" }}
+              >
+                Exemption
+              </label>
+              <label
+                className="inline-flex items-center gap-2 text-[12.5px] py-1"
+                style={{ color: "var(--ink-2)" }}
+              >
+                <input
+                  type="checkbox"
+                  name="taxExempt"
+                  checked={taxExempt}
+                  onChange={(e) => {
+                    setTaxExempt(e.target.checked);
+                    setTaxTouched(true);
+                  }}
+                />
+                Tax exempt — no sales tax on this invoice
+              </label>
+            </div>
           </Row>
           <TextareaField
             label="Notes"
@@ -695,6 +768,51 @@ export function NewInvoiceForm({
               <TD num>{formatMoney(subtotal, "USD")}</TD>
               <TD>{""}</TD>
             </TR>
+            {/* Tax + Total rows. When exempt or rate is 0, tax shows 0
+                and Total === Subtotal. The math runs live so the user
+                sees the final invoice amount before submitting. */}
+            {(() => {
+              const ratePct = parseFloat(taxRatePct);
+              const rate =
+                taxExempt || !Number.isFinite(ratePct) || ratePct <= 0
+                  ? 0
+                  : ratePct / 100;
+              const taxAmount = Math.round(subtotal * rate * 100) / 100;
+              const total = subtotal + taxAmount;
+              return (
+                <>
+                  <TR hover={false}>
+                    <TD>{""}</TD>
+                    <TD>{""}</TD>
+                    <TD style={{ color: "var(--ink-3)" }}>
+                      Tax
+                      {taxExempt
+                        ? " (exempt)"
+                        : ratePct > 0
+                          ? ` (${ratePct}%)`
+                          : ""}
+                    </TD>
+                    <TD>{""}</TD>
+                    <TD>{""}</TD>
+                    <TD num style={{ color: "var(--ink-3)" }}>
+                      {formatMoney(taxAmount, "USD")}
+                    </TD>
+                    <TD>{""}</TD>
+                  </TR>
+                  <TR total hover={false}>
+                    <TD>{""}</TD>
+                    <TD>{""}</TD>
+                    <TD style={{ fontWeight: 600 }}>Total</TD>
+                    <TD>{""}</TD>
+                    <TD>{""}</TD>
+                    <TD num style={{ fontWeight: 600 }}>
+                      {formatMoney(total, "USD")}
+                    </TD>
+                    <TD>{""}</TD>
+                  </TR>
+                </>
+              );
+            })()}
           </TBody>
         </Table>
       </Card>

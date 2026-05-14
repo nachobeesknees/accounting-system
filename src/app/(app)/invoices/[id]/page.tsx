@@ -718,7 +718,16 @@ export default async function Page({
               <TR total hover={false}>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD>Tax</TD>
+                <TD>
+                  Tax
+                  {invoice.taxExempt
+                    ? " (exempt)"
+                    : invoice.taxRate && parseFloat(invoice.taxRate) > 0
+                      ? ` (${(parseFloat(invoice.taxRate) * 100).toFixed(
+                          parseFloat(invoice.taxRate) * 100 % 1 === 0 ? 0 : 2,
+                        )}%)`
+                      : ""}
+                </TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
                 <TD num>{formatMoney(invoice.taxAmount, invoice.currencyCode, { compact: true, paren: true })}</TD>

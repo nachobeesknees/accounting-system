@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
+import { getDb, schema } from "@/db";
 import { getSessionUser } from "@/lib/session";
 import {
   addCustomerAssignment,
@@ -119,5 +121,50 @@ export async function removeAssignmentAction(formData: FormData): Promise<void> 
   }
   revalidatePath(`/customers/${customerId}`);
   revalidatePath("/customers");
+  redirect(`/customers/${customerId}?saved=1`);
+}
+
+/**
+ * Update tax defaults on a customer. The rate input is taken as a
+ * percent (e.g. "8.75") and stored as a decimal (0.0875). When the
+ * "Exempt" checkbox is set, the rate stays whatever the user entered
+ * but tax_exempt=true forces invoice tax to 0 — the value is preserved
+ * in case the user later removes the exemption.
+ */
+export async function setCustomerTaxAction(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const customerId = String(formData.get("customerId") ?? "");
+  if (!customerId) {
+    redirect(`/customers?error=${encodeURIComponent("Missing customer id.")}`);
+  }
+
+  const ratePctRaw = String(formData.get("taxRatePct") ?? "").trim();
+  const ratePct = ratePctRaw === "" ? 0 : parseFloat(ratePctRaw);
+  if (!Number.isFinite(ratePct) || ratePct < 0 || ratePct > 100) {
+    redirect(
+      `/customers/${customerId}?error=${encodeURIComponent("Tax rate must be between 0 and 100.")}`,
+    );
+  }
+  const taxRate = ratePct / 100;
+  const taxExempt = formData.get("taxExempt") === "on";
+
+  try {
+    const db = getDb();
+    await db
+      .update(schema.customers)
+      .set({
+        taxRate: taxRate.toFixed(4),
+        taxExempt,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.customers.id, customerId));
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const msg = err instanceof Error ? err.message : "Could not update tax.";
+    redirect(`/customers/${customerId}?error=${encodeURIComponent(msg)}`);
+  }
+  revalidatePath(`/customers/${customerId}`);
   redirect(`/customers/${customerId}?saved=1`);
 }

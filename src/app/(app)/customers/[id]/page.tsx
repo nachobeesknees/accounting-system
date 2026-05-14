@@ -65,6 +65,7 @@ import {
   addAssignmentAction,
   removeAssignmentAction,
   setAssignedUserAction,
+  setCustomerTaxAction,
 } from "./actions";
 import { setCustomerRegionAction } from "../../regions/actions";
 
@@ -230,6 +231,56 @@ export default async function Page({
               }
             />
             <KV k="Payment terms" v={`Net ${customer.paymentTerms}`} />
+            {/* Tax defaults. The rate field is in percent for UX (8.75
+                vs 0.0875); the action converts back to decimal. The
+                "Exempt" checkbox forces invoice tax=0 regardless of rate
+                so the user can preserve a rate while pausing tax. */}
+            <KV
+              k="Sales tax"
+              v={
+                <form
+                  action={setCustomerTaxAction}
+                  className="flex items-center gap-2 flex-wrap"
+                >
+                  <input type="hidden" name="customerId" value={customer.id} />
+                  <span className="flex items-center gap-1 text-[12.5px]">
+                    <input
+                      type="number"
+                      name="taxRatePct"
+                      step="0.0001"
+                      min="0"
+                      max="100"
+                      defaultValue={(
+                        parseFloat(customer.taxRate ?? "0") * 100
+                      ).toFixed(4).replace(/\.?0+$/, "") || "0"}
+                      className="px-1.5 py-0.5 rounded-md outline-none"
+                      style={{
+                        background: "var(--paper)",
+                        border: "1px solid var(--line-2)",
+                        color: "var(--ink)",
+                        fontFamily: "var(--font-mono)",
+                        width: 72,
+                      }}
+                    />
+                    <span style={{ color: "var(--ink-3)" }}>%</span>
+                  </span>
+                  <label
+                    className="flex items-center gap-1 text-[12.5px]"
+                    style={{ color: "var(--ink-2)" }}
+                  >
+                    <input
+                      type="checkbox"
+                      name="taxExempt"
+                      defaultChecked={!!customer.taxExempt}
+                    />
+                    Exempt
+                  </label>
+                  <Button variant="ghost" type="submit">
+                    Save
+                  </Button>
+                </form>
+              }
+            />
             <KV
               k="Region"
               v={

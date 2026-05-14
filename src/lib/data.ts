@@ -477,6 +477,8 @@ function mapCustomer(r: typeof schema.customers.$inferSelect): Customer {
     paymentTerms: r.paymentTerms,
     assignedUserId: r.assignedUserId,
     regionId: (r as { regionId?: string | null }).regionId ?? null,
+    taxRate: (r as { taxRate?: string }).taxRate ?? "0",
+    taxExempt: (r as { taxExempt?: boolean }).taxExempt ?? false,
     isActive: r.isActive,
     notes: r.notes,
   };
@@ -658,6 +660,8 @@ function mapInvoice(
     rejectedBy: r.rejectedBy,
     rejectionReason: r.rejectionReason,
     subtotal: r.subtotal,
+    taxRate: (r as { taxRate?: string }).taxRate ?? "0",
+    taxExempt: (r as { taxExempt?: boolean }).taxExempt ?? false,
     taxAmount: r.taxAmount,
     total: r.total,
     amountPaid: r.amountPaid,

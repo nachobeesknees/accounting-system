@@ -2172,6 +2172,8 @@ export async function removeCustomerAssignment(
 
 const AR_ACCOUNT_ID = "a-1200";
 const AP_ACCOUNT_ID = "a-2000";
+/** Sales / VAT tax credited when an invoice with tax > 0 is posted. */
+const SALES_TAX_PAYABLE_ACCOUNT_ID = "a-2200";
 const DEFAULT_CASH_ACCOUNT_ID = "a-1000";
 const SERVICE_REVENUE_ACCOUNT_ID = "a-4000";
 
@@ -2193,6 +2195,11 @@ export type CreateInvoiceInput = {
   ocrText?: string | null;
   /** Required when the invoice date falls inside a soft-closed period. */
   periodOverrideReason?: string | null;
+  /** Optional tax rate override (decimal, 0.0875 = 8.75%). When omitted
+   *  we snapshot the customer's default. */
+  taxRate?: number | null;
+  /** Optional tax exemption override. Snapshots from customer when omitted. */
+  taxExempt?: boolean;
   lines: DraftInvoiceLine[];
 };
 
@@ -2221,6 +2228,28 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
   // straight away rather than always defaulting to USD.
   const { firmEntityId, currencyCode } = await getFirmIssuingCurrency();
 
+  // Tax: pull customer defaults, allow per-invoice override, snapshot
+  // both rate + exempt onto the invoice row so historical totals stay
+  // stable when the customer's default later changes.
+  const [cust] = await db
+    .select({
+      taxRate: schema.customers.taxRate,
+      taxExempt: schema.customers.taxExempt,
+    })
+    .from(schema.customers)
+    .where(eq(schema.customers.id, input.customerId))
+    .limit(1);
+  const taxRate =
+    input.taxRate != null
+      ? Math.max(0, input.taxRate)
+      : parseFloat(cust?.taxRate ?? "0") || 0;
+  const taxExempt = input.taxExempt ?? !!cust?.taxExempt;
+  const taxAmount =
+    taxExempt || taxRate === 0
+      ? 0
+      : Math.round(subtotal * taxRate * 100) / 100;
+  const total = subtotal + taxAmount;
+
   await db.transaction(async (tx) => {
     await tx.insert(schema.invoices).values({
       id,
@@ -2230,10 +2259,12 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
       dueDate: input.dueDate,
       status: "draft",
       subtotal: toDecimalString(subtotal),
-      taxAmount: "0.00",
-      total: toDecimalString(subtotal),
+      taxRate: taxRate.toFixed(4),
+      taxExempt,
+      taxAmount: toDecimalString(taxAmount),
+      total: toDecimalString(total),
       amountPaid: "0.00",
-      balanceDue: toDecimalString(subtotal),
+      balanceDue: toDecimalString(total),
       currencyCode,
       firmEntityId,
       notes: input.notes ?? null,
@@ -2317,7 +2348,14 @@ export async function postInvoice(
     .where(eq(schema.invoiceLines.invoiceId, invoiceId));
   if (lines.length === 0) throw new Error("Invoice has no lines.");
 
-  const total = lines.reduce((s, l) => s + parseFloat(l.amount), 0);
+  // Use the persisted totals so the JE matches whatever the invoice
+  // table says (including tax). Falls back to summing lines for legacy
+  // rows where total wasn't persisted yet.
+  const subtotal =
+    parseFloat(inv.subtotal) ||
+    lines.reduce((s, l) => s + parseFloat(l.amount), 0);
+  const taxAmount = parseFloat(inv.taxAmount) || 0;
+  const total = parseFloat(inv.total) || subtotal + taxAmount;
   const jeLines: DraftJournalLine[] = [
     {
       accountId: AR_ACCOUNT_ID,
@@ -2332,6 +2370,17 @@ export async function postInvoice(
       credit: parseFloat(l.amount),
     })),
   ];
+  // Tax credit balances the AR debit that includes tax. Only add the
+  // Tax Payable leg when there's actually tax — keeps zero-tax JEs
+  // unchanged from the old behavior.
+  if (taxAmount > 0) {
+    jeLines.push({
+      accountId: SALES_TAX_PAYABLE_ACCOUNT_ID,
+      description: `Sales tax — ${inv.invoiceNumber}`,
+      debit: 0,
+      credit: taxAmount,
+    });
+  }
 
   const entityId =
     inv.entityId ?? (await getPrimaryEntityForCustomer(inv.customerId));

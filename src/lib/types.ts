@@ -503,6 +503,10 @@ export type Customer = {
   assignedUserId: string | null;
   /** Optional region (soft FK → regions.id). */
   regionId?: string | null;
+  /** Default sales-tax rate as decimal (0.0875 = 8.75%). 0 = no tax. */
+  taxRate?: string;
+  /** Hard exemption — every invoice for this client gets tax=0. */
+  taxExempt?: boolean;
   isActive: boolean;
   notes: string | null;
 };
@@ -560,6 +564,10 @@ export type Invoice = {
   rejectedBy: string | null;
   rejectionReason: string | null;
   subtotal: string;
+  /** Tax rate snapshot from customer at create time. Decimal (0.0875 = 8.75%). */
+  taxRate?: string;
+  /** Tax exemption snapshot at create time. */
+  taxExempt?: boolean;
   taxAmount: string;
   total: string;
   amountPaid: string;
