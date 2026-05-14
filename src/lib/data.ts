@@ -1917,10 +1917,22 @@ export type EntityPlRow = {
   netIncome: number;
 };
 
-export async function getEntityPlRollup(): Promise<EntityPlRow[]> {
+/**
+ * Per-entity P&L rollup.
+ *
+ *   scope === "all"  → every posted entry, regardless of firm
+ *   scope === null   → only firm-level entries (firm_entity_id IS NULL).
+ *                       Rare; mostly empty after backfill.
+ *   scope === string → only entries booked under that firm entity
+ *                       (office). Lets the dashboard P&L card scope down
+ *                       when the topbar is on OFC-NY or OFC-SF — so
+ *                       "All entities" minus the visible firms add up.
+ */
+export async function getEntityPlRollup(
+  scope: string | null | "all" = "all",
+): Promise<EntityPlRow[]> {
   const db = getDb();
-  // Pull every posted line + entry.entityId + account.accountType in one shot.
-  const rows = await db
+  const q = db
     .select({
       entityId: schema.journalEntries.entityId,
       accountType: schema.accounts.accountType,
@@ -1935,8 +1947,26 @@ export async function getEntityPlRollup(): Promise<EntityPlRow[]> {
     .innerJoin(
       schema.accounts,
       eq(schema.journalLines.accountId, schema.accounts.id),
-    )
-    .where(eq(schema.journalEntries.status, "posted"));
+    );
+
+  let rows;
+  if (scope === "all") {
+    rows = await q.where(eq(schema.journalEntries.status, "posted"));
+  } else if (scope == null) {
+    rows = await q.where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        isNull(schema.journalEntries.firmEntityId),
+      ),
+    );
+  } else {
+    rows = await q.where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        eq(schema.journalEntries.firmEntityId, scope),
+      ),
+    );
+  }
 
   const buckets = new Map<string | null, { revenue: number; expenses: number }>();
   for (const r of rows) {

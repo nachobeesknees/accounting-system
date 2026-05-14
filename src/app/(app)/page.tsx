@@ -25,6 +25,7 @@ import {
 import { formatAmount, formatMoney } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
 import { parseAmount } from "@/lib/money";
+import { getEntityScope } from "@/lib/entity-scope";
 import { getSessionUser } from "@/lib/session";
 import { hasPermission } from "@/lib/permissions";
 import {
@@ -156,6 +157,12 @@ export default async function Page() {
   // below always has rows. Safe to re-call — only inserts what's missing.
   await ensureAccountingPeriods(new Date().getUTCFullYear());
 
+  // Topbar firm-entity scope drives the same filter on KPIs, P&L, and
+  // aging. Reading the cookie once here means every helper that takes
+  // a scope sees the same value.
+  const firmScope = await getEntityScope();
+  const plScope = firmScope ?? "all";
+
   const demoTodayIso = DEMO_TODAY.toISOString().slice(0, 10);
   const [
     kpis,
@@ -183,7 +190,7 @@ export default async function Page() {
     getCustomers(),
     getVendors(),
     getEntities(),
-    getEntityPlRollup(),
+    getEntityPlRollup(plScope),
     getBaseCurrency(),
     getLatestFxRates(),
     user
