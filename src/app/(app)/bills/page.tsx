@@ -17,6 +17,7 @@ import {
 import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
+import { duplicateBillAction } from "../duplicate-actions";
 import type { Bill, Customer, Entity, Vendor } from "@/lib/types";
 
 function filterBills(
@@ -212,6 +213,7 @@ export default async function Page({
                   <TH num>Total (USD)</TH>
                   <TH num>Balance (USD)</TH>
                   <TH>Status</TH>
+                  <TH>{""}</TH>
                 </TR>
               </THead>
               <TBody>
@@ -258,6 +260,26 @@ export default async function Page({
                           {statusLabel(bill.status)}
                         </Pill>
                       </TD>
+                      <TD>
+                        <form action={duplicateBillAction}>
+                          <input type="hidden" name="billId" value={bill.id} />
+                          <button
+                            type="submit"
+                            title="Duplicate as draft"
+                            style={{
+                              background: "transparent",
+                              border: "1px solid var(--line-2)",
+                              borderRadius: 4,
+                              color: "var(--ink-3)",
+                              cursor: "pointer",
+                              fontSize: 11,
+                              padding: "1px 6px",
+                            }}
+                          >
+                            Duplicate
+                          </button>
+                        </form>
+                      </TD>
                     </TR>
                   );
                 })}
@@ -270,6 +292,7 @@ export default async function Page({
                   <TD>{""}</TD>
                   <TD num>{formatMoney(totalSum, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                   <TD num>{formatMoney(balanceSum, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
+                  <TD>{""}</TD>
                   <TD>{""}</TD>
                 </TR>
               </TBody>

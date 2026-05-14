@@ -30,13 +30,14 @@ Agents: read this file before starting work. Check off items as you complete the
 - [x] Entity detail double-USD fix
 - [x] Neon serverless driver (fix for production 500 errors)
 - [x] Contact lookup by id OR code
+- [x] Global search upgrade (⌘K) — grouped results by record type, recent searches, full-text search
+- [x] Payment recommendation/selection tool — select bills to pay on AP aging, show live cash forecast impact, CSV export
 - [x] Smart searchable dropdowns (SmartSelect/Combobox) — `SmartSelect` + `SmartSelectField` at `src/components/ui/SmartSelect.tsx`; typed search, keyboard nav, grouped options, ARIA, portal positioning. Migrated every native `<select>` plus all large-list `SelectField` call-sites (accounts, customers, vendors, entities, contacts, currencies, offices, users, regions, region-groups, employees on AR aging). Small enum fields (status/kind/role/frequency) stay on native `SelectField`.
 
 ---
 
 ## 🔄 In Progress
 - [ ] JE UI redesign — compact spreadsheet-style line items, remove project field, keep department inline
-- [ ] Duplicate/clone action on invoices, bills, and journal entries
 - [ ] Vendor invoice number rules — prefix/pattern per vendor, auto-suggest next number, duplicate warning
 
 ---
@@ -44,9 +45,7 @@ Agents: read this file before starting work. Check off items as you complete the
 ## 📋 Pending
 
 ### Features
-- [ ] Global search upgrade (⌘K) — grouped results by record type, recent searches, full-text search
 - [ ] Document OCR — upload PDF/image on any form, call Claude Haiku to extract data and pre-fill fields (needs ANTHROPIC_API_KEY in Vercel env)
-- [ ] Payment recommendation/selection tool — select bills to pay on AP aging, show live cash forecast impact, CSV export
 - [ ] Real authentication — replace demo/cookie auth with proper login (user accounts, passwords or SSO)
 - [ ] Plaid bank account integration (Phase 2) — daily balance sync
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useFormState } from "react-dom";
 
 import { Button, ButtonLink } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, TextareaField } from "@/components/ui/Field";
+import { Pill } from "@/components/ui/Pill";
 import {
   SmartSelect,
   SmartSelectField,
@@ -21,6 +22,7 @@ import type {
   Entity,
   Vendor,
 } from "@/lib/types";
+import { suggestNextVendorInvoiceNumber } from "@/lib/vendor-invoice-numbers";
 
 import { createBillAction, type CreateBillState } from "./actions";
 
@@ -75,6 +77,65 @@ export function NewBillForm({
   const [cbMethod, setCbMethod] = useState<CbMethod>("cost");
   const [markupPct, setMarkupPct] = useState<string>("");
   const [rebillAmount, setRebillAmount] = useState<string>("");
+  const [vendorInvoiceNumber, setVendorInvoiceNumber] = useState<string>(() =>
+    vendors[0] ? suggestNextVendorInvoiceNumber(vendors[0]) ?? "" : "",
+  );
+  // Tracks whether the current vendor invoice number was hand-typed. When
+  // true, we leave it alone on vendor changes so the user's edits aren't
+  // clobbered by the auto-suggest.
+  const userTypedRef = useRef<boolean>(false);
+  const [duplicate, setDuplicate] = useState<{
+    billId: string;
+    billNumber: string;
+  } | null>(null);
+  const [checking, setChecking] = useState<boolean>(false);
+
+  const vendorById = useMemo(
+    () => new Map(vendors.map((v) => [v.id, v] as const)),
+    [vendors],
+  );
+
+  // Debounced duplicate check against /api/bills/check-duplicate. The
+  // result is a soft warning — the form remains submittable.
+  useEffect(() => {
+    if (!vendorId || vendorInvoiceNumber.trim() === "") {
+      setDuplicate(null);
+      setChecking(false);
+      return;
+    }
+    setChecking(true);
+    const controller = new AbortController();
+    const t = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/bills/check-duplicate?vendorId=${encodeURIComponent(
+            vendorId,
+          )}&number=${encodeURIComponent(vendorInvoiceNumber.trim())}`,
+          { signal: controller.signal, credentials: "same-origin" },
+        );
+        if (!res.ok) {
+          setDuplicate(null);
+          return;
+        }
+        const body = (await res.json()) as
+          | { duplicate: false }
+          | { duplicate: true; billId: string; billNumber: string };
+        if (body.duplicate) {
+          setDuplicate({ billId: body.billId, billNumber: body.billNumber });
+        } else {
+          setDuplicate(null);
+        }
+      } catch {
+        // Aborts, network errors — just clear the warning.
+      } finally {
+        setChecking(false);
+      }
+    }, 300);
+    return () => {
+      controller.abort();
+      clearTimeout(t);
+    };
+  }, [vendorId, vendorInvoiceNumber]);
 
   // When the user picks a client, narrow the entity list. When the user picks
   // an entity, default-fill the client to match.
@@ -209,13 +270,22 @@ export function NewBillForm({
 
   function onVendorChange(newId: string) {
     setVendorId(newId);
-    const defaultAcct =
-      vendors.find((v) => v.id === newId)?.defaultExpenseAccountId ?? "";
+    const v = vendorById.get(newId);
+    const defaultAcct = v?.defaultExpenseAccountId ?? "";
     if (defaultAcct) {
       setLines((prev) =>
         prev.map((l) => (l.accountId ? l : { ...l, accountId: defaultAcct })),
       );
     }
+    if (!userTypedRef.current) {
+      const next = v ? suggestNextVendorInvoiceNumber(v) ?? "" : "";
+      setVendorInvoiceNumber(next);
+    }
+  }
+
+  function onVendorInvoiceNumberChange(value: string) {
+    userTypedRef.current = true;
+    setVendorInvoiceNumber(value);
   }
 
   return (
@@ -248,8 +318,77 @@ export function NewBillForm({
             <Field
               label="Reference"
               name="reference"
-              placeholder="Vendor's invoice/bill #"
+              placeholder="Internal reference (optional)"
             />
+          </Row>
+          <Row>
+            <div className="flex flex-col gap-1">
+              <label className="flex flex-col gap-1">
+                <span
+                  className="text-[11.5px]"
+                  style={{ color: "var(--ink-3)" }}
+                >
+                  Vendor invoice #
+                  {checking && (
+                    <span
+                      className="ml-2"
+                      style={{ color: "var(--ink-4)", fontSize: 11 }}
+                    >
+                      checking…
+                    </span>
+                  )}
+                </span>
+                <input
+                  type="text"
+                  name="vendorInvoiceNumber"
+                  value={vendorInvoiceNumber}
+                  onChange={(e) =>
+                    onVendorInvoiceNumberChange(e.target.value)
+                  }
+                  placeholder={
+                    vendorById.get(vendorId)?.invoiceNumberPattern ??
+                    "Vendor's invoice number"
+                  }
+                  className="px-2.5 py-1.5 text-[13px] rounded-md outline-none"
+                  style={{
+                    background: "var(--paper)",
+                    border: "1px solid var(--line-2)",
+                    color: "var(--ink)",
+                    fontFamily: "var(--font-mono)",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                />
+              </label>
+              {duplicate ? (
+                <div className="flex items-center gap-2 text-[11.5px]">
+                  <Pill variant="review">Duplicate</Pill>
+                  <span style={{ color: "var(--ink-3)" }}>
+                    Already on bill{" "}
+                    <a
+                      href={`/bills/${duplicate.billId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        color: "var(--ink-2)",
+                        fontFamily: "var(--font-mono)",
+                        textDecoration: "underline",
+                      }}
+                    >
+                      {duplicate.billNumber}
+                    </a>
+                    . You can still save.
+                  </span>
+                </div>
+              ) : vendorById.get(vendorId)?.invoiceNumberPattern ? (
+                <span
+                  className="text-[11px]"
+                  style={{ color: "var(--ink-4)", lineHeight: 1.4 }}
+                >
+                  Suggested from vendor's "{vendorById.get(vendorId)?.invoiceNumberPattern}" rule.
+                </span>
+              ) : null}
+            </div>
+            <div />
           </Row>
           <Row>
             <Field

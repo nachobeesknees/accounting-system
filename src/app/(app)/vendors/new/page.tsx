@@ -46,6 +46,15 @@ export default async function Page({
     const defaultExpenseAccountId = String(
       formData.get("defaultExpenseAccountId") ?? "",
     ).trim();
+    const invoiceNumberPrefix = String(
+      formData.get("invoiceNumberPrefix") ?? "",
+    ).trim();
+    const invoiceNumberPattern = String(
+      formData.get("invoiceNumberPattern") ?? "",
+    ).trim();
+    const invoiceNumberLastUsed = String(
+      formData.get("invoiceNumberLastUsed") ?? "",
+    ).trim();
 
     if (!code) {
       redirect("/vendors/new?error=" + encodeURIComponent("Code is required."));
@@ -69,6 +78,9 @@ export default async function Page({
         address: address || null,
         paymentTerms,
         defaultExpenseAccountId: defaultExpenseAccountId || null,
+        invoiceNumberPrefix: invoiceNumberPrefix || null,
+        invoiceNumberPattern: invoiceNumberPattern || null,
+        invoiceNumberLastUsed: invoiceNumberLastUsed || null,
       });
       revalidatePath("/vendors");
       revalidatePath("/");
@@ -161,6 +173,35 @@ export default async function Page({
                 emptyLabel="— None —"
                 clearable
               />
+            </Row>
+          </Section>
+
+          <Section title="Invoice numbering rule (optional)">
+            <Row>
+              <Field
+                label="Prefix"
+                name="invoiceNumberPrefix"
+                placeholder="INV-"
+                mono
+                help="Informational only — drives the placeholder shown on bill entry."
+              />
+              <Field
+                label="Pattern"
+                name="invoiceNumberPattern"
+                placeholder="INV-YYYY-####"
+                mono
+                help="Placeholders: YYYY, YY, MM, DD, ####. Used when no last-used value exists."
+              />
+            </Row>
+            <Row>
+              <Field
+                label="Last used"
+                name="invoiceNumberLastUsed"
+                placeholder="INV-2025-0042"
+                mono
+                help="Next suggestion increments the trailing digits of this value."
+              />
+              <div />
             </Row>
           </Section>
 
