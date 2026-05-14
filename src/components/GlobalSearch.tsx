@@ -25,6 +25,18 @@ const TYPE_LABEL: Record<SearchResultType, string> = {
   bank_account: "Bank Accounts",
 };
 
+const TYPE_LABEL_SINGULAR: Record<SearchResultType, string> = {
+  client: "Client",
+  entity: "Entity",
+  contact: "Contact",
+  invoice: "Invoice",
+  bill: "Bill",
+  journal_entry: "Journal Entry",
+  account: "Account",
+  asset: "Asset",
+  bank_account: "Bank Account",
+};
+
 const TYPE_ORDER: SearchResultType[] = [
   "client",
   "entity",
@@ -490,7 +502,7 @@ function Row({
         className="text-[10.5px] uppercase shrink-0"
         style={{ color: "var(--ink-4)", letterSpacing: "0.05em" }}
       >
-        {TYPE_LABEL[item.type].replace(/s$/, "")}
+        {TYPE_LABEL_SINGULAR[item.type]}
       </span>
     </button>
   );
