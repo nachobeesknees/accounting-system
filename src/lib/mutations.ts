@@ -2348,6 +2348,9 @@ export type DraftBillLine = {
   quantity: number;
   unitPrice: number;
   accountId: string; // expense account
+  /** Optional per-line client/entity allocation (inherits header default). */
+  clientId?: string | null;
+  entityId?: string | null;
   /** Dimension map: { [dimension.key]: dimension_value.id }. Defaults to {}. */
   dimensions?: Record<string, string>;
 };
@@ -2358,6 +2361,9 @@ export type CreateBillInput = {
   dueDate: string;
   reference?: string | null;
   notes?: string | null;
+  /** Who the bill is on-behalf-of (separate from chargeback rebill target). */
+  clientId?: string | null;
+  entityId?: string | null;
   lines: DraftBillLine[];
   // Optional chargeback config — if `chargebackType` is set the bill is
   // marked as rebillable. "included" means just reference the client/entity
@@ -2405,6 +2411,8 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
       currencyCode,
       notes: input.notes ?? null,
       journalEntryId: null,
+      clientId: input.clientId ?? null,
+      entityId: input.entityId ?? null,
       chargebackClientId: input.chargebackClientId ?? null,
       chargebackEntityId: input.chargebackEntityId ?? null,
       chargebackType: input.chargebackType ?? null,
@@ -2426,6 +2434,8 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
         unitPrice: toDecimalString(l.unitPrice),
         amount: toDecimalString(l.quantity * l.unitPrice),
         accountId: l.accountId,
+        clientId: l.clientId ?? input.clientId ?? null,
+        entityId: l.entityId ?? input.entityId ?? null,
         dimensions: l.dimensions ?? {},
         createdAt: now,
       })),

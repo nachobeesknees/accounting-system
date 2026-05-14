@@ -7,11 +7,16 @@ import { Field, SelectField } from "@/components/ui/Field";
 import { IconFile } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { getBills, getVendors } from "@/lib/data";
+import {
+  getBills,
+  getCustomers,
+  getEntities,
+  getVendors,
+} from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
-import type { Bill, Vendor } from "@/lib/types";
+import type { Bill, Customer, Entity, Vendor } from "@/lib/types";
 
 function filterBills(
   bills: Bill[],
@@ -19,11 +24,15 @@ function filterBills(
   q: string,
   status: string,
   vendor: string,
+  client: string,
+  entity: string,
 ): Bill[] {
   const needle = q.trim().toLowerCase();
   return bills.filter((bill) => {
     if (status && bill.status !== status) return false;
     if (vendor && bill.vendorId !== vendor) return false;
+    if (client && bill.clientId !== client) return false;
+    if (entity && bill.entityId !== entity) return false;
     if (needle) {
       const vend = vendorsById.get(bill.vendorId);
       const hay = `${bill.billNumber} ${vend?.name ?? ""} ${vend?.code ?? ""}`.toLowerCase();
@@ -36,19 +45,54 @@ function filterBills(
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; vendor?: string; q?: string }>;
+  searchParams: Promise<{
+    status?: string;
+    vendor?: string;
+    client?: string;
+    entity?: string;
+    q?: string;
+  }>;
 }) {
   const params = await searchParams;
   const q = params.q ?? "";
   const status = params.status ?? "";
   const vendorId = params.vendor ?? "";
+  const clientId = params.client ?? "";
+  const entityId = params.entity ?? "";
 
-  const [allBills, allVendors] = await Promise.all([getBills(), getVendors()]);
+  const [allBills, allVendors, allCustomers, allEntities] = await Promise.all([
+    getBills(),
+    getVendors(),
+    getCustomers(),
+    getEntities(),
+  ]);
   const vendorsById = new Map(allVendors.map((v) => [v.id, v] as const));
-  const rows = filterBills(allBills, vendorsById, q, status, vendorId)
+  const customersById = new Map<string, Customer>(
+    allCustomers.map((c) => [c.id, c] as const),
+  );
+  const entitiesById = new Map<string, Entity>(
+    allEntities.map((e) => [e.id, e] as const),
+  );
+  const rows = filterBills(
+    allBills,
+    vendorsById,
+    q,
+    status,
+    vendorId,
+    clientId,
+    entityId,
+  )
     .slice()
     .sort((a, b) => b.billDate.localeCompare(a.billDate));
   const vendors = allVendors.slice().sort((a, b) => a.name.localeCompare(b.name));
+  const customers = allCustomers
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const entitiesFiltered = (
+    clientId ? allEntities.filter((e) => e.clientId === clientId) : allEntities
+  )
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const totalSum = rows.reduce((s, b) => s + parseAmount(b.total), 0);
   const balanceSum = rows.reduce((s, b) => s + parseAmount(b.balanceDue), 0);
@@ -96,6 +140,22 @@ export default async function Page({
               </option>
             ))}
           </SelectField>
+          <SelectField label="Client" name="client" defaultValue={clientId}>
+            <option value="">All</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField label="Entity" name="entity" defaultValue={entityId}>
+            <option value="">All</option>
+            {entitiesFiltered.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+              </option>
+            ))}
+          </SelectField>
           <Button variant="primary" type="submit">
             Apply
           </Button>
@@ -132,6 +192,8 @@ export default async function Page({
                 <TR hover={false}>
                   <TH>Bill #</TH>
                   <TH>Vendor</TH>
+                  <TH>Client</TH>
+                  <TH>Entity</TH>
                   <TH>Date</TH>
                   <TH>Due</TH>
                   <TH num>Total (USD)</TH>
@@ -142,6 +204,8 @@ export default async function Page({
               <TBody>
                 {rows.map((bill) => {
                   const vend = vendorsById.get(bill.vendorId);
+                  const client = bill.clientId ? customersById.get(bill.clientId) : null;
+                  const ent = bill.entityId ? entitiesById.get(bill.entityId) : null;
                   const bal = parseAmount(bill.balanceDue);
                   const isOverdue = bill.status === "overdue" && bal > 0;
                   return (
@@ -155,6 +219,8 @@ export default async function Page({
                         </Link>
                       </TD>
                       <TD>{vend?.name ?? "—"}</TD>
+                      <TD>{client?.name ?? "—"}</TD>
+                      <TD>{ent?.name ?? "—"}</TD>
                       <TD>{formatDate(bill.billDate)}</TD>
                       <TD>{formatDate(bill.dueDate)}</TD>
                       <TD num>
@@ -184,6 +250,8 @@ export default async function Page({
                 })}
                 <TR total hover={false}>
                   <TD>Total</TD>
+                  <TD>{""}</TD>
+                  <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD>{""}</TD>

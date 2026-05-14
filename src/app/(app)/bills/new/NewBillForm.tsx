@@ -61,6 +61,8 @@ export function NewBillForm({
 }) {
   const [state, formAction] = useFormState(createBillAction, INITIAL_STATE);
   const [vendorId, setVendorId] = useState<string>(vendors[0]?.id ?? "");
+  const [clientId, setClientId] = useState<string>("");
+  const [entityId, setEntityId] = useState<string>("");
   const [lines, setLines] = useState<Line[]>([
     blankLine(vendors[0]?.defaultExpenseAccountId ?? ""),
   ]);
@@ -68,6 +70,29 @@ export function NewBillForm({
   const [cbMethod, setCbMethod] = useState<CbMethod>("cost");
   const [markupPct, setMarkupPct] = useState<string>("");
   const [rebillAmount, setRebillAmount] = useState<string>("");
+
+  // When the user picks a client, narrow the entity list. When the user picks
+  // an entity, default-fill the client to match.
+  const entitiesForClient = useMemo(
+    () => (clientId ? entities.filter((e) => e.clientId === clientId) : entities),
+    [entities, clientId],
+  );
+
+  function onClientChange(next: string) {
+    setClientId(next);
+    if (next && entityId) {
+      const ent = entities.find((e) => e.id === entityId);
+      if (ent && ent.clientId !== next) setEntityId("");
+    }
+  }
+
+  function onEntityChange(next: string) {
+    setEntityId(next);
+    const ent = entities.find((e) => e.id === next);
+    if (ent && ent.clientId && ent.clientId !== clientId) {
+      setClientId(ent.clientId);
+    }
+  }
 
   const subtotal = useMemo(
     () =>
@@ -184,6 +209,38 @@ export function NewBillForm({
               required
               defaultValue={defaultDueDate}
             />
+          </Row>
+          <Row>
+            <SelectField
+              label="Client"
+              name="clientId"
+              value={clientId}
+              onChange={(e) => onClientChange(e.target.value)}
+            >
+              <option value="">— None —</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              label="Entity"
+              name="entityId"
+              value={entityId}
+              onChange={(e) => onEntityChange(e.target.value)}
+            >
+              <option value="">— None —</option>
+              {entitiesForClient.map((e) => {
+                const owner = customerById.get(e.clientId);
+                return (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                    {owner && !clientId ? ` · ${owner.name}` : ""}
+                  </option>
+                );
+              })}
+            </SelectField>
           </Row>
           <TextareaField
             label="Notes"

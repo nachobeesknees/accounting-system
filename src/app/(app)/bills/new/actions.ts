@@ -98,6 +98,8 @@ export async function createBillAction(
   const reference = String(formData.get("reference") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const action = String(formData.get("action") ?? "draft");
+  const clientIdRaw = String(formData.get("clientId") ?? "").trim();
+  const entityIdRaw = String(formData.get("entityId") ?? "").trim();
 
   if (!vendorId) return { error: "Vendor is required." };
   if (!billDate) return { error: "Bill date is required." };
@@ -177,6 +179,8 @@ export async function createBillAction(
       dueDate,
       reference: reference === "" ? null : reference,
       notes: notes === "" ? null : notes,
+      clientId: clientIdRaw === "" ? null : clientIdRaw,
+      entityId: entityIdRaw === "" ? null : entityIdRaw,
       lines,
       ...chargeback,
     });

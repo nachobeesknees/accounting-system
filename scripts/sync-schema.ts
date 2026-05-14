@@ -94,6 +94,12 @@ const COLUMNS: ColumnSpec[] = [
   //                  'markup' = bill amount × (1 + markup_pct/100)
   //                  'fixed' = rebill_amount (override)
   //                  'included' = included in annual fee (no rebill)
+  // Bill on-behalf-of: who the bill was incurred for (vs. chargeback which
+  // tracks if the bill is rebilled). Both nullable; firms can scope by either.
+  { table: "bills", column: "client_id", type: "text" },
+  { table: "bills", column: "entity_id", type: "text" },
+  { table: "bill_lines", column: "client_id", type: "text" },
+  { table: "bill_lines", column: "entity_id", type: "text" },
   { table: "bills", column: "chargeback_client_id", type: "text" },
   { table: "bills", column: "chargeback_entity_id", type: "text" },
   { table: "bills", column: "chargeback_type", type: "text" },
