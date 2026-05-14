@@ -186,6 +186,35 @@ const TABLES = [
     )`,
   },
   {
+    // Polymorphic file attachments stored on Vercel Blob. Keyed by
+    // (record_type, record_id) so any entity in the system (assets, bills,
+    // invoices, contacts, ...) can have files attached. Without this
+    // table every detail page that calls getAttachments() server-side
+    // crashes — that's the "Something went wrong" the user saw on
+    // /aua/as-008.
+    name: "attachments",
+    ddl: `DO $$ BEGIN
+      CREATE TYPE attachment_record_type AS ENUM (
+        'journal_entry', 'invoice', 'bill', 'contact', 'entity',
+        'asset', 'bank_account', 'fee', 'time_entry', 'other'
+      );
+    EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+    CREATE TABLE IF NOT EXISTS attachments (
+      id text PRIMARY KEY,
+      record_type attachment_record_type NOT NULL,
+      record_id text NOT NULL,
+      file_name text NOT NULL,
+      file_size integer NOT NULL,
+      mime_type text NOT NULL,
+      file_url text NOT NULL,
+      blob_pathname text,
+      uploaded_by text,
+      notes text,
+      document_type text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
     name: "custom_field_values",
     ddl: `CREATE TABLE IF NOT EXISTS custom_field_values (
       id text PRIMARY KEY,
