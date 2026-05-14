@@ -540,6 +540,12 @@ async function main() {
       createdAt: new Date(j.createdAt),
       updatedAt: new Date(j.updatedAt),
       entityId: j.entityId,
+      isTemplate: j.isTemplate ?? false,
+      recurringFrequency: j.recurringFrequency ?? null,
+      recurringDayOfMonth: j.recurringDayOfMonth ?? null,
+      recurringNextDate: j.recurringNextDate ?? null,
+      recurringEndDate: j.recurringEndDate ?? null,
+      recurringParentId: j.recurringParentId ?? null,
     })),
   );
   const allActivityLines = JOURNAL_ENTRIES.flatMap((j) =>

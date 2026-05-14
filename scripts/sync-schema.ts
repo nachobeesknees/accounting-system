@@ -156,6 +156,18 @@ const COLUMNS: ColumnSpec[] = [
   // On the JE head: if set, this entry is an elimination (consolidation
   // adjustment). Self-FK → journal_entries.id (pointer to a source IC JE).
   { table: "journal_entries", column: "elimination_entry_id", type: "text" },
+
+  // ---- Recurring journal entry templates ----
+  // A JE row with is_template=true is a blueprint (status='template'). It
+  // never appears in the ledger. Generated entries copy its lines, start as
+  // status='draft', and back-link via recurring_parent_id.
+  { table: "journal_entries", column: "is_template", type: "boolean", notNull: true, default: "false" },
+  // 'monthly' | 'quarterly' | 'annually' | 'custom'
+  { table: "journal_entries", column: "recurring_frequency", type: "text" },
+  { table: "journal_entries", column: "recurring_day_of_month", type: "integer" },
+  { table: "journal_entries", column: "recurring_next_date", type: "date" },
+  { table: "journal_entries", column: "recurring_end_date", type: "date" },
+  { table: "journal_entries", column: "recurring_parent_id", type: "text" },
 ];
 
 const TABLES = [

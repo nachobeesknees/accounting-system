@@ -36,7 +36,9 @@ export type AccountingPeriod = {
   notes: string | null;
 };
 
-export type JournalEntryStatus = "draft" | "posted" | "void";
+export type JournalEntryStatus = "draft" | "posted" | "void" | "template";
+
+export type RecurringFrequency = "monthly" | "quarterly" | "annually" | "custom";
 
 /**
  * Map of dimension key → dimension value id. Keys match
@@ -88,6 +90,15 @@ export type JournalEntry = {
    * entity scoped views, included in the firm-level consolidated view.
    */
   eliminationEntryId?: string | null;
+  /** Template blueprints never post; they spawn drafts via "Generate next entry". */
+  isTemplate?: boolean;
+  recurringFrequency?: RecurringFrequency | null;
+  /** Day-of-month (1-28) for the next generated entry's date. */
+  recurringDayOfMonth?: number | null;
+  recurringNextDate?: string | null;
+  recurringEndDate?: string | null;
+  /** On a generated entry: id of the template it came from. */
+  recurringParentId?: string | null;
   lines: JournalLine[];
 };
 

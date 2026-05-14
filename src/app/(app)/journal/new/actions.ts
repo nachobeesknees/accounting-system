@@ -6,8 +6,16 @@ import { getSessionUser } from "@/lib/session";
 import { createJournalEntry } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
+import type { RecurringFrequency } from "@/lib/types";
 
 export type CreateEntryState = { error: string | null };
+
+const VALID_FREQUENCIES: readonly RecurringFrequency[] = [
+  "monthly",
+  "quarterly",
+  "annually",
+  "custom",
+];
 
 type ParsedLine = {
   accountId: string;
@@ -87,11 +95,36 @@ export async function createEntry(
   const action = String(formData.get("action") ?? "draft");
   const bypassControlWarning =
     String(formData.get("bypassControlWarning") ?? "") === "1";
+  const isTemplate = action === "template";
 
   const validSources = ["manual", "invoice", "bill", "reconciliation"] as const;
   const source = (validSources as readonly string[]).includes(sourceRaw)
     ? (sourceRaw as (typeof validSources)[number])
     : "manual";
+
+  let recurringFrequency: RecurringFrequency | null = null;
+  let recurringDayOfMonth: number | null = null;
+  let recurringStartDate: string | null = null;
+  let recurringEndDate: string | null = null;
+  if (isTemplate) {
+    const freqRaw = String(formData.get("recurringFrequency") ?? "monthly");
+    if (!(VALID_FREQUENCIES as readonly string[]).includes(freqRaw)) {
+      return { error: "Invalid recurring frequency." };
+    }
+    recurringFrequency = freqRaw as RecurringFrequency;
+    const dayRaw = String(formData.get("recurringDayOfMonth") ?? "").trim();
+    const dayParsed = dayRaw === "" ? NaN : Number(dayRaw);
+    if (!Number.isFinite(dayParsed) || dayParsed < 1 || dayParsed > 28) {
+      return { error: "Day of month must be between 1 and 28." };
+    }
+    recurringDayOfMonth = Math.floor(dayParsed);
+    recurringStartDate = String(formData.get("recurringNextDate") ?? "").trim();
+    if (!recurringStartDate) {
+      return { error: "Start date is required for a recurring template." };
+    }
+    const endRaw = String(formData.get("recurringEndDate") ?? "").trim();
+    recurringEndDate = endRaw === "" ? null : endRaw;
+  }
 
   const allLines = parseLines(formData);
   const lines = allLines.filter(
@@ -105,6 +138,12 @@ export async function createEntry(
     return { error: "Description is required." };
   }
 
+  const status: "draft" | "posted" | "template" = isTemplate
+    ? "template"
+    : action === "post"
+      ? "posted"
+      : "draft";
+
   try {
     const created = await createJournalEntry(user, {
       entryDate,
@@ -113,10 +152,15 @@ export async function createEntry(
       source,
       fiscalPeriodId: fiscalPeriodId === "" ? null : fiscalPeriodId,
       firmEntityId: firmEntityId === "" ? null : firmEntityId,
-      status: action === "post" ? "posted" : "draft",
+      status,
       bypassControlWarning,
       periodOverrideReason:
         periodOverrideReason === "" ? null : periodOverrideReason,
+      isTemplate,
+      recurringFrequency,
+      recurringDayOfMonth,
+      recurringNextDate: recurringStartDate,
+      recurringEndDate,
       lines: lines.map((l) => ({
         accountId: l.accountId,
         description: l.description.trim() === "" ? null : l.description.trim(),
@@ -127,6 +171,9 @@ export async function createEntry(
       })),
     });
     revalidatePath("/journal");
+    if (isTemplate) {
+      redirect("/journal?view=templates");
+    }
     redirect(`/journal/${created.entryNumber}`);
   } catch (err) {
     // redirect() throws — let it propagate

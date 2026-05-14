@@ -12,6 +12,7 @@ import {
   getBaseCurrency,
   getBills,
   getCustomers,
+  getDueRecurringTemplateCount,
   getEntities,
   getEntityPlRollup,
   getInvoices,
@@ -154,6 +155,7 @@ export default async function Page() {
   // below always has rows. Safe to re-call — only inserts what's missing.
   await ensureAccountingPeriods(new Date().getUTCFullYear());
 
+  const demoTodayIso = DEMO_TODAY.toISOString().slice(0, 10);
   const [
     kpis,
     ar,
@@ -169,6 +171,7 @@ export default async function Page() {
     fxRates,
     awaitingApproval,
     accountingPeriods,
+    dueTemplateCount,
   ] = await Promise.all([
     getKpis(),
     getArAging(DEMO_TODAY),
@@ -186,6 +189,7 @@ export default async function Page() {
       ? getInvoicesAwaitingApproval(user.userId, user.role, user.isSuperuser)
       : Promise.resolve([]),
     getAccountingPeriods(),
+    getDueRecurringTemplateCount(demoTodayIso),
   ]);
 
   // Widget data: pick the current period plus the two preceding ones so the
@@ -292,6 +296,33 @@ export default async function Page() {
           </ButtonLink>
         </div>
       </div>
+
+      {dueTemplateCount > 0 && (
+        <div className="px-6 my-3.5">
+          <Card
+            title="Recurring entries due"
+            actions={
+              <Link
+                href="/journal?view=templates"
+                style={{ color: "var(--ink-3)", textDecoration: "none" }}
+              >
+                Review templates →
+              </Link>
+            }
+          >
+            <div className="flex items-center gap-3" style={{ padding: "8px 4px" }}>
+              <Pill variant="pending">
+                {dueTemplateCount} template
+                {dueTemplateCount === 1 ? "" : "s"} due
+              </Pill>
+              <span style={{ color: "var(--ink-3)", fontSize: 12.5 }}>
+                Open the Templates tab on Journal Entries to generate the next
+                draft.
+              </span>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {awaitingApproval.length > 0 && (
         <div className="px-6 my-3.5">
