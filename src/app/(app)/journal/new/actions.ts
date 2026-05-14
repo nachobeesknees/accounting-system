@@ -77,6 +77,8 @@ export async function createEntry(
   const fiscalPeriodId = String(formData.get("fiscalPeriodId") ?? "");
   const firmEntityId = String(formData.get("firmEntityId") ?? "");
   const action = String(formData.get("action") ?? "draft");
+  const bypassControlWarning =
+    String(formData.get("bypassControlWarning") ?? "") === "1";
 
   const validSources = ["manual", "invoice", "bill", "reconciliation"] as const;
   const source = (validSources as readonly string[]).includes(sourceRaw)
@@ -104,6 +106,7 @@ export async function createEntry(
       fiscalPeriodId: fiscalPeriodId === "" ? null : fiscalPeriodId,
       firmEntityId: firmEntityId === "" ? null : firmEntityId,
       status: action === "post" ? "posted" : "draft",
+      bypassControlWarning,
       lines: lines.map((l) => ({
         accountId: l.accountId,
         description: l.description.trim() === "" ? null : l.description.trim(),

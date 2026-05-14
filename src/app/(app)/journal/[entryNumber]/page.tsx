@@ -201,6 +201,9 @@ export default async function Page({
               <Pill variant={balanced ? "active" : "review"}>
                 {balanced ? "Balanced" : "Unbalanced"}
               </Pill>
+              {entry.bypassControlWarning && (
+                <Pill variant="review">Direct post (bypass)</Pill>
+              )}
             </>
           }
         >

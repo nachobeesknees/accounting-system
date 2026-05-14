@@ -125,6 +125,12 @@ export const journalEntries = pgTable("journal_entries", {
   entityId: text("entity_id"),
   /** Which of our firm's corporate entities issued this entry. */
   firmEntityId: text("firm_entity_id"),
+  /**
+   * Set to true when the user explicitly confirmed past a controlled-account
+   * posting warning (direct posting to AR/AP/Cash). Creates an audit trail
+   * for entries that bypass the recommended invoice/bill/bank-txn flows.
+   */
+  bypassControlWarning: boolean("bypass_control_warning").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
