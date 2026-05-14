@@ -1422,6 +1422,35 @@ export async function getInvoicesAwaitingApproval(
   }));
 }
 
+export type InvoiceNote = {
+  id: string;
+  invoiceId: string;
+  note: string;
+  authorName: string;
+  authorUserId: string | null;
+  createdAt: string;
+};
+
+/** Notes for a single invoice, oldest-first so the log reads top-to-bottom. */
+export async function getInvoiceNotes(
+  invoiceId: string,
+): Promise<InvoiceNote[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.invoiceNotes)
+    .where(eq(schema.invoiceNotes.invoiceId, invoiceId))
+    .orderBy(asc(schema.invoiceNotes.createdAt));
+  return rows.map((r) => ({
+    id: r.id,
+    invoiceId: r.invoiceId,
+    note: r.note,
+    authorName: r.authorName,
+    authorUserId: r.authorUserId ?? null,
+    createdAt: r.createdAt.toISOString(),
+  }));
+}
+
 export async function getInvoiceById(id: string): Promise<Invoice | undefined> {
   const db = getDb();
   const [head] = await db

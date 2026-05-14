@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
 import {
+  addInvoiceNote,
   assignedApproveInvoice,
   cfoApproveInvoice,
   postInvoice,
@@ -225,6 +226,34 @@ export async function setExpectedPaymentDateAction(
   revalidatePath("/invoices");
   revalidatePath("/cash-forecast");
   redirect(`/invoices/${invoiceId}`);
+}
+
+export async function addInvoiceNoteAction(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  const note = String(formData.get("note") ?? "").trim();
+  if (!invoiceId) {
+    redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
+  }
+  if (note === "") {
+    redirect(
+      `/invoices/${invoiceId}?error=${encodeURIComponent("Note cannot be empty.")}`,
+    );
+  }
+
+  try {
+    await addInvoiceNote(user, invoiceId, note);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const message =
+      err instanceof Error ? err.message : "Failed to add note.";
+    redirect(`/invoices/${invoiceId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath(`/invoices/${invoiceId}`);
+  redirect(`/invoices/${invoiceId}#notes`);
 }
 
 export async function rejectInvoiceAction(formData: FormData): Promise<void> {

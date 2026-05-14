@@ -130,6 +130,19 @@ const COLUMNS: ColumnSpec[] = [
 
 const TABLES = [
   {
+    // Append-only invoice notes — used by the invoice detail page to log
+    // ad-hoc comments from CSMs / collections (no edits, no deletes).
+    name: "invoice_notes",
+    ddl: `CREATE TABLE IF NOT EXISTS invoice_notes (
+      id text PRIMARY KEY,
+      invoice_id text NOT NULL,
+      note text NOT NULL,
+      author_name text NOT NULL,
+      author_user_id text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
     name: "currencies",
     ddl: `CREATE TABLE IF NOT EXISTS currencies (
       code text PRIMARY KEY,
