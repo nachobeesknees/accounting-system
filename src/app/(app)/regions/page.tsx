@@ -5,7 +5,13 @@ import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { Field, SelectField } from "@/components/ui/Field";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { getFirmEntities, getRegionGroups, getRegions } from "@/lib/data";
+import {
+  getCustomers,
+  getEntities,
+  getFirmEntities,
+  getRegionGroups,
+  getRegions,
+} from "@/lib/data";
 import {
   createRegionAction,
   createRegionGroupAction,
@@ -26,32 +32,47 @@ export default async function Page({
   }>;
 }) {
   const { saved, error, editGroup, editRegion } = await searchParams;
-  const [groups, regions, offices] = await Promise.all([
+  const [groups, regions, offices, entities, customers] = await Promise.all([
     getRegionGroups(),
     getRegions(),
     getFirmEntities(),
+    getEntities(),
+    getCustomers(),
   ]);
 
-  // Counts.
+  // Counts. Offices, entities, customers all carry an optional regionId,
+  // so we roll them up identically: per-region, then per-group via the
+  // region.groupId join. Each per-region bucket excludes rows with
+  // regionId === null.
   const regionsByGroup = new Map<string, number>();
   for (const r of regions) {
     if (r.groupId) {
       regionsByGroup.set(r.groupId, (regionsByGroup.get(r.groupId) ?? 0) + 1);
     }
   }
-  const officesByRegion = new Map<string, number>();
-  for (const o of offices) {
-    if (o.regionId) {
-      officesByRegion.set(o.regionId, (officesByRegion.get(o.regionId) ?? 0) + 1);
+  function bucketByRegion<T extends { regionId?: string | null }>(rows: T[]) {
+    const m = new Map<string, number>();
+    for (const r of rows) {
+      if (r.regionId) m.set(r.regionId, (m.get(r.regionId) ?? 0) + 1);
     }
+    return m;
   }
-  // Offices per group = sum of offices per region whose groupId matches.
-  const officesByGroup = new Map<string, number>();
-  for (const r of regions) {
-    if (!r.groupId) continue;
-    const c = officesByRegion.get(r.id) ?? 0;
-    officesByGroup.set(r.groupId, (officesByGroup.get(r.groupId) ?? 0) + c);
+  const officesByRegion = bucketByRegion(offices);
+  const entitiesByRegion = bucketByRegion(entities);
+  const customersByRegion = bucketByRegion(customers);
+  // Sum-up to the group level: each region in a group contributes its count.
+  function rollupToGroup(perRegion: Map<string, number>) {
+    const m = new Map<string, number>();
+    for (const r of regions) {
+      if (!r.groupId) continue;
+      const c = perRegion.get(r.id) ?? 0;
+      m.set(r.groupId, (m.get(r.groupId) ?? 0) + c);
+    }
+    return m;
   }
+  const officesByGroup = rollupToGroup(officesByRegion);
+  const entitiesByGroup = rollupToGroup(entitiesByRegion);
+  const customersByGroup = rollupToGroup(customersByRegion);
 
   const groupById = new Map(groups.map((g) => [g.id, g] as const));
 
@@ -59,7 +80,7 @@ export default async function Page({
     <>
       <PageHeader
         title="Regions"
-        meta={`${groups.length} groups · ${regions.length} regions · ${offices.length} offices`}
+        meta={`${groups.length} groups · ${regions.length} regions · ${offices.length} offices · ${entities.length} entities · ${customers.length} clients`}
       />
 
       <div className="px-6 my-3.5 flex flex-col gap-3.5 pb-8">
@@ -102,6 +123,8 @@ export default async function Page({
                   <TH>Name</TH>
                   <TH num>Regions</TH>
                   <TH num>Offices</TH>
+                  <TH num>Entities</TH>
+                  <TH num>Clients</TH>
                   <TH>{""}</TH>
                 </TR>
               </THead>
@@ -111,7 +134,7 @@ export default async function Page({
                   return (
                     <TR key={g.id}>
                       {editing ? (
-                        <TD colSpan={4}>
+                        <TD colSpan={6}>
                           <form
                             action={updateRegionGroupAction}
                             className="flex items-end gap-2"
@@ -141,6 +164,8 @@ export default async function Page({
                           <TD>{g.name}</TD>
                           <TD num>{regionsByGroup.get(g.id) ?? 0}</TD>
                           <TD num>{officesByGroup.get(g.id) ?? 0}</TD>
+                          <TD num>{entitiesByGroup.get(g.id) ?? 0}</TD>
+                          <TD num>{customersByGroup.get(g.id) ?? 0}</TD>
                           <TD>
                             <div className="flex gap-2">
                               <Link
@@ -198,6 +223,8 @@ export default async function Page({
                   <TH>Name</TH>
                   <TH>Group</TH>
                   <TH num>Offices</TH>
+                  <TH num>Entities</TH>
+                  <TH num>Clients</TH>
                   <TH>{""}</TH>
                 </TR>
               </THead>
@@ -208,7 +235,7 @@ export default async function Page({
                   return (
                     <TR key={r.id}>
                       {editing ? (
-                        <TD colSpan={4}>
+                        <TD colSpan={6}>
                           <form
                             action={updateRegionAction}
                             className="flex items-end gap-2 flex-wrap"
@@ -252,6 +279,8 @@ export default async function Page({
                             {group?.name ?? "—"}
                           </TD>
                           <TD num>{officesByRegion.get(r.id) ?? 0}</TD>
+                          <TD num>{entitiesByRegion.get(r.id) ?? 0}</TD>
+                          <TD num>{customersByRegion.get(r.id) ?? 0}</TD>
                           <TD>
                             <div className="flex gap-2">
                               <Link
