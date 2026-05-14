@@ -33,6 +33,7 @@ Agents: read this file before starting work. Check off items as you complete the
 - [x] Global search upgrade (⌘K) — grouped results by record type, recent searches, full-text search
 - [x] Payment recommendation/selection tool — select bills to pay on AP aging, show live cash forecast impact, CSV export
 - [x] Smart searchable dropdowns (SmartSelect/Combobox) — `SmartSelect` + `SmartSelectField` at `src/components/ui/SmartSelect.tsx`; typed search, keyboard nav, grouped options, ARIA, portal positioning. Migrated every native `<select>` plus all large-list `SelectField` call-sites (accounts, customers, vendors, entities, contacts, currencies, offices, users, regions, region-groups, employees on AR aging). Small enum fields (status/kind/role/frequency) stay on native `SelectField`.
+- [x] Document OCR — upload PDF/image on new invoice/bill/contact/journal forms, Claude Haiku extracts fields and pre-fills the form; raw text saved on the record and indexed by ⌘K
 
 ---
 
@@ -45,7 +46,6 @@ Agents: read this file before starting work. Check off items as you complete the
 ## 📋 Pending
 
 ### Features
-- [ ] Document OCR — upload PDF/image on any form, call Claude Haiku to extract data and pre-fill fields (needs ANTHROPIC_API_KEY in Vercel env)
 - [ ] Real authentication — replace demo/cookie auth with proper login (user accounts, passwords or SSO)
 - [ ] Plaid bank account integration (Phase 2) — daily balance sync
 

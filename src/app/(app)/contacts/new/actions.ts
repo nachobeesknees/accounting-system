@@ -23,6 +23,7 @@ export async function createContactAction(
   const phone = String(formData.get("phone") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
+  const ocrText = String(formData.get("ocrText") ?? "").trim();
   const isClient = formData.get("isClient") === "on";
   const isVendor = formData.get("isVendor") === "on";
   const isEmployee = formData.get("isEmployee") === "on";
@@ -40,6 +41,7 @@ export async function createContactAction(
       phone: phone || null,
       address: address || null,
       notes: notes || null,
+      ocrText: ocrText || null,
       isClient,
       isVendor,
       isEmployee,

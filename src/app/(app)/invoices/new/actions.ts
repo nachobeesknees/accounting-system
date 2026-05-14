@@ -81,6 +81,7 @@ export async function createInvoiceAction(
   const invoiceDate = String(formData.get("invoiceDate") ?? "");
   const dueDate = String(formData.get("dueDate") ?? "");
   const notes = String(formData.get("notes") ?? "").trim();
+  const ocrText = String(formData.get("ocrText") ?? "").trim();
   const action = String(formData.get("action") ?? "draft");
 
   if (!customerId) return { error: "Customer is required." };
@@ -114,6 +115,7 @@ export async function createInvoiceAction(
       invoiceDate,
       dueDate,
       notes: notes === "" ? null : notes,
+      ocrText: ocrText === "" ? null : ocrText,
       lines,
     });
 

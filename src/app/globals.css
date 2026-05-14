@@ -153,6 +153,10 @@ a.drill-number:hover {
   }
 }
 
+@keyframes ocr-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ------------------------------ App shell ------------------------------- */
 
 .app-shell {
