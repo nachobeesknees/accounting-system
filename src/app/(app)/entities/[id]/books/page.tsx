@@ -72,15 +72,15 @@ export default async function Page({
       <div className="px-6 my-3.5 grid grid-cols-1 sm:grid-cols-3 gap-3.5">
         <Tile
           label="Revenue (native)"
-          value={`${ccy} ${formatAmount(pl?.revenue ?? 0, { paren: true })}`}
+          value={`${ccy} ${formatAmount(pl?.revenue ?? 0, { paren: true, compact: true })}`}
         />
         <Tile
           label="Expenses (native)"
-          value={`${ccy} ${formatAmount(pl?.expenses ?? 0, { paren: true })}`}
+          value={`${ccy} ${formatAmount(pl?.expenses ?? 0, { paren: true, compact: true })}`}
         />
         <Tile
           label="Net income"
-          value={`${ccy} ${formatAmount(pl?.netIncome ?? 0, { paren: true })}`}
+          value={`${ccy} ${formatAmount(pl?.netIncome ?? 0, { paren: true, compact: true })}`}
           neg={(pl?.netIncome ?? 0) < 0}
         />
       </div>
@@ -191,7 +191,7 @@ export default async function Page({
                         {e.lines.length > 2 ? ` …` : ""}
                       </TD>
                       <TD num>
-                        {ccy} {formatAmount(total, { paren: true })}
+                        {ccy} {formatAmount(total, { paren: true, compact: true })}
                       </TD>
                       <TD>
                         <Pill variant={statusVariant(e.status)}>

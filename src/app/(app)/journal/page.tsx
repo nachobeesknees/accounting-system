@@ -306,6 +306,7 @@ export default async function Page({
                             value={totalDebits(e)}
                             href={`/journal/${e.entryNumber}`}
                             currencyCode={null}
+                            compact
                           />
                         </TD>
                         <TD>
@@ -337,7 +338,7 @@ export default async function Page({
                       <TD>{""}</TD>
                       <TD>{""}</TD>
                       <TD>{""}</TD>
-                      <TD num>{formatMoney(grandTotal, "USD")}</TD>
+                      <TD num>{formatMoney(grandTotal, "USD", { compact: true })}</TD>
                       <TD>{""}</TD>
                     </TR>
                   </TBody>
@@ -439,6 +440,7 @@ export default async function Page({
                             value={totalDebits(t)}
                             href={`/journal/${t.entryNumber}`}
                             currencyCode={null}
+                            compact
                           />
                         </TD>
                         <TD>

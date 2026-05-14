@@ -327,8 +327,8 @@ export default async function Page({
                       <TD>{f.billingYear}</TD>
                       <TD>{frequencyLabel(f.frequency)}</TD>
                       <TD>{f.nextBillingDate ?? "—"}</TD>
-                      <TD num>{formatMoney(perPeriod, entity.currencyCode)}</TD>
-                      <TD num>{formatMoney(annual, entity.currencyCode)}</TD>
+                      <TD num>{formatMoney(perPeriod, entity.currencyCode, { compact: true })}</TD>
+                      <TD num>{formatMoney(annual, entity.currencyCode, { compact: true })}</TD>
                       <TD num>{f.includedHours}</TD>
                       <TD>
                         <Pill variant={statusVariant(f.status)}>

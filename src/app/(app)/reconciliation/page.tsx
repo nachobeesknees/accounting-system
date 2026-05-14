@@ -161,17 +161,17 @@ export default async function Page({
       <div className="px-6 my-3.5 grid grid-cols-1 sm:grid-cols-3 gap-3.5">
         <Tile
           label="Book balance"
-          value={formatMoney(bookBalance, "USD", { paren: true })}
+          value={formatMoney(bookBalance, "USD", { paren: true, compact: true })}
           sub="GL account 1000"
         />
         <Tile
           label="Cleared"
-          value={formatMoney(clearedTotal, "USD", { paren: true })}
+          value={formatMoney(clearedTotal, "USD", { paren: true, compact: true })}
           sub={`${reconciled.length} matched transactions`}
         />
         <Tile
           label="Outstanding"
-          value={formatMoney(outstandingTotal, "USD", { paren: true })}
+          value={formatMoney(outstandingTotal, "USD", { paren: true, compact: true })}
           sub={`${unreconciled.length} unmatched`}
           neg={outstandingTotal < 0}
         />
@@ -214,6 +214,8 @@ export default async function Page({
                         {t.reference ?? "—"}
                       </TD>
                       <TD num neg={amount < 0}>
+                        {/* Per-transaction reconciliation rows must keep cents —
+                            they have to match the bank statement to the penny. */}
                         {formatMoney(amount, "USD", { paren: true })}
                       </TD>
                       <TD num>
@@ -271,6 +273,7 @@ export default async function Page({
                         )}
                       </TD>
                       <TD num neg={amount < 0}>
+                        {/* Per-transaction row — keep cents for reconciliation. */}
                         {formatMoney(amount, "USD", { paren: true })}
                       </TD>
                     </TR>

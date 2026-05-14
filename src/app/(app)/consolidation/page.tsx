@@ -58,7 +58,7 @@ export default async function Page() {
   const totalExp = rows.reduce((s, r) => s + r.expensesBase, 0);
   const totalNet = totalRev - totalExp;
   const formatBase = (n: number) =>
-    `${baseSymbol}${formatAmount(n, { paren: true })}`;
+    `${baseSymbol}${formatAmount(n, { paren: true, compact: true })}`;
 
   return (
     <>
@@ -109,10 +109,10 @@ export default async function Page() {
                   </TD>
                   <TD style={{ color: "var(--ink-3)" }}>{r.clientName}</TD>
                   <TD mono>{r.ccy}</TD>
-                  <TD num>{formatAmount(r.revenueNative, { paren: true })}</TD>
-                  <TD num>{formatAmount(r.expensesNative, { paren: true })}</TD>
+                  <TD num>{formatAmount(r.revenueNative, { paren: true, compact: true })}</TD>
+                  <TD num>{formatAmount(r.expensesNative, { paren: true, compact: true })}</TD>
                   <TD num neg={r.netNative < 0}>
-                    {formatAmount(r.netNative, { paren: true })}
+                    {formatAmount(r.netNative, { paren: true, compact: true })}
                   </TD>
                   <TD num neg={r.netBase < 0}>{formatBase(r.netBase)}</TD>
                   <TD>

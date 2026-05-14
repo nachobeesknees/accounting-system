@@ -863,8 +863,8 @@ async function TrialBalanceCard({ baseCode }: { baseCode: string }) {
             <TD colSpan={2} style={{ fontWeight: 600, color: "var(--ink)" }}>
               Totals
             </TD>
-            <TD num>{formatMoney(trialDebits, "USD", { hideCurrency: true })}</TD>
-            <TD num>{formatMoney(trialCredits, "USD", { hideCurrency: true })}</TD>
+            <TD num>{formatMoney(trialDebits, "USD", { compact: true, hideCurrency: true })}</TD>
+            <TD num>{formatMoney(trialCredits, "USD", { compact: true, hideCurrency: true })}</TD>
           </TR>
         </TBody>
       </Table>

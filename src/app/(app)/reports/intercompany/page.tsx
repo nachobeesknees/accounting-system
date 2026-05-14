@@ -40,7 +40,7 @@ export default async function Page({
   const grouped = groupByUnorderedPair(pairs);
 
   const fmt = (n: number) =>
-    formatMoney(n, "USD", { paren: true, hideCurrency: true });
+    formatMoney(n, "USD", { paren: true, compact: true, hideCurrency: true });
 
   return (
     <>

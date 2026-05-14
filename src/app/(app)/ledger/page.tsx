@@ -129,7 +129,7 @@ export default async function Page({
                   color: closing < 0 ? "var(--p-review-fg)" : "var(--ink)",
                 }}
               >
-                {formatMoney(closing, "USD", { paren: true })}
+                {formatMoney(closing, "USD", { paren: true, compact: true })}
               </span>
             </span>
           </div>
@@ -189,6 +189,9 @@ export default async function Page({
                       </Link>
                     </TD>
                     <TD>{r.description}</TD>
+                    {/* Per-line GL postings keep cents — accounting precision
+                        matters here, same as the JE detail page. The closing
+                        / opening totals above and below stay compact. */}
                     <TD num>
                       {r.debit === 0 ? "—" : formatMoney(r.debit, "USD")}
                     </TD>
@@ -211,7 +214,7 @@ export default async function Page({
                     Closing balance
                   </TD>
                   <TD num neg={closing < 0}>
-                    {formatMoney(closing, "USD", { paren: true })}
+                    {formatMoney(closing, "USD", { paren: true, compact: true })}
                   </TD>
                 </TR>
               </TBody>
