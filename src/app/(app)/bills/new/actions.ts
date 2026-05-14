@@ -100,6 +100,7 @@ export async function createBillAction(
     formData.get("vendorInvoiceNumber") ?? "",
   ).trim();
   const notes = String(formData.get("notes") ?? "").trim();
+  const ocrText = String(formData.get("ocrText") ?? "").trim();
   const action = String(formData.get("action") ?? "draft");
   const clientIdRaw = String(formData.get("clientId") ?? "").trim();
   const entityIdRaw = String(formData.get("entityId") ?? "").trim();
@@ -184,6 +185,7 @@ export async function createBillAction(
       vendorInvoiceNumber:
         vendorInvoiceNumber === "" ? null : vendorInvoiceNumber,
       notes: notes === "" ? null : notes,
+      ocrText: ocrText === "" ? null : ocrText,
       clientId: clientIdRaw === "" ? null : clientIdRaw,
       entityId: entityIdRaw === "" ? null : entityIdRaw,
       lines,

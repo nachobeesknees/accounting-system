@@ -1,16 +1,43 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
+import { OcrUpload, ReviewBanner } from "@/components/OcrUpload";
+import type { OcrExtraction } from "@/lib/ocr";
 import { createContactAction, type CreateContactState } from "./actions";
 
 const initial: CreateContactState = { error: null };
 
 export function NewContactForm({ nextCode }: { nextCode: string }) {
   const [state, action] = useActionState(createContactAction, initial);
+  const [name, setName] = useState("");
+  const [kind, setKind] = useState<"organization" | "individual">("organization");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [notes, setNotes] = useState("");
+  const [ocrText, setOcrText] = useState("");
+  const [showReview, setShowReview] = useState(false);
+
+  function applyOcr(data: OcrExtraction, raw: string) {
+    setOcrText(raw);
+    setShowReview(true);
+    if (name === "") {
+      if (data.company) {
+        setName(data.company);
+        setKind("organization");
+      } else if (data.name) {
+        setName(data.name);
+        setKind("individual");
+      }
+    }
+    if (data.email && email === "") setEmail(data.email);
+    if (data.phone && phone === "") setPhone(data.phone);
+    if (data.address && address === "") setAddress(data.address);
+  }
 
   return (
     <form action={action}>
@@ -28,24 +55,63 @@ export function NewContactForm({ nextCode }: { nextCode: string }) {
           </div>
         )}
 
+        <OcrUpload formType="contact" onExtracted={applyOcr} />
+        {showReview && <ReviewBanner onDismiss={() => setShowReview(false)} />}
+        <input type="hidden" name="ocrText" value={ocrText} />
+
         <Card title="Contact details">
           <div className="flex flex-col gap-3">
             <Row>
               <Field label="Code" name="code" required mono defaultValue={nextCode} />
-              <Field label="Name" name="name" required placeholder="Acme LLC or John Smith" />
+              <Field
+                label="Name"
+                name="name"
+                required
+                placeholder="Acme LLC or John Smith"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
             </Row>
             <Row>
-              <SelectField label="Kind" name="kind" required defaultValue="organization">
+              <SelectField
+                label="Kind"
+                name="kind"
+                required
+                value={kind}
+                onChange={(e) => setKind(e.target.value as "organization" | "individual")}
+              >
                 <option value="organization">Organization</option>
                 <option value="individual">Individual</option>
               </SelectField>
-              <Field label="Email" name="email" type="email" />
+              <Field
+                label="Email"
+                name="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </Row>
             <Row>
-              <Field label="Phone" name="phone" mono />
-              <Field label="Address" name="address" />
+              <Field
+                label="Phone"
+                name="phone"
+                mono
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
+              <Field
+                label="Address"
+                name="address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
             </Row>
-            <TextareaField label="Notes" name="notes" />
+            <TextareaField
+              label="Notes"
+              name="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
 
             <div className="flex flex-col gap-1.5 pt-2">
               <span className="text-[11.5px]" style={{ color: "var(--ink-3)" }}>

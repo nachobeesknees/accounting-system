@@ -99,6 +99,7 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
           sql`${schema.contacts.name} ILIKE ${pattern}`,
           sql`${schema.contacts.code} ILIKE ${pattern}`,
           sql`${schema.contacts.email} ILIKE ${pattern}`,
+          sql`${schema.contacts.ocrText} ILIKE ${pattern}`,
         ),
       )
       .limit(PER_TYPE_LIMIT),
@@ -118,6 +119,7 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
         or(
           sql`${schema.invoices.invoiceNumber} ILIKE ${pattern}`,
           sql`${schema.invoices.notes} ILIKE ${pattern}`,
+          sql`${schema.invoices.ocrText} ILIKE ${pattern}`,
         ),
       )
       .limit(PER_TYPE_LIMIT),
@@ -137,6 +139,7 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
         or(
           sql`${schema.bills.billNumber} ILIKE ${pattern}`,
           sql`${schema.bills.notes} ILIKE ${pattern}`,
+          sql`${schema.bills.ocrText} ILIKE ${pattern}`,
         ),
       )
       .limit(PER_TYPE_LIMIT),

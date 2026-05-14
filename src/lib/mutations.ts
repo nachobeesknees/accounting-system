@@ -1220,6 +1220,8 @@ export type CreateContactInput = {
   customerId?: string | null;
   vendorId?: string | null;
   userId?: string | null;
+  /** Raw OCR text indexed by global search. */
+  ocrText?: string | null;
 };
 
 export async function createContact(_user: SessionUser, input: CreateContactInput) {
@@ -1250,6 +1252,7 @@ export async function createContact(_user: SessionUser, input: CreateContactInpu
       vendorId: input.vendorId ?? null,
       userId: input.userId ?? null,
       isActive: true,
+      ocrText: input.ocrText ?? null,
     })
     .returning();
   return created;
@@ -1848,6 +1851,8 @@ export type CreateInvoiceInput = {
   invoiceDate: string;
   dueDate: string;
   notes?: string | null;
+  /** Raw OCR text indexed by global search. */
+  ocrText?: string | null;
   lines: DraftInvoiceLine[];
 };
 
@@ -1886,6 +1891,7 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
       currencyCode,
       firmEntityId,
       notes: input.notes ?? null,
+      ocrText: input.ocrText ?? null,
       journalEntryId: null,
       createdAt: now,
       updatedAt: now,
@@ -2397,6 +2403,8 @@ export type CreateBillInput = {
   /** Who the bill is on-behalf-of (separate from chargeback rebill target). */
   clientId?: string | null;
   entityId?: string | null;
+  /** Raw OCR text indexed by global search. */
+  ocrText?: string | null;
   lines: DraftBillLine[];
   // Optional chargeback config — if `chargebackType` is set the bill is
   // marked as rebillable. "included" means just reference the client/entity
@@ -2447,6 +2455,7 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
       balanceDue: toDecimalString(subtotal),
       currencyCode,
       notes: input.notes ?? null,
+      ocrText: input.ocrText ?? null,
       journalEntryId: null,
       clientId: input.clientId ?? null,
       entityId: input.entityId ?? null,

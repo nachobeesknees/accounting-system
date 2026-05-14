@@ -13,7 +13,9 @@ import {
   type SmartSelectOption,
 } from "@/components/ui/SmartSelect";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { OcrUpload, ReviewBanner } from "@/components/OcrUpload";
 import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
+import type { OcrExtraction } from "@/lib/ocr";
 import type {
   Account,
   Customer,
@@ -89,6 +91,12 @@ export function NewBillForm({
     billNumber: string;
   } | null>(null);
   const [checking, setChecking] = useState<boolean>(false);
+  const [billDate, setBillDate] = useState(today);
+  const [dueDateState, setDueDateState] = useState(defaultDueDate);
+  const [reference, setReference] = useState("");
+  const [notes, setNotes] = useState("");
+  const [ocrText, setOcrText] = useState("");
+  const [showReview, setShowReview] = useState(false);
 
   const vendorById = useMemo(
     () => new Map(vendors.map((v) => [v.id, v] as const)),
@@ -136,6 +144,60 @@ export function NewBillForm({
       clearTimeout(t);
     };
   }, [vendorId, vendorInvoiceNumber]);
+
+  function applyOcr(data: OcrExtraction, raw: string) {
+    setOcrText(raw);
+    setShowReview(true);
+    if (data.date && billDate === today) setBillDate(data.date);
+    if (data.dueDate && dueDateState === defaultDueDate) {
+      setDueDateState(data.dueDate);
+    }
+    if (data.invoiceNumber && vendorInvoiceNumber === "") {
+      setVendorInvoiceNumber(data.invoiceNumber);
+      userTypedRef.current = true;
+    }
+    if (data.vendorName && notes === "") {
+      setNotes(`Vendor: ${data.vendorName}`);
+    }
+    // Auto-pick vendor if we can match the extracted name to a known vendor.
+    if (data.vendorName) {
+      const needle = data.vendorName.toLowerCase().trim();
+      const match = vendors.find(
+        (v) =>
+          v.name.toLowerCase() === needle ||
+          v.name.toLowerCase().includes(needle) ||
+          needle.includes(v.name.toLowerCase()),
+      );
+      if (match && (!vendorId || vendorId === vendors[0]?.id)) {
+        onVendorChange(match.id);
+      }
+    }
+    if (data.lineItems && data.lineItems.length > 0) {
+      const userEmpty = lines.every(
+        (l) =>
+          l.description.trim() === "" &&
+          parseAmount(l.unitPrice) === 0,
+      );
+      if (userEmpty) {
+        const fallbackAcct =
+          vendors.find((v) => v.id === vendorId)?.defaultExpenseAccountId ?? "";
+        setLines(
+          data.lineItems.map((li) => ({
+            description: li.description ?? "",
+            accountId: fallbackAcct,
+            quantity: li.quantity != null ? String(li.quantity) : "1",
+            unitPrice:
+              li.unitPrice != null
+                ? li.unitPrice.toFixed(2)
+                : li.total != null && li.quantity
+                  ? (li.total / li.quantity).toFixed(2)
+                  : "",
+            dimensions: {},
+          })),
+        );
+      }
+    }
+  }
 
   // When the user picks a client, narrow the entity list. When the user picks
   // an entity, default-fill the client to match.
@@ -303,6 +365,10 @@ export function NewBillForm({
         </div>
       )}
 
+      <OcrUpload formType="bill" onExtracted={applyOcr} />
+      {showReview && <ReviewBanner onDismiss={() => setShowReview(false)} />}
+      <input type="hidden" name="ocrText" value={ocrText} />
+
       <Card title="Header" bodyPadding>
         <div className="flex flex-col gap-3">
           <Row>
@@ -319,6 +385,8 @@ export function NewBillForm({
               label="Reference"
               name="reference"
               placeholder="Internal reference (optional)"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
             />
           </Row>
           <Row>
@@ -396,14 +464,16 @@ export function NewBillForm({
               name="billDate"
               type="date"
               required
-              defaultValue={today}
+              value={billDate}
+              onChange={(e) => setBillDate(e.target.value)}
             />
             <Field
               label="Due date"
               name="dueDate"
               type="date"
               required
-              defaultValue={defaultDueDate}
+              value={dueDateState}
+              onChange={(e) => setDueDateState(e.target.value)}
             />
           </Row>
           <Row>
@@ -430,6 +500,8 @@ export function NewBillForm({
             label="Notes"
             name="notes"
             placeholder="Optional notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
           />
         </div>
       </Card>

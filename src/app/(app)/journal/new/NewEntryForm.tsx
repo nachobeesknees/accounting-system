@@ -8,7 +8,9 @@ import {
   SmartSelect,
   type SmartSelectOption,
 } from "@/components/ui/SmartSelect";
+import { OcrUpload, ReviewBanner } from "@/components/OcrUpload";
 import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
+import type { OcrExtraction } from "@/lib/ocr";
 import type {
   Account,
   Dimension,
@@ -88,6 +90,52 @@ export function NewEntryForm({
 }) {
   const [state, formAction] = useFormState(createEntry, INITIAL_STATE);
   const [lines, setLines] = useState<Line[]>([blankLine(), blankLine()]);
+  const [entryDate, setEntryDate] = useState(today);
+  const [reference, setReference] = useState("");
+  const [description, setDescription] = useState("");
+  const [showReview, setShowReview] = useState(false);
+
+  function findAccountId(token: string | undefined): string {
+    if (!token) return "";
+    const needle = token.toLowerCase().trim();
+    const byCode = accounts.find((a) => a.code.toLowerCase() === needle);
+    if (byCode) return byCode.id;
+    const byName = accounts.find(
+      (a) =>
+        a.name.toLowerCase() === needle ||
+        a.name.toLowerCase().includes(needle) ||
+        needle.includes(a.name.toLowerCase()),
+    );
+    return byName?.id ?? "";
+  }
+
+  function applyOcr(data: OcrExtraction) {
+    setShowReview(true);
+    if (data.date && entryDate === today) setEntryDate(data.date);
+    if (data.reference && reference === "") setReference(data.reference);
+    if (data.description && description === "") setDescription(data.description);
+    if (data.journalLines && data.journalLines.length > 0) {
+      const userEmpty = lines.every(
+        (l) =>
+          l.description.trim() === "" &&
+          l.accountId === "" &&
+          parseAmount(l.debit) === 0 &&
+          parseAmount(l.credit) === 0,
+      );
+      if (userEmpty) {
+        const next: Line[] = data.journalLines.map((jl) => ({
+          accountId: findAccountId(jl.account),
+          description: jl.memo ?? "",
+          debit: jl.debit != null && jl.debit > 0 ? jl.debit.toFixed(2) : "",
+          credit: jl.credit != null && jl.credit > 0 ? jl.credit.toFixed(2) : "",
+          dimensions: {},
+        }));
+        // Always keep at least 2 rows.
+        while (next.length < 2) next.push(blankLine());
+        setLines(next);
+      }
+    }
+  }
 
   // No "project" concept. Only line-level dimensions (e.g. department) are
   // rendered, and only as inline cells in the spreadsheet — not as stacked
@@ -205,6 +253,9 @@ export function NewEntryForm({
         </div>
       )}
 
+      <OcrUpload formType="journal_entry" onExtracted={applyOcr} />
+      {showReview && <ReviewBanner onDismiss={() => setShowReview(false)} />}
+
       {/* Header — single dense row, no Card chrome around the inputs. */}
       <div
         className="rounded-md"
@@ -226,7 +277,8 @@ export function NewEntryForm({
               type="date"
               name="entryDate"
               required
-              defaultValue={today}
+              value={entryDate}
+              onChange={(e) => setEntryDate(e.target.value)}
               style={HEADER_INPUT}
             />
           </label>
@@ -236,6 +288,8 @@ export function NewEntryForm({
               type="text"
               name="reference"
               placeholder="Optional"
+              value={reference}
+              onChange={(e) => setReference(e.target.value)}
               style={HEADER_INPUT}
             />
           </label>
@@ -246,6 +300,8 @@ export function NewEntryForm({
               name="description"
               required
               placeholder="What is this entry for?"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
               style={HEADER_INPUT}
             />
           </label>

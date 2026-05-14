@@ -392,6 +392,8 @@ export const contacts = pgTable("contacts", {
   vendorId: text("vendor_id"),
   userId: text("user_id"),
   isActive: boolean("is_active").notNull().default(true),
+  /** Raw text extracted by Claude Haiku OCR. Indexed by global search. */
+  ocrText: text("ocr_text"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -650,6 +652,8 @@ export const invoices = pgTable("invoices", {
    *  Drives the cash forecast page. NULL → forecast falls back to dueDate. */
   expectedPaymentDate: date("expected_payment_date"),
   notes: text("notes"),
+  /** Raw text extracted by Claude Haiku OCR. Indexed by global search. */
+  ocrText: text("ocr_text"),
   journalEntryId: text("journal_entry_id"),
   /** Which of our firm's corporate entities issued this invoice. */
   firmEntityId: text("firm_entity_id"),
@@ -716,6 +720,8 @@ export const bills = pgTable("bills", {
   balanceDue: numeric("balance_due", { precision: 15, scale: 2 }).notNull().default("0"),
   currencyCode: text("currency_code").notNull().default("USD"),
   notes: text("notes"),
+  /** Raw text extracted by Claude Haiku OCR. Indexed by global search. */
+  ocrText: text("ocr_text"),
   journalEntryId: text("journal_entry_id"),
   /** Optional client this bill is on-behalf-of. Soft FK → customers.id. */
   clientId: text("client_id"),

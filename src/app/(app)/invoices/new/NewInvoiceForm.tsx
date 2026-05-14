@@ -11,7 +11,9 @@ import {
   type SmartSelectOption,
 } from "@/components/ui/SmartSelect";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { OcrUpload, ReviewBanner } from "@/components/OcrUpload";
 import { formatMoneyInput, formatMoney, parseAmount } from "@/lib/money";
+import type { OcrExtraction } from "@/lib/ocr";
 import type {
   Account,
   Customer,
@@ -59,6 +61,11 @@ export function NewInvoiceForm({
   const [state, formAction] = useFormState(createInvoiceAction, INITIAL_STATE);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [customerId, setCustomerId] = useState<string>("");
+  const [invoiceDate, setInvoiceDate] = useState(today);
+  const [dueDateState, setDueDateState] = useState(dueDefault);
+  const [notes, setNotes] = useState("");
+  const [ocrText, setOcrText] = useState("");
+  const [showReview, setShowReview] = useState(false);
 
   const customerOptions = useMemo<SmartSelectOption[]>(
     () =>
@@ -89,6 +96,43 @@ export function NewInvoiceForm({
     }
     return m;
   }, [dimensionsWithValues]);
+
+  function applyOcr(data: OcrExtraction, raw: string) {
+    setOcrText(raw);
+    setShowReview(true);
+    if (data.date && invoiceDate === today) setInvoiceDate(data.date);
+    if (data.dueDate && dueDateState === dueDefault) setDueDateState(data.dueDate);
+    if (data.invoiceNumber && notes === "") {
+      setNotes(`Source invoice #${data.invoiceNumber}`);
+    } else if (data.vendorName && notes === "") {
+      setNotes(`From ${data.vendorName}`);
+    }
+    if (data.lineItems && data.lineItems.length > 0) {
+      // Only replace lines if the user hasn't started entering any real data.
+      const userEmpty = lines.every(
+        (l) =>
+          l.description.trim() === "" &&
+          l.accountId === "" &&
+          parseAmount(l.unitPrice) === 0,
+      );
+      if (userEmpty) {
+        setLines(
+          data.lineItems.map((li) => ({
+            description: li.description ?? "",
+            accountId: "",
+            quantity: li.quantity != null ? String(li.quantity) : "1",
+            unitPrice:
+              li.unitPrice != null
+                ? li.unitPrice.toFixed(2)
+                : li.total != null && li.quantity
+                  ? (li.total / li.quantity).toFixed(2)
+                  : "",
+            dimensions: {},
+          })),
+        );
+      }
+    }
+  }
 
   const subtotal = useMemo(
     () =>
@@ -128,6 +172,10 @@ export function NewInvoiceForm({
         </div>
       )}
 
+      <OcrUpload formType="invoice" onExtracted={applyOcr} />
+      {showReview && <ReviewBanner onDismiss={() => setShowReview(false)} />}
+      <input type="hidden" name="ocrText" value={ocrText} />
+
       <Card title="Header" bodyPadding>
         <div className="flex flex-col gap-3">
           <Row>
@@ -148,20 +196,24 @@ export function NewInvoiceForm({
               name="invoiceDate"
               type="date"
               required
-              defaultValue={today}
+              value={invoiceDate}
+              onChange={(e) => setInvoiceDate(e.target.value)}
             />
             <Field
               label="Due date"
               name="dueDate"
               type="date"
               required
-              defaultValue={dueDefault}
+              value={dueDateState}
+              onChange={(e) => setDueDateState(e.target.value)}
             />
           </Row>
           <TextareaField
             label="Notes"
             name="notes"
             placeholder="Optional notes for the customer"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
           />
         </div>
       </Card>
