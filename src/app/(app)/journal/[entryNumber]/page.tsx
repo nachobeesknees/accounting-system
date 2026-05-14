@@ -11,6 +11,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAccounts,
+  getDimensionsWithValues,
   getJournalEntryByNumber,
   getPeriods,
   getUserById,
@@ -55,15 +56,41 @@ export default async function Page({
   const entry = await getJournalEntryByNumber(entryNumber);
   if (!entry) notFound();
 
-  const [periods, accounts, postedByUser] = await Promise.all([
-    getPeriods(),
-    getAccounts(),
-    entry.postedBy ? getUserById(entry.postedBy) : Promise.resolve(null),
-  ]);
+  const [periods, accounts, postedByUser, dimensionsWithValues] =
+    await Promise.all([
+      getPeriods(),
+      getAccounts(),
+      entry.postedBy ? getUserById(entry.postedBy) : Promise.resolve(null),
+      getDimensionsWithValues(),
+    ]);
   const period = entry.fiscalPeriodId
     ? periods.find((p) => p.id === entry.fiscalPeriodId)
     : null;
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
+
+  // Lookups for resolving dimension keys/value ids → labels on the readback.
+  const dimensionByKey = new Map(
+    dimensionsWithValues.map((d) => [d.dimension.key, d.dimension] as const),
+  );
+  const dimensionValueById = new Map(
+    dimensionsWithValues.flatMap((d) =>
+      d.values.map((v) => [v.id, v] as const),
+    ),
+  );
+  function renderDimensions(
+    dims: Record<string, string> | undefined,
+  ): string | null {
+    if (!dims) return null;
+    const parts: string[] = [];
+    for (const [key, valueId] of Object.entries(dims)) {
+      if (!valueId) continue;
+      const dim = dimensionByKey.get(key);
+      const val = dimensionValueById.get(valueId);
+      if (!dim || !val) continue;
+      parts.push(`${dim.label}: ${val.label}`);
+    }
+    return parts.length === 0 ? null : parts.join(" · ");
+  }
 
   const debitTotal = totalDebits(entry);
   const creditTotal = totalCredits(entry);
@@ -270,7 +297,21 @@ export default async function Page({
                           fontSize: 11.5,
                         }}
                       >
-                        {line.description ?? "—"}
+                        <div>{line.description ?? "—"}</div>
+                        {(() => {
+                          const text = renderDimensions(line.dimensions);
+                          return text ? (
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--ink-4)",
+                                marginTop: 2,
+                              }}
+                            >
+                              {text}
+                            </div>
+                          ) : null;
+                        })()}
                       </TD>
                       <TD num>{d === 0 ? "—" : formatUSD(d)}</TD>
                       <TD num>{c === 0 ? "—" : formatUSD(c)}</TD>

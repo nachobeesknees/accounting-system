@@ -112,6 +112,8 @@ export type DraftJournalLine = {
   description?: string | null;
   debit: number;
   credit: number;
+  /** Dimension map: { [dimension.key]: dimension_value.id }. Defaults to {}. */
+  dimensions?: Record<string, string>;
 };
 
 export type CreateJournalEntryInput = {
@@ -191,6 +193,7 @@ export async function createJournalEntry(
         credit: toDecimalString(l.credit ?? 0),
         entityId: input.entityId ?? null,
         firmEntityId: input.firmEntityId ?? null,
+        dimensions: l.dimensions ?? {},
       })),
     );
   });
@@ -1806,6 +1809,8 @@ export type DraftInvoiceLine = {
   quantity: number;
   unitPrice: number;
   accountId: string;
+  /** Dimension map: { [dimension.key]: dimension_value.id }. Defaults to {}. */
+  dimensions?: Record<string, string>;
 };
 
 export type CreateInvoiceInput = {
@@ -1865,6 +1870,7 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
         unitPrice: toDecimalString(l.unitPrice),
         amount: toDecimalString(l.quantity * l.unitPrice),
         accountId: l.accountId,
+        dimensions: l.dimensions ?? {},
         createdAt: now,
       })),
     );
@@ -2339,6 +2345,8 @@ export type DraftBillLine = {
   quantity: number;
   unitPrice: number;
   accountId: string; // expense account
+  /** Dimension map: { [dimension.key]: dimension_value.id }. Defaults to {}. */
+  dimensions?: Record<string, string>;
 };
 
 export type CreateBillInput = {
@@ -2415,6 +2423,7 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
         unitPrice: toDecimalString(l.unitPrice),
         amount: toDecimalString(l.quantity * l.unitPrice),
         accountId: l.accountId,
+        dimensions: l.dimensions ?? {},
         createdAt: now,
       })),
     );
@@ -3032,6 +3041,194 @@ export async function setInvoiceExpectedPaymentDate(
     .update(schema.invoices)
     .set({ expectedPaymentDate, updatedAt: new Date() })
     .where(eq(schema.invoices.id, invoiceId));
+}
+
+// --------- Regions + region groups ---------
+
+export type CreateRegionGroupInput = { name: string; notes?: string | null };
+
+export async function createRegionGroup(
+  _user: SessionUser,
+  input: CreateRegionGroupInput,
+) {
+  const db = getDb();
+  const id = uid("rg");
+  await db.insert(schema.regionGroups).values({
+    id,
+    name: input.name,
+    notes: input.notes ?? null,
+  });
+  return { id };
+}
+
+export async function updateRegionGroup(
+  _user: SessionUser,
+  id: string,
+  patch: Partial<CreateRegionGroupInput>,
+) {
+  const db = getDb();
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.name !== undefined) set.name = patch.name;
+  if (patch.notes !== undefined) set.notes = patch.notes ?? null;
+  await db.update(schema.regionGroups).set(set).where(eq(schema.regionGroups.id, id));
+}
+
+export async function deleteRegionGroup(_user: SessionUser, id: string) {
+  const db = getDb();
+  // Detach any regions referencing this group, then delete.
+  await db
+    .update(schema.regions)
+    .set({ groupId: null, updatedAt: new Date() })
+    .where(eq(schema.regions.groupId, id));
+  await db.delete(schema.regionGroups).where(eq(schema.regionGroups.id, id));
+}
+
+export type CreateRegionInput = {
+  name: string;
+  groupId?: string | null;
+  notes?: string | null;
+};
+
+export async function createRegion(_user: SessionUser, input: CreateRegionInput) {
+  const db = getDb();
+  const id = uid("rgn");
+  await db.insert(schema.regions).values({
+    id,
+    name: input.name,
+    groupId: input.groupId ?? null,
+    notes: input.notes ?? null,
+  });
+  return { id };
+}
+
+export async function updateRegion(
+  _user: SessionUser,
+  id: string,
+  patch: Partial<CreateRegionInput>,
+) {
+  const db = getDb();
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.name !== undefined) set.name = patch.name;
+  if (patch.groupId !== undefined) set.groupId = patch.groupId ?? null;
+  if (patch.notes !== undefined) set.notes = patch.notes ?? null;
+  await db.update(schema.regions).set(set).where(eq(schema.regions.id, id));
+}
+
+export async function deleteRegion(_user: SessionUser, id: string) {
+  const db = getDb();
+  // Detach offices first so they don't end up with a dangling region_id.
+  await db
+    .update(schema.offices)
+    .set({ regionId: null, updatedAt: new Date() })
+    .where(eq(schema.offices.regionId, id));
+  await db.delete(schema.regions).where(eq(schema.regions.id, id));
+}
+
+export async function setOfficeRegion(
+  _user: SessionUser,
+  officeId: string,
+  regionId: string | null,
+) {
+  const db = getDb();
+  await db
+    .update(schema.offices)
+    .set({ regionId, updatedAt: new Date() })
+    .where(eq(schema.offices.id, officeId));
+}
+
+// --------- Dimensions ---------
+
+export type CreateDimensionInput = {
+  key: string;
+  label: string;
+  description?: string | null;
+};
+
+export async function createDimension(
+  _user: SessionUser,
+  input: CreateDimensionInput,
+) {
+  if (!/^[a-z][a-z0-9_]*$/.test(input.key)) {
+    throw new Error("Key must be lowercase, start with a letter, and only contain letters/digits/underscore.");
+  }
+  const db = getDb();
+  const id = uid("dim");
+  await db.insert(schema.dimensions).values({
+    id,
+    key: input.key,
+    label: input.label,
+    description: input.description ?? null,
+  });
+  return { id };
+}
+
+export async function updateDimension(
+  _user: SessionUser,
+  id: string,
+  patch: Partial<Pick<CreateDimensionInput, "label" | "description"> & { isActive: boolean }>,
+) {
+  const db = getDb();
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.label !== undefined) set.label = patch.label;
+  if (patch.description !== undefined) set.description = patch.description ?? null;
+  if (patch.isActive !== undefined) set.isActive = patch.isActive;
+  await db.update(schema.dimensions).set(set).where(eq(schema.dimensions.id, id));
+}
+
+export async function deleteDimension(_user: SessionUser, id: string) {
+  const db = getDb();
+  // Just soft-delete by marking inactive — line.dimensions JSONB references
+  // are by key, so the schema integrity is preserved either way. The user
+  // can decide to hard-delete via SQL if they really want it gone.
+  await db
+    .update(schema.dimensions)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(eq(schema.dimensions.id, id));
+}
+
+export type CreateDimensionValueInput = {
+  dimensionId: string;
+  code: string;
+  label: string;
+  parentId?: string | null;
+};
+
+export async function createDimensionValue(
+  _user: SessionUser,
+  input: CreateDimensionValueInput,
+) {
+  const db = getDb();
+  const id = uid("dv");
+  await db.insert(schema.dimensionValues).values({
+    id,
+    dimensionId: input.dimensionId,
+    code: input.code,
+    label: input.label,
+    parentId: input.parentId ?? null,
+  });
+  return { id };
+}
+
+export async function updateDimensionValue(
+  _user: SessionUser,
+  id: string,
+  patch: Partial<Pick<CreateDimensionValueInput, "code" | "label" | "parentId"> & { isActive: boolean }>,
+) {
+  const db = getDb();
+  const set: Record<string, unknown> = { updatedAt: new Date() };
+  if (patch.code !== undefined) set.code = patch.code;
+  if (patch.label !== undefined) set.label = patch.label;
+  if (patch.parentId !== undefined) set.parentId = patch.parentId ?? null;
+  if (patch.isActive !== undefined) set.isActive = patch.isActive;
+  await db.update(schema.dimensionValues).set(set).where(eq(schema.dimensionValues.id, id));
+}
+
+export async function deleteDimensionValue(_user: SessionUser, id: string) {
+  const db = getDb();
+  await db
+    .update(schema.dimensionValues)
+    .set({ isActive: false, updatedAt: new Date() })
+    .where(eq(schema.dimensionValues.id, id));
 }
 
 // --------- Periods ---------

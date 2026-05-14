@@ -4,6 +4,7 @@ import { Empty } from "@/components/ui/Empty";
 import {
   getAccounts,
   getCustomers,
+  getDimensionsWithValues,
   getEntities,
   getVendors,
 } from "@/lib/data";
@@ -11,11 +12,18 @@ import {
 import { NewBillForm } from "./NewBillForm";
 
 export default async function Page() {
-  const [vendorsAll, accountsAll, customersAll, entitiesAll] = await Promise.all([
+  const [
+    vendorsAll,
+    accountsAll,
+    customersAll,
+    entitiesAll,
+    dimensionsWithValues,
+  ] = await Promise.all([
     getVendors(),
     getAccounts(),
     getCustomers(),
     getEntities(),
+    getDimensionsWithValues(),
   ]);
   const vendors = vendorsAll
     .filter((v) => v.isActive)
@@ -80,6 +88,7 @@ export default async function Page() {
         entities={entities}
         today={today}
         defaultDueDate={defaultDueDate}
+        dimensionsWithValues={dimensionsWithValues}
       />
     </>
   );

@@ -13,7 +13,24 @@ type ParsedLine = {
   description: string;
   debit: number;
   credit: number;
+  dimensions: Record<string, string>;
 };
+
+function parseDimensionsForLine(
+  formData: FormData,
+  i: number,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const prefix = `lines[${i}][dim][`;
+  for (const [name, value] of formData.entries()) {
+    if (!name.startsWith(prefix)) continue;
+    if (!name.endsWith("]")) continue;
+    const key = name.slice(prefix.length, -1);
+    const v = typeof value === "string" ? value.trim() : "";
+    if (key && v) out[key] = v;
+  }
+  return out;
+}
 
 function parseLines(formData: FormData): ParsedLine[] {
   const lines: ParsedLine[] = [];
@@ -38,6 +55,7 @@ function parseLines(formData: FormData): ParsedLine[] {
       description: typeof description === "string" ? description : "",
       debit: parseAmount(typeof debit === "string" ? debit : ""),
       credit: parseAmount(typeof credit === "string" ? credit : ""),
+      dimensions: parseDimensionsForLine(formData, i),
     });
   }
   return lines;
@@ -89,6 +107,7 @@ export async function createEntry(
         description: l.description.trim() === "" ? null : l.description.trim(),
         debit: l.debit,
         credit: l.credit,
+        dimensions: l.dimensions,
       })),
     });
     revalidatePath("/journal");

@@ -7,6 +7,7 @@ import { PeriodPicker } from "@/components/PeriodPicker";
 import { CompareSelect } from "@/components/CompareSelect";
 import { CsvDownloadButton } from "@/components/CsvDownloadButton";
 import { PrintButton } from "@/components/PrintButton";
+import { DrillNumber, drillToAccount } from "@/components/DrillNumber";
 import {
   DEMO_TODAY,
   accountsByType,
@@ -77,12 +78,16 @@ function AccountRow({
   value: number;
   extras?: Array<{ key: string; value: string; neg?: boolean; num?: boolean }>;
 }) {
+  // Drill from any report cell straight into the journal filtered to this
+  // account. The journal page reads `?account=` and shows only entries
+  // that touch it.
+  const drillHref = drillToAccount(account.id);
   return (
     <TR>
       <TD mono>{account.code}</TD>
       <TD>{account.name}</TD>
       <TD num neg={value < 0}>
-        {formatUSD(value, { paren: true })}
+        <DrillNumber value={value} href={drillHref} currencyCode={null} />
       </TD>
       {extras?.map((e) => (
         <TD key={e.key} num={e.num ?? true} neg={e.neg}>

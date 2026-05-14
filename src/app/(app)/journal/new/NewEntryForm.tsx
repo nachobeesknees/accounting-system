@@ -8,7 +8,12 @@ import { Field, Row, SelectField } from "@/components/ui/Field";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { formatMoneyInput, formatUSD, parseAmount } from "@/lib/money";
-import type { Account, FiscalPeriod } from "@/lib/types";
+import type {
+  Account,
+  Dimension,
+  DimensionValue,
+  FiscalPeriod,
+} from "@/lib/types";
 import { createEntry, type CreateEntryState } from "./actions";
 
 type Line = {
@@ -16,10 +21,17 @@ type Line = {
   description: string;
   debit: string;
   credit: string;
+  dimensions: Record<string, string>;
 };
 
 function blankLine(): Line {
-  return { accountId: "", description: "", debit: "", credit: "" };
+  return {
+    accountId: "",
+    description: "",
+    debit: "",
+    credit: "",
+    dimensions: {},
+  };
 }
 
 const INITIAL_STATE: CreateEntryState = { error: null };
@@ -28,10 +40,12 @@ export function NewEntryForm({
   accounts,
   periods,
   today,
+  dimensionsWithValues,
 }: {
   accounts: Account[];
   periods: FiscalPeriod[];
   today: string;
+  dimensionsWithValues: Array<{ dimension: Dimension; values: DimensionValue[] }>;
 }) {
   const [state, formAction] = useFormState(createEntry, INITIAL_STATE);
   const [lines, setLines] = useState<Line[]>([blankLine(), blankLine()]);
@@ -179,26 +193,56 @@ export function NewEntryForm({
                   {i + 1}
                 </TD>
                 <TD>
-                  <select
-                    name={`lines[${i}][accountId]`}
-                    value={line.accountId}
-                    onChange={(e) =>
-                      updateLine(i, { accountId: e.target.value })
-                    }
-                    className="px-2 py-1 text-[12.5px] rounded-md outline-none w-full"
-                    style={{
-                      background: "var(--paper)",
-                      border: "1px solid var(--line-2)",
-                      color: "var(--ink)",
-                    }}
-                  >
-                    <option value="">— Select account —</option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.code} — {a.name}
-                      </option>
+                  <div className="flex flex-col gap-1">
+                    <select
+                      name={`lines[${i}][accountId]`}
+                      value={line.accountId}
+                      onChange={(e) =>
+                        updateLine(i, { accountId: e.target.value })
+                      }
+                      className="px-2 py-1 text-[12.5px] rounded-md outline-none w-full"
+                      style={{
+                        background: "var(--paper)",
+                        border: "1px solid var(--line-2)",
+                        color: "var(--ink)",
+                      }}
+                    >
+                      <option value="">— Select account —</option>
+                      {accounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.code} — {a.name}
+                        </option>
+                      ))}
+                    </select>
+                    {dimensionsWithValues.map(({ dimension, values }) => (
+                      <select
+                        key={dimension.id}
+                        name={`lines[${i}][dim][${dimension.key}]`}
+                        value={line.dimensions[dimension.key] ?? ""}
+                        onChange={(e) =>
+                          updateLine(i, {
+                            dimensions: {
+                              ...line.dimensions,
+                              [dimension.key]: e.target.value,
+                            },
+                          })
+                        }
+                        className="px-2 py-1 text-[11.5px] rounded-md outline-none w-full"
+                        style={{
+                          background: "var(--paper)",
+                          border: "1px solid var(--line-2)",
+                          color: "var(--ink-2)",
+                        }}
+                      >
+                        <option value="">— {dimension.label} —</option>
+                        {values.map((v) => (
+                          <option key={v.id} value={v.id}>
+                            {v.label}
+                          </option>
+                        ))}
+                      </select>
                     ))}
-                  </select>
+                  </div>
                 </TD>
                 <TD>
                   <input

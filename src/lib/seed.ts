@@ -427,6 +427,7 @@ const INVOICE_LINES = (invoiceId: string, lines: { description: string; quantity
     unitPrice: l.unitPrice,
     amount: (parseFloat(l.quantity) * parseFloat(l.unitPrice)).toFixed(2),
     accountId: l.accountId,
+    dimensions: {},
   }));
 
 export const INVOICES: Invoice[] = [
@@ -513,6 +514,7 @@ const BILL_LINES = (billId: string, lines: { description: string; quantity: stri
     unitPrice: l.unitPrice,
     amount: (parseFloat(l.quantity) * parseFloat(l.unitPrice)).toFixed(2),
     accountId: l.accountId,
+    dimensions: {},
   }));
 
 export const BILLS: Bill[] = [

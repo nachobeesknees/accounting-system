@@ -14,6 +14,7 @@ import {
   getBankAccounts,
   getCustomerAssignments,
   getCustomerById,
+  getDimensionsWithValues,
   getInvoiceById,
   getJournalEntryById,
   getUserById,
@@ -115,17 +116,47 @@ export default async function Page({
 
   const sessionUser = await getSessionUser();
 
-  const [customer, journalEntry, accounts, bankAccounts, assignments] =
-    await Promise.all([
-      getCustomerById(invoice.customerId),
-      invoice.journalEntryId
-        ? getJournalEntryById(invoice.journalEntryId)
-        : Promise.resolve(undefined),
-      getAccounts(),
-      getBankAccounts(),
-      getCustomerAssignments(invoice.customerId),
-    ]);
+  const [
+    customer,
+    journalEntry,
+    accounts,
+    bankAccounts,
+    assignments,
+    dimensionsWithValues,
+  ] = await Promise.all([
+    getCustomerById(invoice.customerId),
+    invoice.journalEntryId
+      ? getJournalEntryById(invoice.journalEntryId)
+      : Promise.resolve(undefined),
+    getAccounts(),
+    getBankAccounts(),
+    getCustomerAssignments(invoice.customerId),
+    getDimensionsWithValues(),
+  ]);
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
+
+  const dimensionByKey = new Map(
+    dimensionsWithValues.map((d) => [d.dimension.key, d.dimension] as const),
+  );
+  const dimensionValueById = new Map(
+    dimensionsWithValues.flatMap((d) =>
+      d.values.map((v) => [v.id, v] as const),
+    ),
+  );
+  function renderDimensions(
+    dims: Record<string, string> | undefined,
+  ): string | null {
+    if (!dims) return null;
+    const parts: string[] = [];
+    for (const [key, valueId] of Object.entries(dims)) {
+      if (!valueId) continue;
+      const dim = dimensionByKey.get(key);
+      const val = dimensionValueById.get(valueId);
+      if (!dim || !val) continue;
+      parts.push(`${dim.label}: ${val.label}`);
+    }
+    return parts.length === 0 ? null : parts.join(" · ");
+  }
 
   const assignedUserId = readAssignedUserId(customer);
   const approvals = approvalFields(invoice);
@@ -623,10 +654,24 @@ export default async function Page({
             <TBody>
               {invoice.lines.map((line) => {
                 const account = accountById.get(line.accountId);
+                const dimText = renderDimensions(line.dimensions);
                 return (
                   <TR key={line.id}>
                     <TD mono>{line.lineNumber}</TD>
-                    <TD>{line.description}</TD>
+                    <TD>
+                      <div>{line.description}</div>
+                      {dimText && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--ink-4)",
+                            marginTop: 2,
+                          }}
+                        >
+                          {dimText}
+                        </div>
+                      )}
+                    </TD>
                     <TD>
                       <span
                         style={{

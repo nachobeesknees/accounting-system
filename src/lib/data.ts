@@ -350,8 +350,57 @@ function mapOffice(r: typeof schema.offices.$inferSelect): Office {
     ein: r.ein,
     registrationNumber: r.registrationNumber,
     formationDate: r.formationDate,
+    regionId: r.regionId ?? null,
     isActive: r.isActive,
     notes: r.notes,
+  };
+}
+
+function mapRegionGroup(
+  r: typeof schema.regionGroups.$inferSelect,
+): import("./types").RegionGroup {
+  return {
+    id: r.id,
+    name: r.name,
+    notes: r.notes,
+    displayOrder: r.displayOrder,
+  };
+}
+
+function mapRegion(r: typeof schema.regions.$inferSelect): import("./types").Region {
+  return {
+    id: r.id,
+    name: r.name,
+    groupId: r.groupId ?? null,
+    notes: r.notes,
+    displayOrder: r.displayOrder,
+  };
+}
+
+function mapDimension(
+  r: typeof schema.dimensions.$inferSelect,
+): import("./types").Dimension {
+  return {
+    id: r.id,
+    key: r.key,
+    label: r.label,
+    description: r.description,
+    isActive: r.isActive,
+    displayOrder: r.displayOrder,
+  };
+}
+
+function mapDimensionValue(
+  r: typeof schema.dimensionValues.$inferSelect,
+): import("./types").DimensionValue {
+  return {
+    id: r.id,
+    dimensionId: r.dimensionId,
+    code: r.code,
+    label: r.label,
+    parentId: r.parentId ?? null,
+    isActive: r.isActive,
+    displayOrder: r.displayOrder,
   };
 }
 
@@ -494,6 +543,15 @@ function mapBankTransaction(
   };
 }
 
+// JSONB columns come back as `unknown` — narrow to DimensionMap with a
+// safety net so a bad row doesn't crash the page render.
+function asDimensionMap(v: unknown): import("./types").DimensionMap {
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    return v as import("./types").DimensionMap;
+  }
+  return {};
+}
+
 function mapJournalLine(r: typeof schema.journalLines.$inferSelect): JournalLine {
   return {
     id: r.id,
@@ -503,6 +561,7 @@ function mapJournalLine(r: typeof schema.journalLines.$inferSelect): JournalLine
     description: r.description,
     debit: r.debit,
     credit: r.credit,
+    dimensions: asDimensionMap(r.dimensions),
   };
 }
 
@@ -516,6 +575,7 @@ function mapInvoiceLine(r: typeof schema.invoiceLines.$inferSelect): InvoiceLine
     unitPrice: r.unitPrice,
     amount: r.amount,
     accountId: r.accountId,
+    dimensions: asDimensionMap(r.dimensions),
   };
 }
 
@@ -529,6 +589,7 @@ function mapBillLine(r: typeof schema.billLines.$inferSelect): BillLine {
     unitPrice: r.unitPrice,
     amount: r.amount,
     accountId: r.accountId,
+    dimensions: asDimensionMap(r.dimensions),
   };
 }
 
@@ -2173,6 +2234,144 @@ export async function getDisplayBalances(): Promise<Map<string, number>> {
     out.set(a.id, a.normalBalance === "debit" ? signed : -signed);
   }
   return out;
+}
+
+// --------- Regions, region groups, dimensions ---------
+
+export async function getRegions(): Promise<import("./types").Region[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.regions)
+    .orderBy(asc(schema.regions.displayOrder), asc(schema.regions.name));
+  return rows.map(mapRegion);
+}
+
+export async function getRegionById(
+  id: string,
+): Promise<import("./types").Region | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.regions)
+    .where(eq(schema.regions.id, id))
+    .limit(1);
+  return row ? mapRegion(row) : undefined;
+}
+
+export async function getRegionGroups(): Promise<import("./types").RegionGroup[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.regionGroups)
+    .orderBy(asc(schema.regionGroups.displayOrder), asc(schema.regionGroups.name));
+  return rows.map(mapRegionGroup);
+}
+
+export async function getRegionGroupById(
+  id: string,
+): Promise<import("./types").RegionGroup | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.regionGroups)
+    .where(eq(schema.regionGroups.id, id))
+    .limit(1);
+  return row ? mapRegionGroup(row) : undefined;
+}
+
+export async function getDimensions(opts?: {
+  activeOnly?: boolean;
+}): Promise<import("./types").Dimension[]> {
+  const db = getDb();
+  const rows = opts?.activeOnly
+    ? await db
+        .select()
+        .from(schema.dimensions)
+        .where(eq(schema.dimensions.isActive, true))
+        .orderBy(asc(schema.dimensions.displayOrder), asc(schema.dimensions.label))
+    : await db
+        .select()
+        .from(schema.dimensions)
+        .orderBy(asc(schema.dimensions.displayOrder), asc(schema.dimensions.label));
+  return rows.map(mapDimension);
+}
+
+export async function getDimensionByKey(
+  key: string,
+): Promise<import("./types").Dimension | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.dimensions)
+    .where(eq(schema.dimensions.key, key))
+    .limit(1);
+  return row ? mapDimension(row) : undefined;
+}
+
+export async function getDimensionById(
+  id: string,
+): Promise<import("./types").Dimension | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.dimensions)
+    .where(eq(schema.dimensions.id, id))
+    .limit(1);
+  return row ? mapDimension(row) : undefined;
+}
+
+export async function getDimensionValues(
+  dimensionId: string,
+): Promise<import("./types").DimensionValue[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.dimensionValues)
+    .where(eq(schema.dimensionValues.dimensionId, dimensionId))
+    .orderBy(
+      asc(schema.dimensionValues.displayOrder),
+      asc(schema.dimensionValues.label),
+    );
+  return rows.map(mapDimensionValue);
+}
+
+/**
+ * Convenience for forms — returns every active dimension paired with its
+ * values, in display order. The JE / invoice / bill line forms render one
+ * <select> per row of this result.
+ */
+export async function getDimensionsWithValues(): Promise<
+  Array<{
+    dimension: import("./types").Dimension;
+    values: import("./types").DimensionValue[];
+  }>
+> {
+  const dims = await getDimensions({ activeOnly: true });
+  if (dims.length === 0) return [];
+  const db = getDb();
+  const ids = dims.map((d) => d.id);
+  const valueRows = await db
+    .select()
+    .from(schema.dimensionValues)
+    .where(
+      and(
+        inArray(schema.dimensionValues.dimensionId, ids),
+        eq(schema.dimensionValues.isActive, true),
+      ),
+    )
+    .orderBy(
+      asc(schema.dimensionValues.displayOrder),
+      asc(schema.dimensionValues.label),
+    );
+  const byDim = new Map<string, import("./types").DimensionValue[]>();
+  for (const r of valueRows) {
+    const mapped = mapDimensionValue(r);
+    const arr = byDim.get(mapped.dimensionId) ?? [];
+    arr.push(mapped);
+    byDim.set(mapped.dimensionId, arr);
+  }
+  return dims.map((d) => ({ dimension: d, values: byDim.get(d.id) ?? [] }));
 }
 
 // The "today" for the demo. Fix it so reports match the seeded data.

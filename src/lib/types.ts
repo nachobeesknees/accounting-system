@@ -23,6 +23,13 @@ export type FiscalPeriod = {
 
 export type JournalEntryStatus = "draft" | "posted" | "void";
 
+/**
+ * Map of dimension key → dimension value id. Keys match
+ * `dimensions.key` (e.g. "department", "project") and values match
+ * `dimension_values.id`. Empty {} means no dimensions set.
+ */
+export type DimensionMap = Record<string, string>;
+
 export type JournalLine = {
   id: string;
   journalEntryId: string;
@@ -31,6 +38,8 @@ export type JournalLine = {
   description: string | null;
   debit: string;
   credit: string;
+  /** Read side always populates from DB JSONB (defaults to {}). */
+  dimensions?: DimensionMap;
 };
 
 export type JournalEntry = {
@@ -287,12 +296,53 @@ export type Office = {
   ein?: string | null;
   registrationNumber?: string | null;
   formationDate?: string | null;
+  regionId?: string | null;
   isActive: boolean;
   notes: string | null;
 };
 
 /** Semantic alias surfaced in UI. */
 export type FirmEntity = Office;
+
+// ---- Office grouping (region + region group) ----
+
+export type RegionGroup = {
+  id: string;
+  name: string;
+  notes: string | null;
+  displayOrder: number;
+};
+
+export type Region = {
+  id: string;
+  name: string;
+  groupId: string | null;
+  notes: string | null;
+  displayOrder: number;
+};
+
+// ---- Dimensions (department / project / cost-center / ...) ----
+
+export type Dimension = {
+  id: string;
+  /** Stable slug used inside DimensionMap (e.g. "department"). */
+  key: string;
+  label: string;
+  description: string | null;
+  isActive: boolean;
+  displayOrder: number;
+};
+
+export type DimensionValue = {
+  id: string;
+  dimensionId: string;
+  code: string;
+  label: string;
+  /** Optional hierarchy (Department > Sub-department). */
+  parentId: string | null;
+  isActive: boolean;
+  displayOrder: number;
+};
 
 export type PriceList = {
   id: string;
@@ -446,6 +496,8 @@ export type InvoiceLine = {
   unitPrice: string;
   amount: string;
   accountId: string;
+  /** Read side always populates from DB JSONB (defaults to {}). */
+  dimensions?: DimensionMap;
 };
 
 export type Invoice = {
@@ -500,6 +552,8 @@ export type BillLine = {
   unitPrice: string;
   amount: string;
   accountId: string;
+  /** Read side always populates from DB JSONB (defaults to {}). */
+  dimensions?: DimensionMap;
 };
 
 /**

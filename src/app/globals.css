@@ -109,6 +109,25 @@ body {
   color: var(--ink);
 }
 
+/* DrillNumber — every money value in the app is clickable. Keep the
+ * affordance subtle: dotted underline that only fills on hover so dense
+ * reports stay readable. Inherits text color by default so the negative
+ * red set inline by DrillNumber survives the link styling. */
+a.drill-number,
+a.drill-number:visited {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+a.drill-number:hover {
+  text-decoration-style: solid;
+  text-decoration-color: var(--accent);
+  color: var(--accent);
+}
+
 /* --------------------------- Skeleton shimmer -------------------------- */
 
 @keyframes tw-skeleton-shimmer {

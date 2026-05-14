@@ -13,7 +13,24 @@ type ParsedLine = {
   accountId: string;
   quantity: number;
   unitPrice: number;
+  dimensions: Record<string, string>;
 };
+
+function parseDimensionsForLine(
+  formData: FormData,
+  i: number,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  const prefix = `lines[${i}][dim][`;
+  for (const [name, value] of formData.entries()) {
+    if (!name.startsWith(prefix)) continue;
+    if (!name.endsWith("]")) continue;
+    const key = name.slice(prefix.length, -1);
+    const v = typeof value === "string" ? value.trim() : "";
+    if (key && v) out[key] = v;
+  }
+  return out;
+}
 
 function parseLines(formData: FormData): ParsedLine[] {
   const lines: ParsedLine[] = [];
@@ -37,6 +54,7 @@ function parseLines(formData: FormData): ParsedLine[] {
       accountId: typeof accountId === "string" ? accountId : "",
       quantity: parseAmount(typeof quantity === "string" ? quantity : ""),
       unitPrice: parseAmount(typeof unitPrice === "string" ? unitPrice : ""),
+      dimensions: parseDimensionsForLine(formData, i),
     });
   }
   return lines;
@@ -83,6 +101,7 @@ export async function createInvoiceAction(
       accountId: l.accountId,
       quantity: l.quantity,
       unitPrice: l.unitPrice,
+      dimensions: l.dimensions,
     }));
 
   if (lines.length === 0) {

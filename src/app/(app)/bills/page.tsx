@@ -10,6 +10,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getBills, getVendors } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
+import { DrillNumber } from "@/components/DrillNumber";
 import type { Bill, Vendor } from "@/lib/types";
 
 function filterBills(
@@ -156,9 +157,20 @@ export default async function Page({
                       <TD>{vend?.name ?? "—"}</TD>
                       <TD>{formatDate(bill.billDate)}</TD>
                       <TD>{formatDate(bill.dueDate)}</TD>
-                      <TD num>{formatUSD(bill.total, { paren: true })}</TD>
+                      <TD num>
+                        <DrillNumber
+                          value={bill.total}
+                          href={`/bills/${bill.id}`}
+                          currencyCode={null}
+                        />
+                      </TD>
                       <TD num neg={isOverdue}>
-                        {formatUSD(bal, { paren: true })}
+                        <DrillNumber
+                          value={bal}
+                          href={`/bills/${bill.id}`}
+                          currencyCode={null}
+                          neg={isOverdue || bal < 0}
+                        />
                       </TD>
                       <TD>
                         <Pill variant={statusVariant(bill.status)}>

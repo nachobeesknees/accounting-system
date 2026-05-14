@@ -1,5 +1,5 @@
 import { PageHeader } from "@/components/ui/PageHeader";
-import { getAccounts, getCustomers } from "@/lib/data";
+import { getAccounts, getCustomers, getDimensionsWithValues } from "@/lib/data";
 import { NewInvoiceForm } from "./NewInvoiceForm";
 
 function todayISO(): string {
@@ -13,9 +13,10 @@ function plusDaysISO(days: number): string {
 }
 
 export default async function Page() {
-  const [customers, accounts] = await Promise.all([
+  const [customers, accounts, dimensionsWithValues] = await Promise.all([
     getCustomers(),
     getAccounts(),
+    getDimensionsWithValues(),
   ]);
   const revenueAccounts = accounts
     .filter((a) => a.accountType === "revenue" && a.isActive)
@@ -29,6 +30,7 @@ export default async function Page() {
         revenueAccounts={revenueAccounts}
         today={todayISO()}
         dueDefault={plusDaysISO(30)}
+        dimensionsWithValues={dimensionsWithValues}
       />
     </>
   );

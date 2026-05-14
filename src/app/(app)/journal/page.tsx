@@ -10,6 +10,7 @@ import { IconBookOpen } from "@/components/ui/Icon";
 import { getJournalEntries, totalDebits } from "@/lib/data";
 import { formatUSD } from "@/lib/money";
 import type { JournalEntry } from "@/lib/types";
+import { DrillNumber } from "@/components/DrillNumber";
 
 function formatShortDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -26,11 +27,15 @@ function filterEntries(
   q: string,
   status: string,
   source: string,
+  accountId: string,
 ): JournalEntry[] {
   const needle = q.trim().toLowerCase();
   return entries.filter((e) => {
     if (status && e.status !== status) return false;
     if (source && e.source !== source) return false;
+    // Account drill-down: keep entries that touch the given account on
+    // any line. Used by DrillNumber on Trial Balance / IS / BS rows.
+    if (accountId && !e.lines.some((l) => l.accountId === accountId)) return false;
     if (needle) {
       const hay =
         `${e.entryNumber} ${e.description ?? ""} ${e.reference ?? ""}`.toLowerCase();
@@ -43,15 +48,23 @@ function filterEntries(
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; source?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    status?: string;
+    source?: string;
+    account?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
   const params = await searchParams;
   const q = params.q ?? "";
   const status = params.status ?? "";
   const source = params.source ?? "";
+  const accountId = params.account ?? "";
 
   const allEntries = await getJournalEntries();
-  const entries = filterEntries(allEntries, q, status, source);
+  const entries = filterEntries(allEntries, q, status, source, accountId);
   const grandTotal = entries.reduce((s, e) => s + totalDebits(e), 0);
 
   return (
@@ -172,7 +185,13 @@ export default async function Page({
                         {statusLabel(e.status)}
                       </Pill>
                     </TD>
-                    <TD num>{formatUSD(totalDebits(e))}</TD>
+                    <TD num>
+                      <DrillNumber
+                        value={totalDebits(e)}
+                        href={`/journal/${e.entryNumber}`}
+                        currencyCode={null}
+                      />
+                    </TD>
                   </TR>
                 ))}
                 <TR total hover={false}>

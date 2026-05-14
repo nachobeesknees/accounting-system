@@ -105,6 +105,16 @@ export default async function Page() {
             <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
               Define extra fields on entities, contacts, assets, bank accounts.
             </span>
+            <Link
+              href="/settings/dimensions"
+              style={{ color: "var(--ink)", textDecoration: "underline" }}
+            >
+              Dimensions →
+            </Link>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+              Department, project, cost-center slicers attached to journal,
+              invoice and bill line items.
+            </span>
           </div>
         </Section>
 

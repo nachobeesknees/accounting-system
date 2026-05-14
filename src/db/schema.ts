@@ -141,6 +141,12 @@ export const journalLines = pgTable(
     credit: numeric("credit", { precision: 15, scale: 2 }).notNull().default("0"),
     entityId: text("entity_id"),
     firmEntityId: text("firm_entity_id"),
+    /**
+     * Open-ended slicers (department, project, cost center, ...). Stored
+     * as `{ "department": "<dim-value-id>", "project": "..." }`. Keys map
+     * to dimensions.key; values map to dimension_values.id.
+     */
+    dimensions: jsonb("dimensions").notNull().default(sql`'{}'::jsonb`),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => ({
@@ -170,8 +176,67 @@ export const offices = pgTable("offices", {
   ein: text("ein"),
   registrationNumber: text("registration_number"),
   formationDate: date("formation_date"),
+  /** Optional region (e.g. "North America", "Caribbean"). */
+  regionId: text("region_id"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Office grouping: regions + region groups ----------
+
+/**
+ * Top-level grouping of regions (e.g. "Americas", "EMEA", "APAC"). Both
+ * the group level and the region level are easy to change — see the
+ * /regions page.
+ */
+export const regionGroups = pgTable("region_groups", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  notes: text("notes"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const regions = pgTable("regions", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  groupId: text("group_id"), // FK -> region_groups (soft FK)
+  notes: text("notes"),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Dimensions (department / project / cost center / ...) ----------
+
+/**
+ * A dimension is an arbitrary slicer attached to journal/invoice/bill lines
+ * via the line's `dimensions` JSONB. The `key` is the JSONB key
+ * (e.g. "department") and `label` is the human-readable name. Hierarchy
+ * lives on `dimension_values.parent_id`.
+ */
+export const dimensions = pgTable("dimensions", {
+  id: text("id").primaryKey(),
+  key: text("key").notNull().unique(),
+  label: text("label").notNull(),
+  description: text("description"),
+  isActive: boolean("is_active").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const dimensionValues = pgTable("dimension_values", {
+  id: text("id").primaryKey(),
+  dimensionId: text("dimension_id").notNull(),
+  code: text("code").notNull(),
+  label: text("label").notNull(),
+  parentId: text("parent_id"),
+  isActive: boolean("is_active").notNull().default(true),
+  displayOrder: integer("display_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -597,6 +662,7 @@ export const invoiceLines = pgTable("invoice_lines", {
   unitPrice: numeric("unit_price", { precision: 15, scale: 2 }).notNull(),
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
   accountId: text("account_id").notNull(),
+  dimensions: jsonb("dimensions").notNull().default(sql`'{}'::jsonb`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -651,6 +717,7 @@ export const billLines = pgTable("bill_lines", {
   unitPrice: numeric("unit_price", { precision: 15, scale: 2 }).notNull(),
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
   accountId: text("account_id").notNull(),
+  dimensions: jsonb("dimensions").notNull().default(sql`'{}'::jsonb`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 

@@ -102,6 +102,20 @@ const COLUMNS: ColumnSpec[] = [
   /** The invoice created when this chargeback was rebilled. NULL = not yet billed. */
   { table: "bills", column: "chargeback_invoice_id", type: "text" },
   { table: "bills", column: "chargeback_notes", type: "text" },
+
+  // ---- Office regions ----
+  // Offices (firm corporate entities) can be grouped into regions and
+  // regions into region groups for reporting. Both are optional.
+  { table: "offices", column: "region_id", type: "text" },
+
+  // ---- Dimensions on transactional lines (JSONB key/value) ----
+  // {"department": "dv-dep-eng", "project": "dv-proj-ledger-tool"}
+  // Key matches dimensions.key, value matches dimension_values.id.
+  // Department is a regular dimension (with a known key "department"); the
+  // table just has a sensible default so existing rows backfill to {}.
+  { table: "journal_lines", column: "dimensions", type: "jsonb", notNull: true, default: "'{}'::jsonb" },
+  { table: "invoice_lines", column: "dimensions", type: "jsonb", notNull: true, default: "'{}'::jsonb" },
+  { table: "bill_lines", column: "dimensions", type: "jsonb", notNull: true, default: "'{}'::jsonb" },
 ];
 
 const TABLES = [
@@ -287,6 +301,65 @@ const TABLES = [
       role text,
       created_at timestamp with time zone DEFAULT now() NOT NULL,
       UNIQUE (customer_id, user_id)
+    )`,
+  },
+  {
+    // Top-level grouping of regions (e.g., Americas, EMEA, APAC).
+    name: "region_groups",
+    ddl: `CREATE TABLE IF NOT EXISTS region_groups (
+      id text PRIMARY KEY,
+      name text NOT NULL,
+      notes text,
+      display_order integer DEFAULT 0 NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Regions belong to an (optional) region_group; offices belong to an
+    // (optional) region. Both can be re-pointed via the office detail page.
+    name: "regions",
+    ddl: `CREATE TABLE IF NOT EXISTS regions (
+      id text PRIMARY KEY,
+      name text NOT NULL,
+      group_id text,
+      notes text,
+      display_order integer DEFAULT 0 NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // A "dimension" is an arbitrary slicer (Department, Project, Cost
+    // Center, ...). Each dimension has a stable `key` slug used inside
+    // the journal_lines.dimensions JSONB.
+    name: "dimensions",
+    ddl: `CREATE TABLE IF NOT EXISTS dimensions (
+      id text PRIMARY KEY,
+      key text UNIQUE NOT NULL,
+      label text NOT NULL,
+      description text,
+      is_active boolean DEFAULT true NOT NULL,
+      display_order integer DEFAULT 0 NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Allowed values for each dimension. parent_id allows hierarchical
+    // dimensions (Department > Sub-department; Region > Sub-region).
+    name: "dimension_values",
+    ddl: `CREATE TABLE IF NOT EXISTS dimension_values (
+      id text PRIMARY KEY,
+      dimension_id text NOT NULL,
+      code text NOT NULL,
+      label text NOT NULL,
+      parent_id text,
+      is_active boolean DEFAULT true NOT NULL,
+      display_order integer DEFAULT 0 NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      UNIQUE (dimension_id, code)
     )`,
   },
 ];

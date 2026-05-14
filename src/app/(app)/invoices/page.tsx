@@ -10,6 +10,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getCustomers, getInvoices } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatUSD, parseAmount } from "@/lib/money";
+import { DrillNumber } from "@/components/DrillNumber";
 import type { Customer, Invoice } from "@/lib/types";
 
 function filterInvoices(
@@ -166,9 +167,20 @@ export default async function Page({
                       <TD>{cust?.name ?? "—"}</TD>
                       <TD>{formatDate(inv.invoiceDate)}</TD>
                       <TD>{formatDate(inv.dueDate)}</TD>
-                      <TD num>{formatUSD(inv.total, { paren: true })}</TD>
+                      <TD num>
+                        <DrillNumber
+                          value={inv.total}
+                          href={`/invoices/${inv.id}`}
+                          currencyCode={null}
+                        />
+                      </TD>
                       <TD num neg={isOverdue}>
-                        {formatUSD(bal, { paren: true })}
+                        <DrillNumber
+                          value={bal}
+                          href={`/invoices/${inv.id}`}
+                          currencyCode={null}
+                          neg={isOverdue || bal < 0}
+                        />
                       </TD>
                       <TD>
                         <Pill variant={statusVariant(inv.status)}>

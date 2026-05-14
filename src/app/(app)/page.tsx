@@ -22,6 +22,7 @@ import {
   getVendors,
 } from "@/lib/data";
 import { formatAmount, formatUSD } from "@/lib/money";
+import { DrillNumber } from "@/components/DrillNumber";
 import { parseAmount } from "@/lib/money";
 import { getSessionUser } from "@/lib/session";
 
@@ -128,7 +129,12 @@ function AgingRow({
         )}
       </TD>
       <TD num neg={neg && amount > 0}>
-        {formatUSD(amount, { paren: true })}
+        <DrillNumber
+          value={amount}
+          href={href}
+          currencyCode={null}
+          neg={neg && amount > 0}
+        />
       </TD>
     </TR>
   );
@@ -284,7 +290,13 @@ export default async function Page() {
                         {statusLabel(inv.status)}
                       </Pill>
                     </TD>
-                    <TD num>{formatUSD(inv.total)}</TD>
+                    <TD num>
+                      <DrillNumber
+                        value={inv.total}
+                        href={`/invoices/${inv.id}`}
+                        currencyCode={null}
+                      />
+                    </TD>
                     <TD>
                       <Link
                         href={`/invoices/${inv.id}`}
@@ -512,7 +524,13 @@ export default async function Page() {
                     <TD mono>{b.billNumber}</TD>
                     <TD>{vendor?.name ?? "—"}</TD>
                     <TD>{formatShortDate(b.dueDate)}</TD>
-                    <TD num>{formatUSD(bal, { paren: true })}</TD>
+                    <TD num>
+                      <DrillNumber
+                        value={bal}
+                        href={`/bills/${b.id}`}
+                        currencyCode={null}
+                      />
+                    </TD>
                   </TR>
                 );
               })}
@@ -550,7 +568,12 @@ export default async function Page() {
                       <TD>{customer?.name ?? "—"}</TD>
                       <TD>{formatShortDate(inv.dueDate)}</TD>
                       <TD num neg>
-                        {formatUSD(bal, { paren: true })}
+                        <DrillNumber
+                          value={bal}
+                          href={`/invoices/${inv.id}`}
+                          currencyCode={null}
+                          neg
+                        />
                       </TD>
                     </TR>
                   );

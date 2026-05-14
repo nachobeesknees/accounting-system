@@ -15,6 +15,7 @@ import {
   getBillById,
   getCustomerById,
   getCustomers,
+  getDimensionsWithValues,
   getEntities,
   getEntityById,
   getInvoiceById,
@@ -79,6 +80,7 @@ export default async function Page({
     chargebackClient,
     chargebackEntity,
     chargebackInvoice,
+    dimensionsWithValues,
   ] = await Promise.all([
     getVendorById(bill.vendorId),
     bill.journalEntryId
@@ -97,7 +99,30 @@ export default async function Page({
     bill.chargebackInvoiceId
       ? getInvoiceById(bill.chargebackInvoiceId)
       : Promise.resolve(undefined),
+    getDimensionsWithValues(),
   ]);
+  const dimensionByKey = new Map(
+    dimensionsWithValues.map((d) => [d.dimension.key, d.dimension] as const),
+  );
+  const dimensionValueById = new Map(
+    dimensionsWithValues.flatMap((d) =>
+      d.values.map((v) => [v.id, v] as const),
+    ),
+  );
+  function renderDimensions(
+    dims: Record<string, string> | undefined,
+  ): string | null {
+    if (!dims) return null;
+    const parts: string[] = [];
+    for (const [key, valueId] of Object.entries(dims)) {
+      if (!valueId) continue;
+      const dim = dimensionByKey.get(key);
+      const val = dimensionValueById.get(valueId);
+      if (!dim || !val) continue;
+      parts.push(`${dim.label}: ${val.label}`);
+    }
+    return parts.length === 0 ? null : parts.join(" · ");
+  }
   const activeCustomers = customers
     .filter((c) => c.isActive)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -385,10 +410,24 @@ export default async function Page({
             <TBody>
               {bill.lines.map((line) => {
                 const account = accountById.get(line.accountId);
+                const dimText = renderDimensions(line.dimensions);
                 return (
                   <TR key={line.id}>
                     <TD mono>{line.lineNumber}</TD>
-                    <TD>{line.description}</TD>
+                    <TD>
+                      <div>{line.description}</div>
+                      {dimText && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--ink-4)",
+                            marginTop: 2,
+                          }}
+                        >
+                          {dimText}
+                        </div>
+                      )}
+                    </TD>
                     <TD>
                       <span
                         style={{
