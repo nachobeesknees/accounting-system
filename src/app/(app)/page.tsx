@@ -246,6 +246,14 @@ export default async function Page() {
       };
     })
     .sort((a, b) => b.netBase - a.netBase);
+  // Firm-level (no entityId) row keeps the per-entity P&L card's rows
+  // summing to the KPI tile above it. Without this the dashboard shows
+  // Net Income X but a sub-table whose rows add to <X, which is the
+  // "doesn't add up" complaint.
+  const firmLevelPl = plRollup.find((r) => r.entityId == null);
+  const firmLevelNet = firmLevelPl?.netIncome ?? 0;
+  const totalNetBase =
+    entityPlRows.reduce((s, r) => s + r.netBase, 0) + firmLevelNet;
 
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
   const vendorById = new Map(vendors.map((v) => [v.id, v] as const));
@@ -431,7 +439,7 @@ export default async function Page() {
         />
       </div>
 
-      {entityPlRows.length > 0 && (
+      {(entityPlRows.length > 0 || firmLevelNet !== 0) && (
         <div className="px-6 mb-3.5">
           <Card
             title="Per-entity P&L (YTD, posted)"
@@ -473,6 +481,37 @@ export default async function Page() {
                     </TD>
                   </TR>
                 ))}
+                {firmLevelNet !== 0 && (
+                  // Firm-level activity has no entityId — show it as its
+                  // own row so the visible rows sum to the Net Income tile
+                  // above. Drill target is the journal list filtered to
+                  // firm-only entries.
+                  <TR href="/journal?entity=firm" hover>
+                    <TD style={{ color: "var(--ink-3)" }}>
+                      <Link
+                        href="/journal?entity=firm"
+                        style={{ color: "var(--ink-3)", textDecoration: "none" }}
+                      >
+                        Firm-level (unattributed)
+                      </Link>
+                    </TD>
+                    <TD mono style={{ color: "var(--ink-3)" }}>{baseCode}</TD>
+                    <TD num neg={firmLevelNet < 0}>
+                      {formatAmount(firmLevelNet, { paren: true, compact: true })}
+                    </TD>
+                    <TD num neg={firmLevelNet < 0}>
+                      {formatAmount(firmLevelNet, { paren: true, compact: true })}
+                    </TD>
+                  </TR>
+                )}
+                <TR total hover={false}>
+                  <TD colSpan={3} style={{ fontWeight: 600 }}>
+                    Total
+                  </TD>
+                  <TD num neg={totalNetBase < 0} style={{ fontWeight: 600 }}>
+                    {formatAmount(totalNetBase, { paren: true, compact: true })}
+                  </TD>
+                </TR>
               </TBody>
             </Table>
           </Card>

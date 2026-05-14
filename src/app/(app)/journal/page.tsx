@@ -61,6 +61,7 @@ function filterEntries(
   status: string,
   source: string,
   accountId: string,
+  entityFilter: string,
 ): JournalEntry[] {
   const needle = q.trim().toLowerCase();
   return entries.filter((e) => {
@@ -69,6 +70,14 @@ function filterEntries(
     // Account drill-down: keep entries that touch the given account on
     // any line. Used by DrillNumber on Trial Balance / IS / BS rows.
     if (accountId && !e.lines.some((l) => l.accountId === accountId)) return false;
+    // Entity drill-down. `firm` → entries with no entity (firm-level
+    // unattributed); anything else → that entity id. Used by the
+    // dashboard's per-entity P&L card to drill into the firm-level row.
+    if (entityFilter === "firm") {
+      if (e.entityId != null) return false;
+    } else if (entityFilter) {
+      if (e.entityId !== entityFilter) return false;
+    }
     if (needle) {
       const hay =
         `${e.entryNumber} ${e.description ?? ""} ${e.reference ?? ""}`.toLowerCase();
@@ -86,6 +95,7 @@ export default async function Page({
     status?: string;
     source?: string;
     account?: string;
+    entity?: string;
     from?: string;
     to?: string;
     view?: string;
@@ -97,6 +107,7 @@ export default async function Page({
   const status = params.status ?? "";
   const source = params.source ?? "";
   const accountId = params.account ?? "";
+  const entityFilter = params.entity ?? "";
   const view = params.view === "templates" ? "templates" : "entries";
   const error = params.error ?? "";
 
@@ -107,7 +118,7 @@ export default async function Page({
   const todayIso = DEMO_TODAY.toISOString().slice(0, 10);
   const dueTemplates = templates.filter((t) => isTemplateDue(t, todayIso));
 
-  const entries = filterEntries(allEntries, q, status, source, accountId);
+  const entries = filterEntries(allEntries, q, status, source, accountId, entityFilter);
   const grandTotal = entries.reduce((s, e) => s + totalDebits(e), 0);
 
   return (
