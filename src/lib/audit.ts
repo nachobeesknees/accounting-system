@@ -14,7 +14,7 @@
 import "server-only";
 
 import { headers } from "next/headers";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { SessionUser } from "./types";
 
@@ -79,6 +79,88 @@ export async function logAuditEvent(
  * email directly. If the email matches a known user, we look up the
  * user id + role for the audit row (best-effort).
  */
+// ---------- Read side ----------
+
+export type AuditLogRow = {
+  id: string;
+  timestamp: string;
+  userId: string | null;
+  userEmail: string | null;
+  userRole: string | null;
+  action: string;
+  resourceType: string | null;
+  resourceId: string | null;
+  resourceName: string | null;
+  changes: unknown;
+  ipAddress: string | null;
+  userAgent: string | null;
+  metadata: unknown;
+};
+
+export type AuditLogFilter = {
+  startDate?: string | null;
+  endDate?: string | null;
+  userId?: string | null;
+  action?: string | null;
+  resourceType?: string | null;
+  limit?: number;
+};
+
+function mapAuditRow(r: typeof schema.auditLog.$inferSelect): AuditLogRow {
+  return {
+    id: r.id,
+    timestamp: r.timestamp.toISOString(),
+    userId: r.userId,
+    userEmail: r.userEmail,
+    userRole: r.userRole,
+    action: r.action,
+    resourceType: r.resourceType,
+    resourceId: r.resourceId,
+    resourceName: r.resourceName,
+    changes: r.changes,
+    ipAddress: r.ipAddress,
+    userAgent: r.userAgent,
+    metadata: r.metadata,
+  };
+}
+
+export async function listAuditLog(
+  filter: AuditLogFilter = {},
+): Promise<AuditLogRow[]> {
+  const db = getDb();
+  const conds = [] as ReturnType<typeof eq>[];
+  if (filter.startDate) {
+    conds.push(gte(schema.auditLog.timestamp, new Date(filter.startDate)));
+  }
+  if (filter.endDate) {
+    // Push end to end-of-day so YYYY-MM-DD inputs are inclusive.
+    const end = new Date(filter.endDate);
+    end.setUTCHours(23, 59, 59, 999);
+    conds.push(lte(schema.auditLog.timestamp, end));
+  }
+  if (filter.userId) conds.push(eq(schema.auditLog.userId, filter.userId));
+  if (filter.action) conds.push(eq(schema.auditLog.action, filter.action));
+  if (filter.resourceType) {
+    conds.push(eq(schema.auditLog.resourceType, filter.resourceType));
+  }
+  let q = db.select().from(schema.auditLog).$dynamic();
+  if (conds.length > 0) q = q.where(and(...conds));
+  const rows = await q
+    .orderBy(desc(schema.auditLog.timestamp))
+    .limit(filter.limit ?? 500);
+  return rows.map(mapAuditRow);
+}
+
+export async function getDistinctAuditActions(): Promise<string[]> {
+  const db = getDb();
+  const rows = await db
+    .select({ action: schema.auditLog.action })
+    .from(schema.auditLog);
+  const seen = new Set<string>();
+  for (const r of rows) seen.add(r.action);
+  return Array.from(seen).sort();
+}
+
 export async function logAuditEventFromHeaders(
   input: AuditEventInput & { userEmail: string },
 ): Promise<void> {

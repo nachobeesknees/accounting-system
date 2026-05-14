@@ -15,6 +15,8 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from "dr
 import { getDb, schema } from "@/db";
 import { parseAmount, sumDebits, sumCredits } from "./money";
 import { getEntityScope } from "./entity-scope";
+import { getSessionUser } from "./session";
+import { getAccessibleEntityIds } from "./access";
 import type {
   Account,
   AccountType,
@@ -1213,15 +1215,22 @@ export async function getEntityFeeById(id: string): Promise<EntityFee | undefine
 
 export async function getEntities(): Promise<Entity[]> {
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(schema.entities)
-    .orderBy(schema.entities.code);
+  const user = await getSessionUser();
+  const allowed = await getAccessibleEntityIds(user);
+  let query = db.select().from(schema.entities).$dynamic();
+  if (allowed != null) {
+    if (allowed.length === 0) return [];
+    query = query.where(inArray(schema.entities.id, allowed));
+  }
+  const rows = await query.orderBy(schema.entities.code);
   return rows.map(mapEntity);
 }
 
 export async function getEntityById(id: string): Promise<Entity | undefined> {
   const db = getDb();
+  const user = await getSessionUser();
+  const allowed = await getAccessibleEntityIds(user);
+  if (allowed != null && !allowed.includes(id)) return undefined;
   const [row] = await db
     .select()
     .from(schema.entities)

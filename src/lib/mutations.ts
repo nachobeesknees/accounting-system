@@ -24,6 +24,8 @@ import type {
 import { getJournalEntryById } from "./data";
 import { getEntityScope } from "./entity-scope";
 import { checkPeriodForPost } from "./periods";
+import { requirePermission } from "./permissions";
+import { logAuditEvent } from "./audit";
 
 /**
  * Currency to use for a new transaction issued by the firm. Prefers the
@@ -172,6 +174,10 @@ export async function createJournalEntry(
   user: SessionUser,
   input: CreateJournalEntryInput,
 ): Promise<JournalEntry> {
+  requirePermission(user, "journal.create");
+  if (input.bypassControlWarning) {
+    requirePermission(user, "journal.bypass_control");
+  }
   if (input.lines.length < 2) {
     throw new Error("Journal entry must have at least 2 lines.");
   }
@@ -274,6 +280,25 @@ export async function createJournalEntry(
 
   const created = await getJournalEntryById(id);
   if (!created) throw new Error("Created entry not found after insert.");
+  await logAuditEvent(user, {
+    action: isTemplate ? "journal_entry.template_create" : "journal_entry.create",
+    resourceType: "journal_entry",
+    resourceId: created.id,
+    resourceName: created.entryNumber,
+    changes: { after: { status: created.status, lines: input.lines.length } },
+    metadata: {
+      bypassControlWarning: !!input.bypassControlWarning,
+      periodOverrideReason: overrideRecorded,
+    },
+  });
+  if (input.bypassControlWarning) {
+    await logAuditEvent(user, {
+      action: "journal_entry.bypass_control_warning",
+      resourceType: "journal_entry",
+      resourceId: created.id,
+      resourceName: created.entryNumber,
+    });
+  }
   return created;
 }
 
@@ -418,6 +443,7 @@ export async function postJournalEntry(
   entryId: string,
   options: { periodOverrideReason?: string | null } = {},
 ): Promise<JournalEntry> {
+  requirePermission(user, "journal.post");
   const entry = await getJournalEntryById(entryId);
   if (!entry) throw new Error("Entry not found.");
   if (entry.status === "posted") return entry;
@@ -463,6 +489,16 @@ export async function postJournalEntry(
 
   const updated = await getJournalEntryById(entryId);
   if (!updated) throw new Error("Entry vanished after post.");
+  await logAuditEvent(user, {
+    action: "journal_entry.post",
+    resourceType: "journal_entry",
+    resourceId: updated.id,
+    resourceName: updated.entryNumber,
+    changes: { before: { status: entry.status }, after: { status: "posted" } },
+    metadata: periodCheck.overrideRecorded
+      ? { periodOverrideReason: periodCheck.overrideRecorded }
+      : undefined,
+  });
   return updated;
 }
 
@@ -471,6 +507,7 @@ export async function voidJournalEntry(
   entryId: string,
   reason: string,
 ): Promise<JournalEntry> {
+  requirePermission(user, "journal.void");
   const entry = await getJournalEntryById(entryId);
   if (!entry) throw new Error("Entry not found.");
   if (entry.status === "void") return entry;
@@ -538,6 +575,14 @@ export async function voidJournalEntry(
 
   const updated = await getJournalEntryById(entryId);
   if (!updated) throw new Error("Entry vanished after void.");
+  await logAuditEvent(user, {
+    action: "journal_entry.void",
+    resourceType: "journal_entry",
+    resourceId: updated.id,
+    resourceName: updated.entryNumber,
+    changes: { before: { status: entry.status }, after: { status: "void" } },
+    metadata: reason ? { reason } : undefined,
+  });
   return updated;
 }
 
@@ -2196,7 +2241,8 @@ export type CreateInvoiceInput = {
   lines: DraftInvoiceLine[];
 };
 
-export async function createInvoice(_user: SessionUser, input: CreateInvoiceInput) {
+export async function createInvoice(user: SessionUser, input: CreateInvoiceInput) {
+  requirePermission(user, "invoice.create");
   if (input.lines.length === 0) throw new Error("Invoice must have at least 1 line.");
   for (const [i, l] of input.lines.entries()) {
     if (!l.accountId) throw new Error(`Line ${i + 1}: account is required.`);
@@ -2258,6 +2304,16 @@ export async function createInvoice(_user: SessionUser, input: CreateInvoiceInpu
       })),
     );
   });
+  await logAuditEvent(user, {
+    action: "invoice.create",
+    resourceType: "invoice",
+    resourceId: id,
+    resourceName: invoiceNumber,
+    changes: { after: { customerId: input.customerId, total: subtotal } },
+    metadata: periodCheck.overrideRecorded
+      ? { periodOverrideReason: periodCheck.overrideRecorded }
+      : undefined,
+  });
   return { id, invoiceNumber };
 }
 
@@ -2300,6 +2356,7 @@ export async function postInvoice(
   invoiceId: string,
   options: { periodOverrideReason?: string | null } = {},
 ) {
+  requirePermission(user, "invoice.send");
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2370,6 +2427,15 @@ export async function postInvoice(
     })
     .where(eq(schema.invoices.id, invoiceId));
 
+  await logAuditEvent(user, {
+    action: "invoice.send",
+    resourceType: "invoice",
+    resourceId: invoiceId,
+    resourceName: inv.invoiceNumber,
+    changes: { before: { status: "draft" }, after: { status: "sent" } },
+    metadata: { journalEntryId: je.id },
+  });
+
   return { invoiceId, journalEntryId: je.id, entryNumber: je.entryNumber };
 }
 
@@ -2385,6 +2451,7 @@ export async function recordInvoicePayment(
   user: SessionUser,
   input: RecordInvoicePaymentInput,
 ) {
+  requirePermission(user, "payment.create");
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2447,10 +2514,23 @@ export async function recordInvoicePayment(
     })
     .where(eq(schema.invoices.id, input.invoiceId));
 
+  await logAuditEvent(user, {
+    action: "invoice.payment",
+    resourceType: "invoice",
+    resourceId: input.invoiceId,
+    resourceName: inv.invoiceNumber,
+    changes: {
+      before: { status: inv.status, balanceDue: inv.balanceDue },
+      after: { status: newStatus, balanceDue: toDecimalString(Math.max(0, newBalance)) },
+    },
+    metadata: { amount: input.amount, paymentDate: input.paymentDate },
+  });
+
   return { invoiceId: input.invoiceId, journalEntryId: je.id, entryNumber: je.entryNumber };
 }
 
 export async function voidInvoice(user: SessionUser, invoiceId: string, reason: string) {
+  requirePermission(user, "invoice.delete");
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2486,9 +2566,10 @@ export async function voidInvoice(user: SessionUser, invoiceId: string, reason: 
  */
 
 export async function submitInvoiceForApproval(
-  _user: SessionUser,
+  user: SessionUser,
   invoiceId: string,
 ) {
+  requirePermission(user, "invoice.update");
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2512,6 +2593,7 @@ export async function submitInvoiceForApproval(
 }
 
 export async function cfoApproveInvoice(user: SessionUser, invoiceId: string) {
+  requirePermission(user, "invoice.approve");
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2552,6 +2634,7 @@ export async function cfoApproveInvoice(user: SessionUser, invoiceId: string) {
 }
 
 export async function assignedApproveInvoice(user: SessionUser, invoiceId: string) {
+  requirePermission(user, "invoice.approve");
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2611,6 +2694,7 @@ export async function rejectInvoice(
   invoiceId: string,
   reason: string,
 ) {
+  requirePermission(user, "invoice.approve");
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2779,7 +2863,8 @@ export type CreateBillInput = {
   chargebackNotes?: string | null;
 };
 
-export async function createBill(_user: SessionUser, input: CreateBillInput) {
+export async function createBill(user: SessionUser, input: CreateBillInput) {
+  requirePermission(user, "bill.create");
   if (input.lines.length === 0) throw new Error("Bill must have at least 1 line.");
   for (const [i, l] of input.lines.entries()) {
     if (!l.accountId) throw new Error(`Line ${i + 1}: account is required.`);
@@ -2864,6 +2949,16 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
         .where(eq(schema.vendors.id, input.vendorId));
     }
   });
+  await logAuditEvent(user, {
+    action: "bill.create",
+    resourceType: "bill",
+    resourceId: id,
+    resourceName: billNumber,
+    changes: { after: { vendorId: input.vendorId, total: subtotal } },
+    metadata: periodCheck.overrideRecorded
+      ? { periodOverrideReason: periodCheck.overrideRecorded }
+      : undefined,
+  });
   return { id, billNumber };
 }
 
@@ -2872,6 +2967,7 @@ export async function approveBill(
   billId: string,
   options: { periodOverrideReason?: string | null } = {},
 ) {
+  requirePermission(user, "bill.approve");
   const db = getDb();
   const [bill] = await db
     .select()
@@ -2928,6 +3024,15 @@ export async function approveBill(
     })
     .where(eq(schema.bills.id, billId));
 
+  await logAuditEvent(user, {
+    action: "bill.approve",
+    resourceType: "bill",
+    resourceId: billId,
+    resourceName: bill.billNumber,
+    changes: { before: { status: bill.status }, after: { status: "approved" } },
+    metadata: { journalEntryId: je.id },
+  });
+
   return { billId, journalEntryId: je.id, entryNumber: je.entryNumber };
 }
 
@@ -2943,6 +3048,7 @@ export async function recordBillPayment(
   user: SessionUser,
   input: RecordBillPaymentInput,
 ) {
+  requirePermission(user, "payment.create");
   const db = getDb();
   const [bill] = await db
     .select()
@@ -2999,10 +3105,23 @@ export async function recordBillPayment(
     })
     .where(eq(schema.bills.id, input.billId));
 
+  await logAuditEvent(user, {
+    action: "bill.payment",
+    resourceType: "bill",
+    resourceId: input.billId,
+    resourceName: bill.billNumber,
+    changes: {
+      before: { status: bill.status, balanceDue: bill.balanceDue },
+      after: { status: newStatus, balanceDue: toDecimalString(Math.max(0, newBalance)) },
+    },
+    metadata: { amount: input.amount, paymentDate: input.paymentDate },
+  });
+
   return { billId: input.billId, journalEntryId: je.id, entryNumber: je.entryNumber };
 }
 
 export async function voidBill(user: SessionUser, billId: string, reason: string) {
+  requirePermission(user, "bill.delete");
   const db = getDb();
   const [bill] = await db
     .select()

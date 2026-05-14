@@ -18,6 +18,8 @@ import type {
   AccountingPeriodStatus,
   SessionUser,
 } from "./types";
+import { requirePermission } from "./permissions";
+import { logAuditEvent } from "./audit";
 
 const MONTH_NAMES = [
   "January",
@@ -276,6 +278,7 @@ export async function closePeriod(
   periodId: string,
   notes: string | null,
 ): Promise<AccountingPeriod> {
+  requirePermission(user, "period.close");
   const db = getDb();
   const [existing] = await db
     .select()
@@ -296,6 +299,14 @@ export async function closePeriod(
     })
     .where(eq(schema.accountingPeriods.id, periodId))
     .returning();
+  await logAuditEvent(user, {
+    action: "period.close",
+    resourceType: "accounting_period",
+    resourceId: updated.id,
+    resourceName: updated.name,
+    changes: { before: { status: existing.status }, after: { status: "closed" } },
+    metadata: notes ? { notes } : undefined,
+  });
   return mapPeriod(updated);
 }
 
@@ -303,6 +314,7 @@ export async function lockPeriod(
   user: SessionUser,
   periodId: string,
 ): Promise<AccountingPeriod> {
+  requirePermission(user, "period.lock");
   const db = getDb();
   const [existing] = await db
     .select()
@@ -322,6 +334,13 @@ export async function lockPeriod(
     })
     .where(eq(schema.accountingPeriods.id, periodId))
     .returning();
+  await logAuditEvent(user, {
+    action: "period.lock",
+    resourceType: "accounting_period",
+    resourceId: updated.id,
+    resourceName: updated.name,
+    changes: { before: { status: existing.status }, after: { status: "locked" } },
+  });
   return mapPeriod(updated);
 }
 
@@ -340,10 +359,11 @@ export async function reopenPeriod(
     .limit(1);
   if (!existing) throw new Error("Period not found.");
   if (existing.status === "open") return mapPeriod(existing);
-  if (existing.status === "locked" && !user.isSuperuser) {
-    throw new Error(
-      "Locked periods can only be reopened by a superadmin.",
-    );
+  // Locked → only super_admin (period.unlock). Closed → admin+ (period.reopen).
+  if (existing.status === "locked") {
+    requirePermission(user, "period.unlock");
+  } else {
+    requirePermission(user, "period.reopen");
   }
   const existingNotes = existing.notes ? `${existing.notes}\n\n` : "";
   const [updated] = await db
@@ -358,5 +378,13 @@ export async function reopenPeriod(
     })
     .where(eq(schema.accountingPeriods.id, periodId))
     .returning();
+  await logAuditEvent(user, {
+    action: existing.status === "locked" ? "period.unlock" : "period.reopen",
+    resourceType: "accounting_period",
+    resourceId: updated.id,
+    resourceName: updated.name,
+    changes: { before: { status: existing.status }, after: { status: "open" } },
+    metadata: { reason: trimmed },
+  });
   return mapPeriod(updated);
 }
