@@ -1664,6 +1664,9 @@ export async function createVendor(
     address?: string | null;
     paymentTerms: number;
     defaultExpenseAccountId?: string | null;
+    invoiceNumberPrefix?: string | null;
+    invoiceNumberPattern?: string | null;
+    invoiceNumberLastUsed?: string | null;
   },
 ) {
   const db = getDb();
@@ -1689,9 +1692,33 @@ export async function createVendor(
       defaultExpenseAccountId: input.defaultExpenseAccountId ?? null,
       isActive: true,
       notes: null,
+      invoiceNumberPrefix: input.invoiceNumberPrefix ?? null,
+      invoiceNumberPattern: input.invoiceNumberPattern ?? null,
+      invoiceNumberLastUsed: input.invoiceNumberLastUsed ?? null,
     })
     .returning();
   return created;
+}
+
+export async function updateVendorInvoiceNumberRule(
+  _user: SessionUser,
+  vendorId: string,
+  rule: {
+    invoiceNumberPrefix?: string | null;
+    invoiceNumberPattern?: string | null;
+    invoiceNumberLastUsed?: string | null;
+  },
+) {
+  const db = getDb();
+  await db
+    .update(schema.vendors)
+    .set({
+      invoiceNumberPrefix: rule.invoiceNumberPrefix ?? null,
+      invoiceNumberPattern: rule.invoiceNumberPattern ?? null,
+      invoiceNumberLastUsed: rule.invoiceNumberLastUsed ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.vendors.id, vendorId));
 }
 
 // --------- Customer assignment ---------
@@ -2360,6 +2387,12 @@ export type CreateBillInput = {
   billDate: string;
   dueDate: string;
   reference?: string | null;
+  /**
+   * The vendor's own invoice number — informational, separate from our
+   * internal bill_number. When set we also bump the vendor's
+   * invoice_number_last_used so future suggestions roll forward.
+   */
+  vendorInvoiceNumber?: string | null;
   notes?: string | null;
   /** Who the bill is on-behalf-of (separate from chargeback rebill target). */
   clientId?: string | null;
@@ -2395,11 +2428,15 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
   // non-USD scope picks up that firm's ccy.
   const { currencyCode } = await getFirmIssuingCurrency();
 
+  const vendorInvoiceNumber =
+    input.vendorInvoiceNumber?.trim() ? input.vendorInvoiceNumber.trim() : null;
+
   await db.transaction(async (tx) => {
     await tx.insert(schema.bills).values({
       id,
       billNumber,
       vendorId: input.vendorId,
+      vendorInvoiceNumber,
       billDate: input.billDate,
       dueDate: input.dueDate,
       status: "draft",
@@ -2440,6 +2477,15 @@ export async function createBill(_user: SessionUser, input: CreateBillInput) {
         createdAt: now,
       })),
     );
+    if (vendorInvoiceNumber) {
+      await tx
+        .update(schema.vendors)
+        .set({
+          invoiceNumberLastUsed: vendorInvoiceNumber,
+          updatedAt: now,
+        })
+        .where(eq(schema.vendors.id, input.vendorId));
+    }
   });
   return { id, billNumber };
 }

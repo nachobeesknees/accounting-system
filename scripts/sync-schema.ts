@@ -126,6 +126,16 @@ const COLUMNS: ColumnSpec[] = [
   { table: "journal_lines", column: "dimensions", type: "jsonb", notNull: true, default: "'{}'::jsonb" },
   { table: "invoice_lines", column: "dimensions", type: "jsonb", notNull: true, default: "'{}'::jsonb" },
   { table: "bill_lines", column: "dimensions", type: "jsonb", notNull: true, default: "'{}'::jsonb" },
+
+  // ---- Vendor invoice numbering ----
+  // Optional convention so bill entry can auto-suggest the next vendor
+  // invoice number and warn on duplicates within the same vendor.
+  { table: "vendors", column: "invoice_number_prefix", type: "text" },
+  { table: "vendors", column: "invoice_number_pattern", type: "text" },
+  { table: "vendors", column: "invoice_number_last_used", type: "text" },
+  // The vendor's own invoice number recorded on a bill (separate from our
+  // internal bill_number). Used for duplicate detection per (vendor, number).
+  { table: "bills", column: "vendor_invoice_number", type: "text" },
 ];
 
 const TABLES = [

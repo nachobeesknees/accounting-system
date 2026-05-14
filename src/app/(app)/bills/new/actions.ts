@@ -96,6 +96,9 @@ export async function createBillAction(
   const billDate = String(formData.get("billDate") ?? "");
   const dueDate = String(formData.get("dueDate") ?? "");
   const reference = String(formData.get("reference") ?? "").trim();
+  const vendorInvoiceNumber = String(
+    formData.get("vendorInvoiceNumber") ?? "",
+  ).trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const action = String(formData.get("action") ?? "draft");
   const clientIdRaw = String(formData.get("clientId") ?? "").trim();
@@ -178,6 +181,8 @@ export async function createBillAction(
       billDate,
       dueDate,
       reference: reference === "" ? null : reference,
+      vendorInvoiceNumber:
+        vendorInvoiceNumber === "" ? null : vendorInvoiceNumber,
       notes: notes === "" ? null : notes,
       clientId: clientIdRaw === "" ? null : clientIdRaw,
       entityId: entityIdRaw === "" ? null : entityIdRaw,

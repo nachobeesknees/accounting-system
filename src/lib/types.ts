@@ -543,6 +543,10 @@ export type Vendor = {
   defaultExpenseAccountId: string | null;
   isActive: boolean;
   notes: string | null;
+  /** Optional vendor invoice numbering convention (see schema.ts). */
+  invoiceNumberPrefix: string | null;
+  invoiceNumberPattern: string | null;
+  invoiceNumberLastUsed: string | null;
 };
 
 export type BillStatus = "draft" | "approved" | "partial" | "paid" | "overdue" | "void";
@@ -575,6 +579,8 @@ export type Bill = {
   id: string;
   billNumber: string;
   vendorId: string;
+  /** Vendor's own invoice number (separate from our internal billNumber). */
+  vendorInvoiceNumber?: string | null;
   billDate: string;
   dueDate: string;
   status: BillStatus;

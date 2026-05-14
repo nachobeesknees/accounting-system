@@ -410,11 +410,11 @@ export const ENTITY_FEES: EntityFee[] = [
 ];
 
 export const VENDORS: Vendor[] = [
-  { id: id("v-001"), code: "VEND-001", name: "Bramblewick Office Supply", email: "orders@bramblewick.com", phone: "(312) 555-2200", address: "401 W Adams St, Chicago IL 60606", paymentTerms: 30, defaultExpenseAccountId: "a-5200", isActive: true, notes: null },
-  { id: id("v-002"), code: "VEND-002", name: "Quillfeather Technology", email: "ar@quillfeather.tech", phone: "(206) 555-3304", address: "500 Pine St, Seattle WA 98101", paymentTerms: 30, defaultExpenseAccountId: "a-1500", isActive: true, notes: null },
-  { id: id("v-003"), code: "VEND-003", name: "Nettlesome Property Management", email: "leases@nettlesome.com", phone: "(415) 555-9020", address: "55 Sutter St, San Francisco CA 94104", paymentTerms: 30, defaultExpenseAccountId: "a-5000", isActive: true, notes: null },
-  { id: id("v-004"), code: "VEND-004", name: "Thundermuffin Consulting", email: "finance@thundermuffin.io", phone: "(404) 555-1122", address: "1 Atlantic Center, Atlanta GA 30309", paymentTerms: 30, defaultExpenseAccountId: "a-5400", isActive: true, notes: null },
-  { id: id("v-005"), code: "VEND-005", name: "Wobblesworth Insurance Group", email: "billing@wobblesworth.com", phone: "(860) 555-7710", address: "1 Constitution Plaza, Hartford CT 06103", paymentTerms: 30, defaultExpenseAccountId: "a-5400", isActive: true, notes: null },
+  { id: id("v-001"), code: "VEND-001", name: "Bramblewick Office Supply", email: "orders@bramblewick.com", phone: "(312) 555-2200", address: "401 W Adams St, Chicago IL 60606", paymentTerms: 30, defaultExpenseAccountId: "a-5200", isActive: true, notes: null, invoiceNumberPrefix: "BMB-", invoiceNumberPattern: "BMB-YYYY-####", invoiceNumberLastUsed: null },
+  { id: id("v-002"), code: "VEND-002", name: "Quillfeather Technology", email: "ar@quillfeather.tech", phone: "(206) 555-3304", address: "500 Pine St, Seattle WA 98101", paymentTerms: 30, defaultExpenseAccountId: "a-1500", isActive: true, notes: null, invoiceNumberPrefix: "QF-", invoiceNumberPattern: "QF-YYYY-####", invoiceNumberLastUsed: null },
+  { id: id("v-003"), code: "VEND-003", name: "Nettlesome Property Management", email: "leases@nettlesome.com", phone: "(415) 555-9020", address: "55 Sutter St, San Francisco CA 94104", paymentTerms: 30, defaultExpenseAccountId: "a-5000", isActive: true, notes: null, invoiceNumberPrefix: null, invoiceNumberPattern: null, invoiceNumberLastUsed: null },
+  { id: id("v-004"), code: "VEND-004", name: "Thundermuffin Consulting", email: "finance@thundermuffin.io", phone: "(404) 555-1122", address: "1 Atlantic Center, Atlanta GA 30309", paymentTerms: 30, defaultExpenseAccountId: "a-5400", isActive: true, notes: null, invoiceNumberPrefix: null, invoiceNumberPattern: null, invoiceNumberLastUsed: null },
+  { id: id("v-005"), code: "VEND-005", name: "Wobblesworth Insurance Group", email: "billing@wobblesworth.com", phone: "(860) 555-7710", address: "1 Constitution Plaza, Hartford CT 06103", paymentTerms: 30, defaultExpenseAccountId: "a-5400", isActive: true, notes: null, invoiceNumberPrefix: null, invoiceNumberPattern: null, invoiceNumberLastUsed: null },
 ];
 
 const INVOICE_LINES = (invoiceId: string, lines: { description: string; quantity: string; unitPrice: string; accountId: string }[]) =>
