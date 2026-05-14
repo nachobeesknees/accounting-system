@@ -8,6 +8,7 @@ import {
   duplicateInvoice,
   duplicateJournalEntry,
   generateNextRecurringEntry,
+  generateNextRecurringInvoice,
 } from "@/lib/mutations";
 import { getSessionUser } from "@/lib/session";
 import { PermissionError, requirePermission, type Action } from "@/lib/permissions";
@@ -106,6 +107,31 @@ export async function generateNextRecurringEntryAction(formData: FormData) {
     const msg =
       err instanceof Error ? err.message : "Failed to generate entry.";
     redirect(`/journal?view=templates&error=${encodeURIComponent(msg)}`);
+  }
+}
+
+/**
+ * Generate the next invoice from a recurring template. The new invoice is
+ * a draft dated `template.recurringNextDate`; the template's
+ * `recurringNextDate` is advanced by its frequency. Lands on the new
+ * invoice's detail page so the user can review and post.
+ */
+export async function generateNextRecurringInvoiceAction(formData: FormData) {
+  const user = await getSessionUser();
+  guard(user, "invoice.create", "/invoices?view=templates");
+
+  const templateId = String(formData.get("templateId") ?? "").trim();
+  if (!templateId) redirect("/invoices?view=templates");
+
+  try {
+    const created = await generateNextRecurringInvoice(user, templateId);
+    revalidatePath("/invoices");
+    redirect(`/invoices/${created.id}`);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const msg =
+      err instanceof Error ? err.message : "Failed to generate invoice.";
+    redirect(`/invoices?view=templates&error=${encodeURIComponent(msg)}`);
   }
 }
 

@@ -814,6 +814,27 @@ export const invoices = pgTable("invoices", {
   firmEntityId: text("firm_entity_id"),
   /** Reason given when posting into a soft-closed accounting period. */
   periodOverrideReason: text("period_override_reason"),
+  /**
+   * Recurring invoice templates. When `isTemplate` is true, the row is a
+   * blueprint — it never appears in AR and its status is always "template".
+   * Generated invoices point back here via `recurringParentId` and start as
+   * drafts dated `recurringNextDate`.
+   */
+  isTemplate: boolean("is_template").notNull().default(false),
+  /** weekly | biweekly | monthly | quarterly | annually */
+  recurringFrequency: text("recurring_frequency"),
+  /** Day of month (1-28) on which generated invoices are dated. */
+  recurringDayOfMonth: integer("recurring_day_of_month"),
+  /** Next invoice-date to use when the user generates from this template. */
+  recurringNextDate: date("recurring_next_date"),
+  /** Optional cap; after this date no further invoices are generated. */
+  recurringEndDate: date("recurring_end_date"),
+  /** Set on generated invoices — points back to the source template. */
+  recurringParentId: text("recurring_parent_id"),
+  /** Auto-set on generated invoices: start of the period being billed. */
+  billingPeriodStart: date("billing_period_start"),
+  /** Auto-set on generated invoices: end of the period being billed. */
+  billingPeriodEnd: date("billing_period_end"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

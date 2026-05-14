@@ -7,12 +7,22 @@ import {
   getVendors,
   getPriceLists,
   getPriceListEntries,
+  getTimeEntries,
+  getUsers,
 } from "@/lib/data";
+import { parseAmount } from "@/lib/money";
 import {
   ensureAccountingPeriods,
   getAccountingPeriods,
 } from "@/lib/periods";
-import { NewInvoiceForm, type ChargebackRow, type PriceListEntryRow } from "./NewInvoiceForm";
+import {
+  NewInvoiceForm,
+  type ChargebackRow,
+  type PriceListEntryRow,
+  type UnbilledTimeEntryRow,
+} from "./NewInvoiceForm";
+
+const SERVICE_REVENUE_ACCOUNT_ID = "a-4000";
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -70,6 +80,8 @@ export default async function Page() {
     bills,
     vendors,
     priceLists,
+    timeEntries,
+    users,
   ] = await Promise.all([
     getCustomers(),
     getAccounts(),
@@ -78,6 +90,8 @@ export default async function Page() {
     getBills(),
     getVendors(),
     getPriceLists(),
+    getTimeEntries(),
+    getUsers(),
   ]);
   const revenueAccounts = accounts
     .filter((a) => a.accountType === "revenue" && a.isActive)
@@ -124,6 +138,41 @@ export default async function Page() {
     includedQuantity: e.includedQuantity ? parseFloat(e.includedQuantity) : null,
   }));
 
+  // Unbilled time entries grouped by customer. Filter: clientId set,
+  // invoiceId null, billable=true. The user can pull these into the
+  // invoice as line items via the widget.
+  const userById = new Map(users.map((u) => [u.id, u] as const));
+  const unbilledTimeByCustomer: Record<string, UnbilledTimeEntryRow[]> = {};
+  for (const t of timeEntries) {
+    if (!t.clientId) continue;
+    if (t.invoiceId) continue;
+    if (!t.isBillable) continue;
+    const hours = parseAmount(t.durationHours);
+    if (hours <= 0) continue;
+    const rate = t.rateAtLog ? parseAmount(t.rateAtLog) : 0;
+    const user = userById.get(t.userId);
+    const row: UnbilledTimeEntryRow = {
+      id: t.id,
+      entryDate: t.entryDate,
+      userId: t.userId,
+      userName: user?.fullName ?? "Unknown",
+      description: t.description,
+      hours,
+      rate,
+      amount: hours * rate,
+    };
+    const arr = unbilledTimeByCustomer[t.clientId] ?? [];
+    arr.push(row);
+    unbilledTimeByCustomer[t.clientId] = arr;
+  }
+  // Sort each customer's entries by date ascending so the oldest unbilled
+  // work bubbles to the top.
+  for (const cid of Object.keys(unbilledTimeByCustomer)) {
+    unbilledTimeByCustomer[cid].sort((a, b) =>
+      a.entryDate.localeCompare(b.entryDate),
+    );
+  }
+
   return (
     <>
       <PageHeader title="New invoice" meta="Invoices / New" />
@@ -136,6 +185,8 @@ export default async function Page() {
         accountingPeriods={accountingPeriods}
         chargebacksByCustomer={chargebacksByCustomer}
         priceListEntries={priceListEntries}
+        unbilledTimeByCustomer={unbilledTimeByCustomer}
+        defaultServiceRevenueAccountId={SERVICE_REVENUE_ACCOUNT_ID}
       />
     </>
   );

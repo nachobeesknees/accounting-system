@@ -9,6 +9,15 @@ import { createInvoice, postInvoice, type DraftInvoiceLine } from "@/lib/mutatio
 import { parseAmount } from "@/lib/money";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
 import { PermissionError, requirePermission } from "@/lib/permissions";
+import type { InvoiceRecurringFrequency } from "@/lib/types";
+
+const VALID_FREQUENCIES: readonly InvoiceRecurringFrequency[] = [
+  "weekly",
+  "biweekly",
+  "monthly",
+  "quarterly",
+  "annually",
+];
 
 export type CreateInvoiceState = { error: string | null };
 
@@ -139,6 +148,46 @@ export async function createInvoiceAction(
     .map((v) => (typeof v === "string" ? v.trim() : ""))
     .filter((v) => v !== "");
 
+  // Time entries the user pulled in via the "Unbilled time entries" widget.
+  const timeEntryIds = formData
+    .getAll("timeEntryIds[]")
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter((v) => v !== "");
+
+  // Recurring template fields. Only parsed when the user clicked "Save
+  // template" (action === "template"); otherwise we leave them null so a
+  // regular draft/post-flow invoice doesn't accidentally get template data.
+  const isTemplate = action === "template";
+  let recurringFrequency: InvoiceRecurringFrequency | null = null;
+  let recurringDayOfMonth: number | null = null;
+  let recurringStartDate: string | null = null;
+  let recurringEndDate: string | null = null;
+  if (isTemplate) {
+    const freqRaw = String(formData.get("recurringFrequency") ?? "monthly");
+    if (!VALID_FREQUENCIES.includes(freqRaw as InvoiceRecurringFrequency)) {
+      return { error: "Invalid recurring frequency." };
+    }
+    recurringFrequency = freqRaw as InvoiceRecurringFrequency;
+    const needsDay =
+      recurringFrequency === "monthly" ||
+      recurringFrequency === "quarterly" ||
+      recurringFrequency === "annually";
+    if (needsDay) {
+      const dayRaw = String(formData.get("recurringDayOfMonth") ?? "").trim();
+      const dayParsed = parseFloat(dayRaw);
+      if (!Number.isFinite(dayParsed) || dayParsed < 1 || dayParsed > 28) {
+        return { error: "Day of month must be between 1 and 28." };
+      }
+      recurringDayOfMonth = Math.floor(dayParsed);
+    }
+    recurringStartDate = String(formData.get("recurringNextDate") ?? "").trim();
+    if (!recurringStartDate) {
+      return { error: "Start date is required for a recurring template." };
+    }
+    const endRaw = String(formData.get("recurringEndDate") ?? "").trim();
+    recurringEndDate = endRaw === "" ? null : endRaw;
+  }
+
   try {
     const created = await createInvoice(user, {
       customerId,
@@ -151,9 +200,17 @@ export async function createInvoiceAction(
       taxRate,
       taxExempt,
       lines,
+      isTemplate,
+      recurringFrequency,
+      recurringDayOfMonth,
+      recurringNextDate: recurringStartDate,
+      recurringEndDate,
+      // Templates never bill time entries directly — they spawn drafts that
+      // can; only attach time entries to non-template invoices.
+      timeEntryIds: isTemplate ? undefined : timeEntryIds,
     });
 
-    if (chargebackBillIds.length > 0) {
+    if (chargebackBillIds.length > 0 && !isTemplate) {
       const db = getDb();
       await db
         .update(schema.bills)
@@ -172,6 +229,7 @@ export async function createInvoiceAction(
     revalidatePath("/invoices");
     revalidatePath("/");
     revalidatePath("/journal");
+    if (timeEntryIds.length > 0) revalidatePath("/time");
     redirect(`/invoices/${created.id}`);
   } catch (err) {
     if (isRedirectError(err)) throw err;

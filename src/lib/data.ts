@@ -670,6 +670,23 @@ function mapInvoice(
     expectedPaymentDate: r.expectedPaymentDate,
     notes: r.notes,
     journalEntryId: r.journalEntryId,
+    isTemplate: (r as { isTemplate?: boolean }).isTemplate ?? false,
+    recurringFrequency:
+      (r as { recurringFrequency?: string | null }).recurringFrequency as
+        | Invoice["recurringFrequency"]
+        | undefined ?? null,
+    recurringDayOfMonth:
+      (r as { recurringDayOfMonth?: number | null }).recurringDayOfMonth ?? null,
+    recurringNextDate:
+      (r as { recurringNextDate?: string | null }).recurringNextDate ?? null,
+    recurringEndDate:
+      (r as { recurringEndDate?: string | null }).recurringEndDate ?? null,
+    recurringParentId:
+      (r as { recurringParentId?: string | null }).recurringParentId ?? null,
+    billingPeriodStart:
+      (r as { billingPeriodStart?: string | null }).billingPeriodStart ?? null,
+    billingPeriodEnd:
+      (r as { billingPeriodEnd?: string | null }).billingPeriodEnd ?? null,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }
@@ -1340,9 +1357,12 @@ export async function getVendorById(id: string): Promise<Vendor | undefined> {
 
 export async function getInvoices(): Promise<Invoice[]> {
   const db = getDb();
+  // Recurring templates are blueprints — exclude from the ledger / AR /
+  // forecast lists. Use getInvoiceTemplates() for the Templates tab.
   const heads = await db
     .select()
     .from(schema.invoices)
+    .where(eq(schema.invoices.isTemplate, false))
     .orderBy(desc(schema.invoices.invoiceDate));
   if (heads.length === 0) return [];
   const ids = heads.map((h) => h.id);
@@ -1358,6 +1378,50 @@ export async function getInvoices(): Promise<Invoice[]> {
     linesByInvoice.set(mapped.invoiceId, arr);
   }
   return heads.map((h) => mapInvoice(h, linesByInvoice.get(h.id) ?? []));
+}
+
+/**
+ * Recurring invoice templates (is_template=true). Sorted by recurringNextDate
+ * ascending so soonest-due is first.
+ */
+export async function getInvoiceTemplates(): Promise<Invoice[]> {
+  const db = getDb();
+  const heads = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.isTemplate, true))
+    .orderBy(
+      asc(schema.invoices.recurringNextDate),
+      desc(schema.invoices.invoiceNumber),
+    );
+  if (heads.length === 0) return [];
+  const ids = heads.map((h) => h.id);
+  const lineRows = await db
+    .select()
+    .from(schema.invoiceLines)
+    .where(inArray(schema.invoiceLines.invoiceId, ids));
+  const linesByInvoice = new Map<string, InvoiceLine[]>();
+  for (const l of lineRows) {
+    const mapped = mapInvoiceLine(l);
+    const arr = linesByInvoice.get(mapped.invoiceId) ?? [];
+    arr.push(mapped);
+    linesByInvoice.set(mapped.invoiceId, arr);
+  }
+  return heads.map((h) => mapInvoice(h, linesByInvoice.get(h.id) ?? []));
+}
+
+/** Count of invoice templates whose recurringNextDate is on or before `today`. */
+export async function getDueRecurringInvoiceCount(
+  today: string,
+): Promise<number> {
+  const templates = await getInvoiceTemplates();
+  return templates.filter((t) => {
+    if (!t.recurringNextDate) return false;
+    if (t.recurringEndDate && t.recurringEndDate < t.recurringNextDate) {
+      return false;
+    }
+    return t.recurringNextDate <= today;
+  }).length;
 }
 
 /**

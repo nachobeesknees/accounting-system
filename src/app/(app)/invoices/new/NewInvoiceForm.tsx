@@ -21,6 +21,7 @@ import type {
   Dimension,
   DimensionValue,
 } from "@/lib/types";
+import { formatDate } from "@/lib/format";
 import { PeriodStatusBanner } from "@/components/PeriodStatusBanner";
 import {
   createInvoiceAction,
@@ -46,6 +47,17 @@ export type PriceListEntryRow = {
   code: string;
   unitPrice: number;
   includedQuantity: number | null;
+};
+
+export type UnbilledTimeEntryRow = {
+  id: string;
+  entryDate: string;
+  userId: string;
+  userName: string;
+  description: string;
+  hours: number;
+  rate: number;
+  amount: number;
 };
 
 type Line = {
@@ -77,6 +89,8 @@ export function NewInvoiceForm({
   accountingPeriods,
   chargebacksByCustomer,
   priceListEntries,
+  unbilledTimeByCustomer,
+  defaultServiceRevenueAccountId,
 }: {
   customers: Customer[];
   revenueAccounts: Account[];
@@ -86,6 +100,8 @@ export function NewInvoiceForm({
   accountingPeriods: AccountingPeriod[];
   chargebacksByCustomer: Record<string, ChargebackRow[]>;
   priceListEntries: PriceListEntryRow[];
+  unbilledTimeByCustomer: Record<string, UnbilledTimeEntryRow[]>;
+  defaultServiceRevenueAccountId: string;
 }) {
   const [state, formAction] = useFormState(createInvoiceAction, INITIAL_STATE);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
@@ -109,6 +125,21 @@ export function NewInvoiceForm({
   );
   // Bill IDs already added to the invoice (sent to server action).
   const [chargebackBillIds, setChargebackBillIds] = useState<string[]>([]);
+
+  // Unbilled time entries widget state.
+  const [selectedTimeIds, setSelectedTimeIds] = useState<Set<string>>(new Set());
+  const [timeAggregation, setTimeAggregation] = useState<"per-entry" | "per-staff">(
+    "per-entry",
+  );
+  const [appliedTimeIds, setAppliedTimeIds] = useState<string[]>([]);
+
+  // Recurring template state. When the user toggles "Make recurring" on,
+  // saving switches from "post / draft" to "save template" mode.
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [recurringFrequency, setRecurringFrequency] = useState("monthly");
+  const [recurringDayOfMonth, setRecurringDayOfMonth] = useState("1");
+  const [recurringStartDate, setRecurringStartDate] = useState(today);
+  const [recurringEndDate, setRecurringEndDate] = useState("");
 
   const customerOptions = useMemo<SmartSelectOption[]>(
     () =>
@@ -146,6 +177,13 @@ export function NewInvoiceForm({
     const rows = chargebacksByCustomer[customerId] ?? [];
     return rows.filter((r) => !chargebackBillIds.includes(r.billId));
   }, [customerId, chargebacksByCustomer, chargebackBillIds]);
+
+  // Unbilled time for the selected customer, excluding any already added.
+  const pendingTimeEntries: UnbilledTimeEntryRow[] = useMemo(() => {
+    if (!customerId) return [];
+    const rows = unbilledTimeByCustomer[customerId] ?? [];
+    return rows.filter((r) => !appliedTimeIds.includes(r.id));
+  }, [customerId, unbilledTimeByCustomer, appliedTimeIds]);
 
   function applyOcr(data: OcrExtraction, raw: string) {
     setOcrText(raw);
@@ -291,6 +329,80 @@ export function NewInvoiceForm({
     [pendingChargebacks, selectedBillIds],
   );
 
+  function toggleTimeEntry(id: string) {
+    setSelectedTimeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  const allTimeSelected =
+    pendingTimeEntries.length > 0 &&
+    pendingTimeEntries.every((r) => selectedTimeIds.has(r.id));
+  function toggleAllTime() {
+    if (allTimeSelected) {
+      setSelectedTimeIds(new Set());
+    } else {
+      setSelectedTimeIds(new Set(pendingTimeEntries.map((r) => r.id)));
+    }
+  }
+  const selectedTimeTotal = useMemo(
+    () =>
+      pendingTimeEntries
+        .filter((r) => selectedTimeIds.has(r.id))
+        .reduce((s, r) => s + r.amount, 0),
+    [pendingTimeEntries, selectedTimeIds],
+  );
+  const selectedTimeHours = useMemo(
+    () =>
+      pendingTimeEntries
+        .filter((r) => selectedTimeIds.has(r.id))
+        .reduce((s, r) => s + r.hours, 0),
+    [pendingTimeEntries, selectedTimeIds],
+  );
+
+  function addSelectedTimeEntries() {
+    const picks = pendingTimeEntries.filter((r) => selectedTimeIds.has(r.id));
+    if (picks.length === 0) return;
+    let newLines: Line[];
+    if (timeAggregation === "per-staff") {
+      // One summary line per staff member: "Professional services — <name> (X hrs @ Y/hr)".
+      // When entries share a rate we use that; mixed rates show the
+      // blended hourly average for honesty.
+      const byUser = new Map<string, UnbilledTimeEntryRow[]>();
+      for (const p of picks) {
+        const arr = byUser.get(p.userId) ?? [];
+        arr.push(p);
+        byUser.set(p.userId, arr);
+      }
+      newLines = Array.from(byUser.entries()).map(([, rows]) => {
+        const hours = rows.reduce((s, r) => s + r.hours, 0);
+        const amount = rows.reduce((s, r) => s + r.amount, 0);
+        const rate = hours > 0 ? amount / hours : 0;
+        const userName = rows[0]?.userName ?? "Staff";
+        return {
+          description: `Professional services — ${userName} (${hours.toFixed(2)} hrs)`,
+          accountId: defaultServiceRevenueAccountId,
+          quantity: hours.toFixed(2),
+          unitPrice: rate.toFixed(2),
+          dimensions: {},
+        };
+      });
+    } else {
+      newLines = picks.map((p) => ({
+        description: `${formatDate(p.entryDate)} — ${p.userName}: ${p.description}`,
+        accountId: defaultServiceRevenueAccountId,
+        quantity: p.hours.toFixed(2),
+        unitPrice: p.rate.toFixed(2),
+        dimensions: {},
+      }));
+    }
+    appendLines(newLines);
+    setAppliedTimeIds((prev) => [...prev, ...picks.map((p) => p.id)]);
+    setSelectedTimeIds(new Set());
+  }
+
   return (
     <form action={formAction} className="flex flex-col gap-3.5 px-6 py-3.5 pb-8">
       {state.error && (
@@ -320,6 +432,10 @@ export function NewInvoiceForm({
           value={id}
         />
       ))}
+      {/* Hidden inputs for time entry IDs already pulled into the invoice. */}
+      {appliedTimeIds.map((id) => (
+        <input key={id} type="hidden" name="timeEntryIds[]" value={id} />
+      ))}
 
       <Card title="Header" bodyPadding>
         <div className="flex flex-col gap-3">
@@ -334,6 +450,9 @@ export function NewInvoiceForm({
                 // Reset chargeback selection state on customer change.
                 setSelectedBillIds(new Set());
                 setChargebackBillIds([]);
+                // Reset time-entry selection on customer change.
+                setSelectedTimeIds(new Set());
+                setAppliedTimeIds([]);
                 // Pull tax defaults from the picked customer unless the
                 // user has already overridden them on this form.
                 if (!taxTouched) {
@@ -595,6 +714,130 @@ export function NewInvoiceForm({
         </section>
       )}
 
+      {/* Widget 3: Unbilled time entries for the selected customer. */}
+      {customerId && pendingTimeEntries.length > 0 && (
+        <section
+          className="rounded-lg overflow-hidden"
+          style={{
+            border: "1px solid var(--line)",
+            background: "var(--raised)",
+          }}
+        >
+          <details open>
+            <summary
+              className="flex items-center justify-between gap-3 px-3.5 py-2 cursor-pointer"
+              style={{
+                borderBottom: "1px solid var(--line)",
+                listStyle: "none",
+              }}
+            >
+              <h3 className="text-[12.5px] font-semibold tracking-tight m-0">
+                Unbilled time entries
+              </h3>
+              <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                {pendingTimeEntries.length} entr
+                {pendingTimeEntries.length === 1 ? "y" : "ies"} · {" "}
+                {pendingTimeEntries
+                  .reduce((s, r) => s + r.hours, 0)
+                  .toFixed(2)}{" "}
+                hrs
+              </span>
+            </summary>
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>
+                    <input
+                      type="checkbox"
+                      aria-label="Select all unbilled time"
+                      checked={allTimeSelected}
+                      onChange={toggleAllTime}
+                    />
+                  </TH>
+                  <TH>Date</TH>
+                  <TH>Staff</TH>
+                  <TH>Description</TH>
+                  <TH num>Hours</TH>
+                  <TH num>Rate</TH>
+                  <TH num>Amount</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {pendingTimeEntries.map((r) => {
+                  const checked = selectedTimeIds.has(r.id);
+                  return (
+                    <TR key={r.id} hover={false}>
+                      <TD>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleTimeEntry(r.id)}
+                          aria-label={`Select ${r.description}`}
+                        />
+                      </TD>
+                      <TD>{formatDate(r.entryDate)}</TD>
+                      <TD>{r.userName}</TD>
+                      <TD>{r.description}</TD>
+                      <TD num>{r.hours.toFixed(2)}</TD>
+                      <TD num style={{ color: "var(--ink-3)" }}>
+                        {formatMoney(r.rate, "USD", { compact: true })}
+                      </TD>
+                      <TD num>
+                        {formatMoney(r.amount, "USD", { compact: true })}
+                      </TD>
+                    </TR>
+                  );
+                })}
+                <TR total hover={false}>
+                  <TD>{""}</TD>
+                  <TD>{""}</TD>
+                  <TD>{""}</TD>
+                  <TD>Selected</TD>
+                  <TD num>{selectedTimeHours.toFixed(2)}</TD>
+                  <TD>{""}</TD>
+                  <TD num>
+                    {formatMoney(selectedTimeTotal, "USD", { compact: true })}
+                  </TD>
+                </TR>
+              </TBody>
+            </Table>
+            <div className="p-3.5 flex items-center justify-between gap-3 flex-wrap">
+              <div
+                className="flex items-center gap-3 text-[12.5px]"
+                style={{ color: "var(--ink-2)" }}
+              >
+                <label className="inline-flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="timeAggregation"
+                    checked={timeAggregation === "per-entry"}
+                    onChange={() => setTimeAggregation("per-entry")}
+                  />
+                  One line per entry
+                </label>
+                <label className="inline-flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="timeAggregation"
+                    checked={timeAggregation === "per-staff"}
+                    onChange={() => setTimeAggregation("per-staff")}
+                  />
+                  Summary by staff
+                </label>
+              </div>
+              <Button
+                type="button"
+                variant="primary"
+                onClick={addSelectedTimeEntries}
+                disabled={selectedTimeIds.size === 0}
+              >
+                Add to invoice
+              </Button>
+            </div>
+          </details>
+        </section>
+      )}
+
       <Card
         title="Line items"
         actions={
@@ -817,13 +1060,110 @@ export function NewInvoiceForm({
         </Table>
       </Card>
 
+      <div
+        className="rounded-md"
+        style={{
+          background: "var(--paper)",
+          border: "1px solid var(--line)",
+        }}
+      >
+        <label
+          className="flex items-center gap-2 px-3 py-2.5 cursor-pointer"
+          style={{
+            borderBottom: isRecurring ? "1px solid var(--line)" : "none",
+            fontSize: 12.5,
+            color: "var(--ink)",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={isRecurring}
+            onChange={(e) => setIsRecurring(e.target.checked)}
+            style={{ accentColor: "var(--ink)" }}
+          />
+          <span style={{ fontWeight: 500 }}>Make recurring</span>
+          <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+            Save as a template. Generated invoices land as drafts dated by the
+            schedule below — they won't post automatically.
+          </span>
+        </label>
+        {isRecurring && (
+          <div
+            className="grid gap-3 px-3 py-2.5"
+            style={{
+              gridTemplateColumns:
+                "minmax(140px,160px) minmax(120px,140px) minmax(150px,180px) minmax(150px,180px)",
+            }}
+          >
+            <SmartSelectField
+              label="Frequency"
+              name="recurringFrequency"
+              value={recurringFrequency}
+              onChange={(v) => setRecurringFrequency(v)}
+              options={[
+                { value: "weekly", label: "Weekly" },
+                { value: "biweekly", label: "Biweekly" },
+                { value: "monthly", label: "Monthly" },
+                { value: "quarterly", label: "Quarterly" },
+                { value: "annually", label: "Annually" },
+              ]}
+            />
+            {(recurringFrequency === "monthly" ||
+              recurringFrequency === "quarterly" ||
+              recurringFrequency === "annually") && (
+              <Field
+                label="Day of month"
+                name="recurringDayOfMonth"
+                type="number"
+                min="1"
+                max="28"
+                value={recurringDayOfMonth}
+                onChange={(e) => setRecurringDayOfMonth(e.target.value)}
+              />
+            )}
+            <Field
+              label="Start date"
+              name="recurringNextDate"
+              type="date"
+              value={recurringStartDate}
+              onChange={(e) => setRecurringStartDate(e.target.value)}
+            />
+            <Field
+              label="End date (optional)"
+              name="recurringEndDate"
+              type="date"
+              value={recurringEndDate}
+              onChange={(e) => setRecurringEndDate(e.target.value)}
+            />
+          </div>
+        )}
+      </div>
+
       <div className="flex gap-2 items-center">
-        <Button variant="primary" type="submit" name="action" value="post">
-          Save & post
-        </Button>
-        <Button variant="secondary" type="submit" name="action" value="draft">
-          Save as draft
-        </Button>
+        {isRecurring ? (
+          <Button
+            variant="primary"
+            type="submit"
+            name="action"
+            value="template"
+          >
+            Save template
+          </Button>
+        ) : (
+          <>
+            <Button variant="primary" type="submit" name="action" value="post">
+              Save & post
+            </Button>
+            <Button
+              variant="secondary"
+              type="submit"
+              name="action"
+              value="draft"
+            >
+              Save as draft
+            </Button>
+          </>
+        )}
         <ButtonLink variant="ghost" href="/invoices">
           Cancel
         </ButtonLink>
