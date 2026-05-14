@@ -25,17 +25,26 @@ function isPublic(pathname: string): boolean {
   return false;
 }
 
+// Data-residency marker. Database is hosted in Neon eu-central-1 (Frankfurt);
+// this header lets compliance auditors confirm EU routing from any response.
+const DATA_REGION = "eu-central-1";
+
+function withRegion(res: NextResponse): NextResponse {
+  res.headers.set("X-Data-Region", DATA_REGION);
+  return res;
+}
+
 export default auth((req) => {
   const { nextUrl } = req;
   const path = nextUrl.pathname;
-  if (isPublic(path)) return NextResponse.next();
+  if (isPublic(path)) return withRegion(NextResponse.next());
   if (!req.auth) {
     const url = nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirectTo", path);
-    return NextResponse.redirect(url);
+    return withRegion(NextResponse.redirect(url));
   }
-  return NextResponse.next();
+  return withRegion(NextResponse.next());
 });
 
 export const config = {
