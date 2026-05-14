@@ -681,6 +681,16 @@ export const vendors = pgTable("vendors", {
   defaultExpenseAccountId: text("default_expense_account_id"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
+  /**
+   * Vendor invoice numbering convention. The prefix is e.g. "INV-", the
+   * pattern uses placeholders (YYYY = 4-digit year, YY = 2-digit year,
+   * MM = month, DD = day, #### = sequential, width preserved). `lastUsed`
+   * stores the most recent vendor invoice number we recorded; the next
+   * suggestion just increments its trailing digit run when present.
+   */
+  invoiceNumberPrefix: text("invoice_number_prefix"),
+  invoiceNumberPattern: text("invoice_number_pattern"),
+  invoiceNumberLastUsed: text("invoice_number_last_used"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -689,6 +699,13 @@ export const bills = pgTable("bills", {
   id: text("id").primaryKey(),
   billNumber: text("bill_number").notNull(),
   vendorId: text("vendor_id").notNull(),
+  /**
+   * The vendor's own invoice number from their bill to us (e.g. "INV-2026-0042").
+   * Separate from `billNumber` which is our internal sequence. We warn (but
+   * don't block) if a duplicate (vendor_id, vendor_invoice_number) pair is
+   * entered, so the same vendor invoice isn't accidentally recorded twice.
+   */
+  vendorInvoiceNumber: text("vendor_invoice_number"),
   billDate: date("bill_date").notNull(),
   dueDate: date("due_date").notNull(),
   status: text("status").notNull().default("draft"),

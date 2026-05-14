@@ -281,6 +281,11 @@ export default async function Page({
           <KVGrid>
             <KV k="Bill #" v={bill.billNumber} mono />
             <KV
+              k="Vendor invoice #"
+              v={bill.vendorInvoiceNumber ?? "—"}
+              mono={!!bill.vendorInvoiceNumber}
+            />
+            <KV
               k="Vendor"
               v={vendor?.name ?? "—"}
               sub={vendor?.code}

@@ -494,6 +494,9 @@ function mapVendor(r: typeof schema.vendors.$inferSelect): Vendor {
     defaultExpenseAccountId: r.defaultExpenseAccountId,
     isActive: r.isActive,
     notes: r.notes,
+    invoiceNumberPrefix: r.invoiceNumberPrefix,
+    invoiceNumberPattern: r.invoiceNumberPattern,
+    invoiceNumberLastUsed: r.invoiceNumberLastUsed,
   };
 }
 
@@ -660,6 +663,7 @@ function mapBill(r: typeof schema.bills.$inferSelect, lines: BillLine[]): Bill {
     id: r.id,
     billNumber: r.billNumber,
     vendorId: r.vendorId,
+    vendorInvoiceNumber: r.vendorInvoiceNumber ?? null,
     billDate: r.billDate,
     dueDate: r.dueDate,
     status: r.status as Bill["status"],
@@ -1486,6 +1490,36 @@ export async function getBills(): Promise<Bill[]> {
     linesByBill.set(mapped.billId, arr);
   }
   return heads.map((h) => mapBill(h, linesByBill.get(h.id) ?? []));
+}
+
+/**
+ * Look for an existing bill from the same vendor with the same vendor
+ * invoice number. Used by the bill form to warn (but not block) when the
+ * same vendor invoice is being entered twice. Returns the first matching
+ * bill or null.
+ */
+export async function findBillByVendorInvoiceNumber(
+  vendorId: string,
+  vendorInvoiceNumber: string,
+  excludeBillId?: string,
+): Promise<{ id: string; billNumber: string } | null> {
+  if (!vendorId || !vendorInvoiceNumber.trim()) return null;
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.bills.id,
+      billNumber: schema.bills.billNumber,
+    })
+    .from(schema.bills)
+    .where(
+      and(
+        eq(schema.bills.vendorId, vendorId),
+        eq(schema.bills.vendorInvoiceNumber, vendorInvoiceNumber.trim()),
+      ),
+    )
+    .limit(2);
+  const match = rows.find((r) => r.id !== excludeBillId);
+  return match ?? null;
 }
 
 export async function getBillById(id: string): Promise<Bill | undefined> {
