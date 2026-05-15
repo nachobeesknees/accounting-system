@@ -12,6 +12,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAccounts,
   getBankAccounts,
+  getBaseCurrency,
   getBillById,
   getCustomerById,
   getCustomers,
@@ -82,6 +83,7 @@ export default async function Page({
     chargebackEntity,
     chargebackInvoice,
     dimensionsWithValues,
+    base,
   ] = await Promise.all([
     getVendorById(bill.vendorId),
     bill.journalEntryId
@@ -101,7 +103,21 @@ export default async function Page({
       ? getInvoiceById(bill.chargebackInvoiceId)
       : Promise.resolve(undefined),
     getDimensionsWithValues(),
+    getBaseCurrency(),
   ]);
+  const baseCode = base?.code ?? "USD";
+  // FX snapshot is meaningful only for non-base bills with a real rate
+  // ("1.00000000" is also treated as absent).
+  const fxRateStr = bill.fxRate;
+  const fxRateNum = fxRateStr != null ? parseFloat(fxRateStr) : NaN;
+  const hasFxSnapshot =
+    bill.currencyCode !== baseCode &&
+    Number.isFinite(fxRateNum) &&
+    fxRateNum > 0 &&
+    fxRateNum !== 1;
+  const baseBillTotal = hasFxSnapshot
+    ? parseAmount(bill.total) / fxRateNum
+    : 0;
   const dimensionByKey = new Map(
     dimensionsWithValues.map((d) => [d.dimension.key, d.dimension] as const),
   );
@@ -532,6 +548,21 @@ export default async function Page({
                 <TD>{""}</TD>
                 <TD num>{formatMoney(bill.total, bill.currencyCode, { compact: true, paren: true })}</TD>
               </TR>
+              {hasFxSnapshot && (
+                <TR hover={false}>
+                  <TD>{""}</TD>
+                  <TD>{""}</TD>
+                  <TD
+                    colSpan={3}
+                    style={{ color: "var(--ink-3)", fontSize: 11.5 }}
+                  >
+                    Booked at 1 {baseCode} = {fxRateNum} {bill.currencyCode}
+                    {" · "}
+                    Base total: {formatMoney(baseBillTotal, baseCode, { compact: true })}
+                  </TD>
+                  <TD>{""}</TD>
+                </TR>
+              )}
             </TBody>
           </Table>
         </Card>

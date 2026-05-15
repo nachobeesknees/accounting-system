@@ -93,6 +93,9 @@ export function NewEntryForm({
   firmEntities,
   today,
   dimensionsWithValues,
+  baseCode,
+  currencyCodes,
+  latestFxRates,
 }: {
   accounts: Account[];
   periods: FiscalPeriod[];
@@ -100,7 +103,26 @@ export function NewEntryForm({
   firmEntities: Office[];
   today: string;
   dimensionsWithValues: Array<{ dimension: Dimension; values: DimensionValue[] }>;
+  baseCode: string;
+  currencyCodes: string[];
+  latestFxRates: Record<string, number>;
 }) {
+  // FX snapshot is optional on a JE — useful for FX revaluation and
+  // intercompany settlements. Defaults to base/no-snapshot; the user can
+  // pick a non-base currency in the disclosure to record a rate.
+  const [fxCurrency, setFxCurrency] = useState<string>(baseCode);
+  const [fxRateInput, setFxRateInput] = useState<string>("");
+  // When the user switches currencies, default the rate input to the
+  // latest stored rate (if any). Empty when they switch back to base.
+  function onFxCurrencyChange(next: string) {
+    setFxCurrency(next);
+    if (next === baseCode) {
+      setFxRateInput("");
+    } else {
+      const r = latestFxRates[next];
+      setFxRateInput(r != null ? String(r) : "");
+    }
+  }
   const [state, formAction] = useFormState(createEntry, INITIAL_STATE);
   const [lines, setLines] = useState<Line[]>([blankLine(), blankLine()]);
   const [entryDate, setEntryDate] = useState(today);
@@ -838,6 +860,79 @@ export function NewEntryForm({
           </div>
         )}
       </div>
+
+      {/* Optional FX-rate snapshot. Tucked into a <details> so the common
+          base-currency JE has zero extra chrome. The rate is sent only
+          when the user picks a non-base currency and types a number; the
+          createJournalEntry mutation coalesces null/0/1 to "no snapshot". */}
+      <details
+        className="rounded-md"
+        style={{
+          background: "var(--paper)",
+          border: "1px solid var(--line)",
+        }}
+      >
+        <summary
+          className="flex items-center justify-between gap-3 px-3 py-2 cursor-pointer"
+          style={{ listStyle: "none", fontSize: 12.5, color: "var(--ink)" }}
+        >
+          <span style={{ fontWeight: 500 }}>FX rate (optional)</span>
+          <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+            Attach a foreign-currency snapshot to this entry — useful for FX
+            revaluation or intercompany settlements.
+          </span>
+        </summary>
+        <div
+          className="grid gap-3 px-3 py-2.5"
+          style={{
+            gridTemplateColumns: "minmax(140px,160px) minmax(180px,220px)",
+            borderTop: "1px solid var(--line)",
+          }}
+        >
+          <label className="flex flex-col gap-1">
+            <span style={HEADER_LABEL}>Currency</span>
+            <select
+              name="fxCurrency"
+              value={fxCurrency}
+              onChange={(e) => onFxCurrencyChange(e.target.value)}
+              style={HEADER_INPUT}
+            >
+              {currencyCodes.map((code) => (
+                <option key={code} value={code}>
+                  {code}
+                  {code === baseCode ? " (base)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span style={HEADER_LABEL}>
+              {fxCurrency === baseCode
+                ? "Rate"
+                : `Rate (1 ${baseCode} = X ${fxCurrency})`}
+            </span>
+            <input
+              type="number"
+              name="fxRate"
+              step="0.00000001"
+              min="0"
+              value={fxRateInput}
+              onChange={(e) => setFxRateInput(e.target.value)}
+              disabled={fxCurrency === baseCode}
+              placeholder={
+                fxCurrency === baseCode
+                  ? "—"
+                  : (latestFxRates[fxCurrency]?.toString() ?? "")
+              }
+              style={{
+                ...HEADER_INPUT,
+                fontFamily: "var(--font-mono)",
+                fontVariantNumeric: "tabular-nums",
+              }}
+            />
+          </label>
+        </div>
+      </details>
 
       {/* Hidden action so we can re-trigger requestSubmit() from the
           confirmation step without losing which button was clicked. */}

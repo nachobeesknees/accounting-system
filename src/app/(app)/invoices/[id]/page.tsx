@@ -12,6 +12,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAccounts,
   getBankAccounts,
+  getBaseCurrency,
   getCustomerAssignments,
   getCustomerById,
   getDimensionsWithValues,
@@ -130,6 +131,7 @@ export default async function Page({
     assignments,
     dimensionsWithValues,
     invoiceNotes,
+    base,
   ] = await Promise.all([
     getCustomerById(invoice.customerId),
     invoice.journalEntryId
@@ -140,7 +142,22 @@ export default async function Page({
     getCustomerAssignments(invoice.customerId),
     getDimensionsWithValues(),
     getInvoiceNotes(invoice.id),
+    getBaseCurrency(),
   ]);
+  const baseCode = base?.code ?? "USD";
+  // FX snapshot is meaningful only when both the rate exists AND the
+  // invoice is in a non-base currency. A stored value of "1.00000000"
+  // would also mean "no conversion", so treat that as absent.
+  const fxRateStr = invoice.fxRate;
+  const fxRateNum = fxRateStr != null ? parseFloat(fxRateStr) : NaN;
+  const hasFxSnapshot =
+    invoice.currencyCode !== baseCode &&
+    Number.isFinite(fxRateNum) &&
+    fxRateNum > 0 &&
+    fxRateNum !== 1;
+  const baseTotal = hasFxSnapshot
+    ? parseAmount(invoice.total) / fxRateNum
+    : 0;
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
 
   const dimensionByKey = new Map(
@@ -837,6 +854,21 @@ export default async function Page({
                 <TD>{""}</TD>
                 <TD num>{formatMoney(invoice.total, invoice.currencyCode, { compact: true, paren: true })}</TD>
               </TR>
+              {hasFxSnapshot && (
+                <TR hover={false}>
+                  <TD>{""}</TD>
+                  <TD>{""}</TD>
+                  <TD
+                    colSpan={3}
+                    style={{ color: "var(--ink-3)", fontSize: 11.5 }}
+                  >
+                    Booked at 1 {baseCode} = {fxRateNum} {invoice.currencyCode}
+                    {" · "}
+                    Base total: {formatMoney(baseTotal, baseCode, { compact: true })}
+                  </TD>
+                  <TD>{""}</TD>
+                </TR>
+              )}
             </TBody>
           </Table>
         </Card>

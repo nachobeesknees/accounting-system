@@ -124,6 +124,15 @@ export async function createEntry(
     String(formData.get("bypassControlWarning") ?? "") === "1";
   const isTemplate = action === "template";
 
+  // Optional FX-rate snapshot. Only attached when the user opened the
+  // <details> disclosure, picked a non-base currency, and typed a rate.
+  // Anything else (empty / 0 / non-numeric) → null, which createJournalEntry
+  // coalesces to "no snapshot stored".
+  const fxRateRaw = String(formData.get("fxRate") ?? "").trim();
+  const fxRateParsed = fxRateRaw === "" ? NaN : parseFloat(fxRateRaw);
+  const fxRate: number | null =
+    Number.isFinite(fxRateParsed) && fxRateParsed > 0 ? fxRateParsed : null;
+
   const validSources = ["manual", "invoice", "bill", "reconciliation"] as const;
   const source = (validSources as readonly string[]).includes(sourceRaw)
     ? (sourceRaw as (typeof validSources)[number])
@@ -202,6 +211,7 @@ export async function createEntry(
       recurringDayOfMonth,
       recurringNextDate: recurringStartDate,
       recurringEndDate,
+      fxRate,
       lines: lines.map((l) => ({
         accountId: l.accountId,
         description: l.description.trim() === "" ? null : l.description.trim(),

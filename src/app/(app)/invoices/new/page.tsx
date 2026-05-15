@@ -9,6 +9,10 @@ import {
   getPriceListEntries,
   getTimeEntries,
   getUsers,
+  getBaseCurrency,
+  getCurrencies,
+  getFirmEntities,
+  getLatestFxRateForCurrency,
 } from "@/lib/data";
 import { getEntityScope } from "@/lib/entity-scope";
 import { parseAmount } from "@/lib/money";
@@ -84,6 +88,9 @@ export default async function Page() {
     firmEntityId,
     timeEntries,
     users,
+    base,
+    currencies,
+    firmEntities,
   ] = await Promise.all([
     getCustomers(),
     getAccounts(),
@@ -95,7 +102,33 @@ export default async function Page() {
     getEntityScope(),
     getTimeEntries(),
     getUsers(),
+    getBaseCurrency(),
+    getCurrencies(),
+    getFirmEntities(),
   ]);
+  const baseCode = base?.code ?? "USD";
+  // Resolve the currency this invoice will be issued in. Mirrors
+  // mutations.ts `getFirmIssuingCurrency()` so the form can pre-render the
+  // FX input when the scoped firm is foreign-currency. Falls back to the
+  // first active firm's currency, then base.
+  const scopedFirm = firmEntityId
+    ? firmEntities.find((e) => e.id === firmEntityId)
+    : undefined;
+  const fallbackFirm =
+    scopedFirm ?? firmEntities.find((e) => e.isActive) ?? firmEntities[0];
+  const currentCurrencyCode = scopedFirm?.currencyCode
+    ?? fallbackFirm?.currencyCode
+    ?? baseCode;
+  // Pre-fetch latest FX rate for every active non-base currency so the
+  // form can default the FX input client-side without an extra round trip.
+  const activeCcyCodes = currencies
+    .filter((c) => c.isActive && c.code !== baseCode)
+    .map((c) => c.code);
+  const latestFxRates: Record<string, number> = {};
+  for (const code of activeCcyCodes) {
+    const r = await getLatestFxRateForCurrency(code);
+    if (r != null) latestFxRates[code] = r;
+  }
   const revenueAccounts = accounts
     .filter((a) => a.accountType === "revenue" && a.isActive)
     .sort((a, b) => a.code.localeCompare(b.code));
@@ -199,6 +232,9 @@ export default async function Page() {
         priceListEntries={priceListEntries}
         unbilledTimeByCustomer={unbilledTimeByCustomer}
         defaultServiceRevenueAccountId={SERVICE_REVENUE_ACCOUNT_ID}
+        baseCode={baseCode}
+        currencyCode={currentCurrencyCode}
+        latestFxRates={latestFxRates}
       />
     </>
   );

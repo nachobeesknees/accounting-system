@@ -62,6 +62,9 @@ export function NewBillForm({
   defaultDueDate,
   dimensionsWithValues,
   accountingPeriods,
+  baseCode,
+  currencyCode,
+  latestFxRates,
 }: {
   vendors: Vendor[];
   expenseAccounts: Account[];
@@ -71,7 +74,17 @@ export function NewBillForm({
   defaultDueDate: string;
   dimensionsWithValues: Array<{ dimension: Dimension; values: DimensionValue[] }>;
   accountingPeriods: AccountingPeriod[];
+  baseCode: string;
+  currencyCode: string;
+  latestFxRates: Record<string, number>;
 }) {
+  // FX snapshot is only meaningful for non-base bills. Defaults to the
+  // latest rate stored in fx_rates so the common case is "press save".
+  const isForeignCurrency = currencyCode !== baseCode;
+  const defaultFxRate = isForeignCurrency
+    ? (latestFxRates[currencyCode]?.toString() ?? "")
+    : "";
+  const [fxRate, setFxRate] = useState<string>(defaultFxRate);
   const [state, formAction] = useFormState(createBillAction, INITIAL_STATE);
   const [vendorId, setVendorId] = useState<string>(vendors[0]?.id ?? "");
   const [clientId, setClientId] = useState<string>("");
@@ -301,22 +314,22 @@ export function NewBillForm({
     if (recipient === "none") return null;
     switch (cbMethod) {
       case "cost":
-        return `At cost: ${formatMoney(subtotal, "USD", { paren: true })}`;
+        return `At cost: ${formatMoney(subtotal, currencyCode, { paren: true })}`;
       case "markup": {
         const pct = parseAmount(markupPct);
         const amt = Math.round(subtotal * (1 + pct / 100) * 100) / 100;
-        return `With ${pct || 0}% markup: ${formatMoney(amt, "USD", { paren: true })}`;
+        return `With ${pct || 0}% markup: ${formatMoney(amt, currencyCode, { paren: true })}`;
       }
       case "fixed": {
         const amt = parseAmount(rebillAmount);
-        return `Fixed: ${formatMoney(amt, "USD", { paren: true })}`;
+        return `Fixed: ${formatMoney(amt, currencyCode, { paren: true })}`;
       }
       case "included":
         return "Included in annual fee — no separate invoice will be generated.";
       default:
         return null;
     }
-  }, [recipient, cbMethod, subtotal, markupPct, rebillAmount]);
+  }, [recipient, cbMethod, subtotal, markupPct, rebillAmount, currencyCode]);
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -501,6 +514,46 @@ export function NewBillForm({
               clearable
             />
           </Row>
+          {isForeignCurrency && (
+            <Row>
+              <div className="flex flex-col gap-1">
+                <label
+                  className="text-[11.5px]"
+                  style={{ color: "var(--ink-3)" }}
+                >
+                  FX rate (1 {baseCode} = X {currencyCode})
+                </label>
+                <input
+                  type="number"
+                  name="fxRate"
+                  step="0.00000001"
+                  min="0"
+                  value={fxRate}
+                  onChange={(e) => setFxRate(e.target.value)}
+                  placeholder={latestFxRates[currencyCode]?.toString() ?? ""}
+                  className="px-2.5 py-1.5 text-[13px] rounded-md outline-none"
+                  style={{
+                    background: "var(--paper)",
+                    border: "1px solid var(--line-2)",
+                    color: "var(--ink)",
+                    fontFamily: "var(--font-mono)",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                />
+                <span
+                  className="text-[11px]"
+                  style={{ color: "var(--ink-4)", lineHeight: 1.4 }}
+                >
+                  Bill is in {currencyCode}; this snapshot is stored on the
+                  bill and on the journal entry it posts.
+                </span>
+              </div>
+              <div />
+            </Row>
+          )}
+          {!isForeignCurrency && (
+            <input type="hidden" name="fxRate" value="" />
+          )}
           <TextareaField
             label="Notes"
             name="notes"
@@ -644,7 +697,7 @@ export function NewBillForm({
                     />
                   </TD>
                   <TD num mono>
-                    {formatMoney(amount, "USD", { paren: true })}
+                    {formatMoney(amount, currencyCode, { paren: true })}
                   </TD>
                   <TD>
                     <button
@@ -675,10 +728,50 @@ export function NewBillForm({
               <TD>{""}</TD>
               <TD>Subtotal</TD>
               <TD num mono>
-                {formatMoney(subtotal, "USD", { paren: true })}
+                {formatMoney(subtotal, currencyCode, { paren: true })}
               </TD>
               <TD>{""}</TD>
             </TR>
+            {(() => {
+              const fxRateNum = parseFloat(fxRate);
+              const showBaseTotal =
+                isForeignCurrency &&
+                Number.isFinite(fxRateNum) &&
+                fxRateNum > 0 &&
+                subtotal > 0;
+              if (!showBaseTotal) return null;
+              const baseTotal = subtotal / fxRateNum;
+              return (
+                <>
+                  <TR hover={false}>
+                    <TD>{""}</TD>
+                    <TD>{""}</TD>
+                    <TD>{""}</TD>
+                    <TD>{""}</TD>
+                    <TD style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                      ≈ in {baseCode}
+                    </TD>
+                    <TD num style={{ color: "var(--ink-3)" }}>
+                      {formatMoney(baseTotal, baseCode)}
+                    </TD>
+                    <TD>{""}</TD>
+                  </TR>
+                  <TR hover={false}>
+                    <TD>{""}</TD>
+                    <TD>{""}</TD>
+                    <TD>{""}</TD>
+                    <TD>{""}</TD>
+                    <TD
+                      colSpan={2}
+                      style={{ color: "var(--ink-4)", fontSize: 11 }}
+                    >
+                      at 1 {baseCode} = {fxRateNum} {currencyCode}
+                    </TD>
+                    <TD>{""}</TD>
+                  </TR>
+                </>
+              );
+            })()}
           </TBody>
         </Table>
       </Card>

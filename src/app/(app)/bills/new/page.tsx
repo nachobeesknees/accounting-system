@@ -3,11 +3,16 @@ import { ButtonLink } from "@/components/ui/Button";
 import { Empty } from "@/components/ui/Empty";
 import {
   getAccounts,
+  getBaseCurrency,
+  getCurrencies,
   getCustomers,
   getDimensionsWithValues,
   getEntities,
+  getFirmEntities,
+  getLatestFxRateForCurrency,
   getVendors,
 } from "@/lib/data";
+import { getEntityScope } from "@/lib/entity-scope";
 import {
   ensureAccountingPeriods,
   getAccountingPeriods,
@@ -24,6 +29,10 @@ export default async function Page() {
     entitiesAll,
     dimensionsWithValues,
     accountingPeriods,
+    base,
+    currencies,
+    firmEntities,
+    firmEntityId,
   ] = await Promise.all([
     getVendors(),
     getAccounts(),
@@ -31,7 +40,32 @@ export default async function Page() {
     getEntities(),
     getDimensionsWithValues(),
     getAccountingPeriods(),
+    getBaseCurrency(),
+    getCurrencies(),
+    getFirmEntities(),
+    getEntityScope(),
   ]);
+  const baseCode = base?.code ?? "USD";
+  // Currency that this bill will be issued in. Mirrors mutations.ts'
+  // `getFirmIssuingCurrency()` — falls back through scoped firm →
+  // first active firm → base.
+  const scopedFirm = firmEntityId
+    ? firmEntities.find((e) => e.id === firmEntityId)
+    : undefined;
+  const fallbackFirm =
+    scopedFirm ?? firmEntities.find((e) => e.isActive) ?? firmEntities[0];
+  const currentCurrencyCode = scopedFirm?.currencyCode
+    ?? fallbackFirm?.currencyCode
+    ?? baseCode;
+  // Pre-fetch the latest FX rate for every active non-base currency.
+  const activeCcyCodes = currencies
+    .filter((c) => c.isActive && c.code !== baseCode)
+    .map((c) => c.code);
+  const latestFxRates: Record<string, number> = {};
+  for (const code of activeCcyCodes) {
+    const r = await getLatestFxRateForCurrency(code);
+    if (r != null) latestFxRates[code] = r;
+  }
   const vendors = vendorsAll
     .filter((v) => v.isActive)
     .sort((a, b) => a.code.localeCompare(b.code));
@@ -97,6 +131,9 @@ export default async function Page() {
         defaultDueDate={defaultDueDate}
         dimensionsWithValues={dimensionsWithValues}
         accountingPeriods={accountingPeriods}
+        baseCode={baseCode}
+        currencyCode={currentCurrencyCode}
+        latestFxRates={latestFxRates}
       />
     </>
   );

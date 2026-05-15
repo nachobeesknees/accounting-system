@@ -118,6 +118,14 @@ export async function createBillAction(
   const clientIdRaw = String(formData.get("clientId") ?? "").trim();
   const entityIdRaw = String(formData.get("entityId") ?? "").trim();
 
+  // FX-rate snapshot. Hidden + empty when bill is in base currency; non-base
+  // bills send the number from the FX-rate input. Negatives/0/non-numeric
+  // → null so createBill's serializeFxRate() coalesces back to NULL.
+  const fxRateRaw = String(formData.get("fxRate") ?? "").trim();
+  const fxRateParsed = fxRateRaw === "" ? NaN : parseFloat(fxRateRaw);
+  const fxRate: number | null =
+    Number.isFinite(fxRateParsed) && fxRateParsed > 0 ? fxRateParsed : null;
+
   if (!vendorId) return { error: "Vendor is required." };
   if (!billDate) return { error: "Bill date is required." };
   if (!dueDate) return { error: "Due date is required." };
@@ -203,6 +211,7 @@ export async function createBillAction(
         periodOverrideReason === "" ? null : periodOverrideReason,
       clientId: clientIdRaw === "" ? null : clientIdRaw,
       entityId: entityIdRaw === "" ? null : entityIdRaw,
+      fxRate,
       lines,
       ...chargeback,
     });

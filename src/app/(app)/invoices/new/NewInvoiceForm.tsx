@@ -91,6 +91,9 @@ export function NewInvoiceForm({
   priceListEntries,
   unbilledTimeByCustomer,
   defaultServiceRevenueAccountId,
+  baseCode,
+  currencyCode,
+  latestFxRates,
 }: {
   customers: Customer[];
   revenueAccounts: Account[];
@@ -102,7 +105,18 @@ export function NewInvoiceForm({
   priceListEntries: PriceListEntryRow[];
   unbilledTimeByCustomer: Record<string, UnbilledTimeEntryRow[]>;
   defaultServiceRevenueAccountId: string;
+  baseCode: string;
+  currencyCode: string;
+  latestFxRates: Record<string, number>;
 }) {
+  // FX: only show controls when the invoice currency differs from base.
+  // Default the input to the latest rate (if any) so common case is a
+  // single click submit. Stored as a string so the user can clear it.
+  const isForeignCurrency = currencyCode !== baseCode;
+  const defaultFxRate = isForeignCurrency
+    ? (latestFxRates[currencyCode]?.toString() ?? "")
+    : "";
+  const [fxRate, setFxRate] = useState<string>(defaultFxRate);
   const [state, formAction] = useFormState(createInvoiceAction, INITIAL_STATE);
   const [lines, setLines] = useState<Line[]>([blankLine()]);
   const [customerId, setCustomerId] = useState<string>("");
@@ -567,6 +581,46 @@ export function NewInvoiceForm({
               </label>
             </div>
           </Row>
+          {isForeignCurrency && (
+            <Row>
+              <div className="flex flex-col gap-1">
+                <label
+                  className="text-[11px] uppercase tracking-wider"
+                  style={{ color: "var(--ink-3)" }}
+                >
+                  FX rate (1 {baseCode} = X {currencyCode})
+                </label>
+                <input
+                  type="number"
+                  name="fxRate"
+                  step="0.00000001"
+                  min="0"
+                  value={fxRate}
+                  onChange={(e) => setFxRate(e.target.value)}
+                  placeholder={latestFxRates[currencyCode]?.toString() ?? ""}
+                  className="px-2 py-1 text-[12.5px] rounded-md outline-none"
+                  style={{
+                    background: "var(--paper)",
+                    border: "1px solid var(--line-2)",
+                    color: "var(--ink)",
+                    fontFamily: "var(--font-mono)",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                />
+                <span
+                  className="text-[11px]"
+                  style={{ color: "var(--ink-4)", lineHeight: 1.4 }}
+                >
+                  Invoice is in {currencyCode}; this snapshot is stored on the
+                  invoice and on the journal entry it posts.
+                </span>
+              </div>
+              <div />
+            </Row>
+          )}
+          {!isForeignCurrency && (
+            <input type="hidden" name="fxRate" value="" />
+          )}
           <TextareaField
             label="Notes"
             name="notes"
@@ -1009,7 +1063,7 @@ export function NewInvoiceForm({
                         fontVariantNumeric: "tabular-nums",
                       }}
                     >
-                      {formatMoney(amount, "USD")}
+                      {formatMoney(amount, currencyCode)}
                     </span>
                   </TD>
                   <TD>
@@ -1040,7 +1094,7 @@ export function NewInvoiceForm({
               <TD>Subtotal</TD>
               <TD>{""}</TD>
               <TD>{""}</TD>
-              <TD num>{formatMoney(subtotal, "USD")}</TD>
+              <TD num>{formatMoney(subtotal, currencyCode)}</TD>
               <TD>{""}</TD>
             </TR>
             {/* Tax + Total rows. When exempt or rate is 0, tax shows 0
@@ -1054,6 +1108,17 @@ export function NewInvoiceForm({
                   : ratePct / 100;
               const taxAmount = Math.round(subtotal * rate * 100) / 100;
               const total = subtotal + taxAmount;
+              // Live base-currency conversion for the FX case. fxRate
+              // convention is `1 baseCode = fxRate currencyCode`, so the
+              // base total = native total / fxRate. Show only when we
+              // have a positive rate; otherwise the foreign-currency line
+              // would render as Infinity/NaN.
+              const fxRateNum = parseFloat(fxRate);
+              const showBaseTotal =
+                isForeignCurrency &&
+                Number.isFinite(fxRateNum) &&
+                fxRateNum > 0;
+              const baseTotal = showBaseTotal ? total / fxRateNum : 0;
               return (
                 <>
                   <TR hover={false}>
@@ -1070,7 +1135,7 @@ export function NewInvoiceForm({
                     <TD>{""}</TD>
                     <TD>{""}</TD>
                     <TD num style={{ color: "var(--ink-3)" }}>
-                      {formatMoney(taxAmount, "USD")}
+                      {formatMoney(taxAmount, currencyCode)}
                     </TD>
                     <TD>{""}</TD>
                   </TR>
@@ -1081,10 +1146,41 @@ export function NewInvoiceForm({
                     <TD>{""}</TD>
                     <TD>{""}</TD>
                     <TD num style={{ fontWeight: 600 }}>
-                      {formatMoney(total, "USD")}
+                      {formatMoney(total, currencyCode)}
                     </TD>
                     <TD>{""}</TD>
                   </TR>
+                  {showBaseTotal && (
+                    <TR hover={false}>
+                      <TD>{""}</TD>
+                      <TD>{""}</TD>
+                      <TD style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                        ≈ in {baseCode}
+                      </TD>
+                      <TD>{""}</TD>
+                      <TD>{""}</TD>
+                      <TD num style={{ color: "var(--ink-3)" }}>
+                        {formatMoney(baseTotal, baseCode)}
+                      </TD>
+                      <TD>{""}</TD>
+                    </TR>
+                  )}
+                  {showBaseTotal && (
+                    <TR hover={false}>
+                      <TD>{""}</TD>
+                      <TD>{""}</TD>
+                      <TD
+                        style={{
+                          color: "var(--ink-4)",
+                          fontSize: 11,
+                        }}
+                        colSpan={4}
+                      >
+                        at 1 {baseCode} = {fxRateNum} {currencyCode}
+                      </TD>
+                      <TD>{""}</TD>
+                    </TR>
+                  )}
                 </>
               );
             })()}

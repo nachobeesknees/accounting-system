@@ -11,6 +11,7 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAccounts,
+  getBaseCurrency,
   getDimensionsWithValues,
   getFirmEntities,
   getJournalEntryByNumber,
@@ -71,14 +72,22 @@ export default async function Page({
     notFound();
   }
 
-  const [periods, accounts, postedByUser, dimensionsWithValues, firmEntities] =
+  const [periods, accounts, postedByUser, dimensionsWithValues, firmEntities, base] =
     await Promise.all([
       getPeriods(),
       getAccounts(),
       entry.postedBy ? getUserById(entry.postedBy) : Promise.resolve(null),
       getDimensionsWithValues(),
       getFirmEntities(),
+      getBaseCurrency(),
     ]);
+  const baseCode = base?.code ?? "USD";
+  // FX snapshot on a JE is informational — the lines themselves are in
+  // base currency. Treat "1.00000000" the same as absent.
+  const fxRateStr = (entry as { fxRate?: string | null }).fxRate ?? null;
+  const fxRateNum = fxRateStr != null ? parseFloat(fxRateStr) : NaN;
+  const hasFxSnapshot =
+    Number.isFinite(fxRateNum) && fxRateNum > 0 && fxRateNum !== 1;
   const period = entry.fiscalPeriodId
     ? periods.find((p) => p.id === entry.fiscalPeriodId)
     : null;
@@ -278,6 +287,14 @@ export default async function Page({
                 k="Counterpart entities"
                 v={counterpartLabels.join(", ")}
                 sub="Intercompany — see /reports/intercompany"
+              />
+            )}
+            {hasFxSnapshot && (
+              <KV
+                k="FX snapshot"
+                v={`1 ${baseCode} = ${fxRateNum}`}
+                sub="Foreign-currency rate stored with this entry"
+                mono
               />
             )}
           </KVGrid>

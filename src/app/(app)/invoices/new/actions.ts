@@ -116,6 +116,14 @@ export async function createInvoiceAction(
     Number.isFinite(taxRatePct) && taxRatePct > 0 ? taxRatePct / 100 : 0;
   const taxExempt = formData.get("taxExempt") === "on";
 
+  // FX rate snapshot. Hidden when currency === base; arrives as ""/null
+  // in that case. Negative/0/non-numeric → null so createInvoice's
+  // serializeFxRate() coalesces back to NULL ("base currency").
+  const fxRateRaw = String(formData.get("fxRate") ?? "").trim();
+  const fxRateParsed = fxRateRaw === "" ? NaN : parseFloat(fxRateRaw);
+  const fxRate: number | null =
+    Number.isFinite(fxRateParsed) && fxRateParsed > 0 ? fxRateParsed : null;
+
   if (!customerId) return { error: "Customer is required." };
   if (!invoiceDate) return { error: "Invoice date is required." };
   if (!dueDate) return { error: "Due date is required." };
@@ -199,6 +207,7 @@ export async function createInvoiceAction(
         periodOverrideReason === "" ? null : periodOverrideReason,
       taxRate,
       taxExempt,
+      fxRate,
       lines,
       isTemplate,
       recurringFrequency,
