@@ -142,14 +142,9 @@ async function main() {
     console.log("= dimension department (exists)");
   }
 
-  const projectDim = await sql<Row[]>`SELECT id FROM dimensions WHERE key = 'project'`;
-  if (projectDim.length === 0) {
-    await sql`INSERT INTO dimensions (id, key, label, description, display_order)
-              VALUES ('dim-project', 'project', 'Project', 'Internal project / client engagement code.', 20)`;
-    console.log("+ dimension project");
-  } else {
-    console.log("= dimension project (exists)");
-  }
+  // (Project dimension intentionally removed — was previously seeded
+  // alongside Department but the user opted to drop it. If you want it
+  // back, just re-add an INSERT for dim-project here.)
 
   const departments: Array<{ id: string; code: string; label: string; order: number }> = [
     { id: "dv-dep-tax", code: "TAX", label: "Tax", order: 10 },

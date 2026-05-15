@@ -12,7 +12,7 @@
 
 import "server-only";
 
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumCredits, sumDebits, toDecimalString } from "./money";
@@ -80,12 +80,19 @@ function parseTrailingInt(s: string | undefined): number {
 
 export async function nextEntryNumber(): Promise<string> {
   const db = getDb();
-  // Templates have their own "TPL-XXXXXX" sequence and must not bump the
-  // "JE-XXXXXX" counter; exclude them here.
+  // Only consider entries on the MAIN sequence "JE-NNNNNN" — the seed
+  // also has entity-scoped sequences like "JE-E001-000004" that
+  // lex-sort above the main range and would otherwise hijack the next
+  // number. Templates ("TPL-NNNNNN") are excluded by isTemplate=false.
   const [row] = await db
     .select({ entryNumber: schema.journalEntries.entryNumber })
     .from(schema.journalEntries)
-    .where(eq(schema.journalEntries.isTemplate, false))
+    .where(
+      and(
+        eq(schema.journalEntries.isTemplate, false),
+        sql`${schema.journalEntries.entryNumber} ~ '^JE-[0-9]+$'`,
+      ),
+    )
     .orderBy(desc(schema.journalEntries.entryNumber))
     .limit(1);
   const n = parseTrailingInt(row?.entryNumber) + 1;

@@ -43,6 +43,24 @@ function parseDimensionsForLine(
   return out;
 }
 
+/**
+ * Parse header-level dimensions (`headerDim[<key>]=<value-id>`). These
+ * apply to every line at submit time — the per-line cells were removed
+ * from the JE form to keep the spreadsheet compact.
+ */
+function parseHeaderDimensions(formData: FormData): Record<string, string> {
+  const out: Record<string, string> = {};
+  const prefix = "headerDim[";
+  for (const [name, value] of formData.entries()) {
+    if (!name.startsWith(prefix)) continue;
+    if (!name.endsWith("]")) continue;
+    const key = name.slice(prefix.length, -1);
+    const v = typeof value === "string" ? value.trim() : "";
+    if (key && v) out[key] = v;
+  }
+  return out;
+}
+
 function parseLines(formData: FormData): ParsedLine[] {
   const lines: ParsedLine[] = [];
   for (let i = 0; i < 100; i++) {
@@ -136,9 +154,16 @@ export async function createEntry(
   }
 
   const allLines = parseLines(formData);
-  const lines = allLines.filter(
-    (l) => !(l.debit === 0 && l.credit === 0 && !l.accountId),
-  );
+  // Header-level dimensions apply to every line; per-line dim cells were
+  // removed for the compact JE form. Merge so any future per-line dim
+  // overrides (if reintroduced) still win.
+  const headerDims = parseHeaderDimensions(formData);
+  const lines = allLines
+    .filter((l) => !(l.debit === 0 && l.credit === 0 && !l.accountId))
+    .map((l) => ({
+      ...l,
+      dimensions: { ...headerDims, ...l.dimensions },
+    }));
 
   if (!entryDate) {
     return { error: "Entry date is required." };

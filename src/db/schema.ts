@@ -259,6 +259,12 @@ export const journalEntries = pgTable("journal_entries", {
   recurringEndDate: date("recurring_end_date"),
   /** Set on generated entries — points back to the source template. */
   recurringParentId: text("recurring_parent_id"),
+  /**
+   * Foreign-currency snapshot. "1 base currency = fx_rate native units"
+   * (same convention as fx_rates.rate_per_base). NULL = document is in
+   * base currency / no conversion needed. Base amount = native / fx_rate.
+   */
+  fxRate: numeric("fx_rate", { precision: 18, scale: 8 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -843,6 +849,11 @@ export const invoices = pgTable("invoices", {
   billingPeriodStart: date("billing_period_start"),
   /** Auto-set on generated invoices: end of the period being billed. */
   billingPeriodEnd: date("billing_period_end"),
+  /**
+   * Foreign-currency snapshot. "1 base currency = fx_rate native units".
+   * NULL when the invoice is in base currency / no conversion needed.
+   */
+  fxRate: numeric("fx_rate", { precision: 18, scale: 8 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -923,6 +934,11 @@ export const bills = pgTable("bills", {
   chargebackNotes: text("chargeback_notes"),
   /** Reason given when approving into a soft-closed accounting period. */
   periodOverrideReason: text("period_override_reason"),
+  /**
+   * Foreign-currency snapshot. "1 base currency = fx_rate native units".
+   * NULL when the bill is in base currency / no conversion needed.
+   */
+  fxRate: numeric("fx_rate", { precision: 18, scale: 8 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

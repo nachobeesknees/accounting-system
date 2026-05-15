@@ -107,6 +107,12 @@ export function NewEntryForm({
   const [reference, setReference] = useState("");
   const [description, setDescription] = useState("");
   const [showReview, setShowReview] = useState(false);
+  // Header-level dimensions (applied to every line at submit time).
+  // Moved out of the per-line cells so the spreadsheet stays compact —
+  // single Department field at the top instead of one selector per row.
+  const [headerDimensions, setHeaderDimensions] = useState<
+    Record<string, string>
+  >({});
 
   function findAccountId(token: string | undefined): string {
     if (!token) return "";
@@ -151,13 +157,17 @@ export function NewEntryForm({
     }
   }
 
-  // No "project" concept. Only line-level dimensions (e.g. department) are
-  // rendered, and only as inline cells in the spreadsheet — not as stacked
-  // selects inside the account cell.
-  const lineDimensions = useMemo(
+  // No "project" concept (it was removed). Dimensions are header-level:
+  // the user picks one Department for the whole JE and we apply it to
+  // every line at submit time. Per-line override isn't exposed in the
+  // compact view — the line cells are gone entirely.
+  const headerDimensionDefs = useMemo(
     () => dimensionsWithValues.filter((d) => d.dimension.key !== "project"),
     [dimensionsWithValues],
   );
+  // Kept for backwards compat with any code below that still references
+  // `lineDimensions` — empty array means "render no per-line cells".
+  const lineDimensions: typeof headerDimensionDefs = [];
 
   const firmEntityOptions = useMemo<SmartSelectOption[]>(
     () =>
@@ -422,6 +432,33 @@ export function NewEntryForm({
               ariaLabel="Source"
             />
           </div>
+          {/* Header-level dimensions (currently just Department). Applied
+              to every line at submit time so the spreadsheet rows can
+              stay narrow. */}
+          {headerDimensionDefs.map(({ dimension, values }) => (
+            <div key={dimension.id} className="flex flex-col gap-1">
+              <span style={HEADER_LABEL}>{dimension.label}</span>
+              <SmartSelect
+                name={`headerDim[${dimension.key}]`}
+                value={headerDimensions[dimension.key] ?? ""}
+                onChange={(v) =>
+                  setHeaderDimensions((prev) => ({
+                    ...prev,
+                    [dimension.key]: v,
+                  }))
+                }
+                options={values.map((vv) => ({
+                  value: vv.id,
+                  label: vv.label,
+                  search: vv.code,
+                }))}
+                emptyLabel="—"
+                clearable
+                triggerStyle={HEADER_INPUT}
+                ariaLabel={dimension.label}
+              />
+            </div>
+          ))}
         </div>
       </div>
 

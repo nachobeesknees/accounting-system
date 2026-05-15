@@ -214,6 +214,17 @@ const COLUMNS: ColumnSpec[] = [
   // Stamped when a time entry is added as a line on an invoice (via the
   // unbilled-time picker on /invoices/new). NULL = unbilled.
   { table: "time_entries", column: "invoice_id", type: "text" },
+
+  // ---- Foreign-currency snapshot on transactional documents ----
+  // fx_rate uses the same "rate_per_base" convention as fx_rates:
+  // 1 base currency = fx_rate native units. So a EUR invoice when the
+  // EUR rate is 0.925 stores fx_rate = 0.925. Base amount = native /
+  // fx_rate. NULL means "no FX needed" — document is already in base
+  // currency. Snapshotted at create time so historical totals stay
+  // stable when the live FX rate later moves.
+  { table: "invoices",        column: "fx_rate", type: "numeric(18,8)" },
+  { table: "bills",           column: "fx_rate", type: "numeric(18,8)" },
+  { table: "journal_entries", column: "fx_rate", type: "numeric(18,8)" },
 ];
 
 const TABLES = [
