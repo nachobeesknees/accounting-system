@@ -2510,6 +2510,331 @@ export async function getIncomeStatementForPeriod(
   return { rows, revenue, expenses, netIncome: revenue - expenses };
 }
 
+// ---------- By-entity reports ----------
+//
+// One row per account, one column per client entity that has activity in the
+// period (plus a "Firm-level" bucket for postings whose journal_entries.entity_id
+// is NULL). Both helpers run a single SQL query joining journal_lines →
+// journal_entries → accounts, then aggregate in JS. Returned signed amounts
+// already have the sign flipped so credit-normal accounts (revenue, liability,
+// equity) display as positive when "normal".
+//
+// The `entities` array on the returned object is filtered to only those that
+// have non-zero activity, sorted by code — keeps the rendered table narrow.
+// All `byEntity` arrays in rows + per-entity totals are aligned 1:1 with that
+// `entities` array.
+
+export type ByEntityRow = {
+  accountId: string;
+  code: string;
+  name: string;
+  accountType: AccountType;
+  /** Aligned 1:1 with the returned `entities` array. */
+  byEntity: number[];
+  /** Postings with journal_entries.entity_id IS NULL. */
+  firm: number;
+  total: number;
+};
+
+/** Shared core for the two by-entity helpers — runs the joined query and
+ *  buckets signed amounts into [accountId, entityId | null] cells. */
+async function fetchByEntityCells(opts: {
+  start?: string;
+  end: string;
+  scope?: string | null;
+}): Promise<{
+  /** Map of accountId → { entityId | null → signed (debit - credit) sum } */
+  cells: Map<string, Map<string | null, number>>;
+  /** All entityIds that appeared (non-null), used to project entity columns. */
+  entityIdsSeen: Set<string>;
+}> {
+  const db = getDb();
+  const q = db
+    .select({
+      accountId: schema.journalLines.accountId,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+      entityId: schema.journalEntries.entityId,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    );
+
+  const conds = [
+    eq(schema.journalEntries.status, "posted"),
+    isNull(schema.journalEntries.eliminationEntryId),
+    lte(schema.journalEntries.entryDate, opts.end),
+  ];
+  if (opts.start) {
+    conds.push(gte(schema.journalEntries.entryDate, opts.start));
+  }
+  // scope semantics mirror getSignedBalancesInRange/AsOf:
+  //   "all" | undefined → no firm filter
+  //   null              → firm-level only (firm_entity_id IS NULL)
+  //   string            → specific firm entity
+  if (opts.scope === null) {
+    conds.push(isNull(schema.journalEntries.firmEntityId));
+  } else if (opts.scope && opts.scope !== "all") {
+    conds.push(eq(schema.journalEntries.firmEntityId, opts.scope));
+  }
+  const rows = await q.where(and(...conds));
+
+  const cells = new Map<string, Map<string | null, number>>();
+  const entityIdsSeen = new Set<string>();
+  for (const r of rows) {
+    const signed = parseAmount(r.debit) - parseAmount(r.credit);
+    if (signed === 0) continue;
+    const eId: string | null = r.entityId ?? null;
+    if (eId) entityIdsSeen.add(eId);
+    let inner = cells.get(r.accountId);
+    if (!inner) {
+      inner = new Map<string | null, number>();
+      cells.set(r.accountId, inner);
+    }
+    inner.set(eId, (inner.get(eId) ?? 0) + signed);
+  }
+  return { cells, entityIdsSeen };
+}
+
+/**
+ * Income statement broken out by client entity. Rows are revenue / expense
+ * accounts that have activity in the range; columns are each entity with
+ * activity (sorted by code), plus a "firm" bucket for unattributed postings.
+ *
+ * Sign convention: revenue is positive when earned, expense is positive when
+ * incurred (matches `getIncomeStatementForPeriod`).
+ */
+export async function getIncomeStatementByEntity(
+  start: string,
+  end: string,
+  scope?: string | null,
+): Promise<{
+  entities: Entity[];
+  rows: ByEntityRow[];
+  revenueByEntity: number[];
+  expensesByEntity: number[];
+  netByEntity: number[];
+  firmRevenue: number;
+  firmExpenses: number;
+  firmNet: number;
+  totalRevenue: number;
+  totalExpenses: number;
+  totalNet: number;
+}> {
+  const [accounts, allEntities, { cells, entityIdsSeen }] = await Promise.all([
+    getAccounts("all"),
+    getEntities(),
+    fetchByEntityCells({ start, end, scope }),
+  ]);
+
+  const entities = allEntities
+    .filter((e) => entityIdsSeen.has(e.id))
+    .sort((a, b) => a.code.localeCompare(b.code));
+  const entityIndex = new Map(entities.map((e, i) => [e.id, i] as const));
+
+  const accountIndex = new Map(accounts.map((a) => [a.id, a]));
+  const rows: ByEntityRow[] = [];
+  const revenueByEntity = new Array<number>(entities.length).fill(0);
+  const expensesByEntity = new Array<number>(entities.length).fill(0);
+  let firmRevenue = 0;
+  let firmExpenses = 0;
+
+  for (const [accountId, inner] of cells) {
+    const acct = accountIndex.get(accountId);
+    if (!acct) continue;
+    if (acct.accountType !== "revenue" && acct.accountType !== "expense") continue;
+
+    // Flip sign for credit-normal revenue so positive = earned.
+    const flip = acct.accountType === "revenue" ? -1 : 1;
+    const byEntity = new Array<number>(entities.length).fill(0);
+    let firm = 0;
+    let total = 0;
+    for (const [eId, raw] of inner) {
+      const v = raw * flip;
+      if (v === 0) continue;
+      if (eId === null) firm += v;
+      else {
+        const idx = entityIndex.get(eId);
+        if (idx === undefined) continue;
+        byEntity[idx] += v;
+      }
+      total += v;
+    }
+    if (total === 0 && firm === 0 && byEntity.every((v) => v === 0)) continue;
+    rows.push({
+      accountId,
+      code: acct.code,
+      name: acct.name,
+      accountType: acct.accountType,
+      byEntity,
+      firm,
+      total,
+    });
+    if (acct.accountType === "revenue") {
+      firmRevenue += firm;
+      for (let i = 0; i < entities.length; i++) revenueByEntity[i] += byEntity[i];
+    } else {
+      firmExpenses += firm;
+      for (let i = 0; i < entities.length; i++) expensesByEntity[i] += byEntity[i];
+    }
+  }
+
+  rows.sort((a, b) => {
+    if (a.accountType !== b.accountType) {
+      return a.accountType === "revenue" ? -1 : 1;
+    }
+    return a.code.localeCompare(b.code);
+  });
+
+  const netByEntity = revenueByEntity.map((r, i) => r - expensesByEntity[i]);
+  const totalRevenue = revenueByEntity.reduce((s, v) => s + v, 0) + firmRevenue;
+  const totalExpenses =
+    expensesByEntity.reduce((s, v) => s + v, 0) + firmExpenses;
+  return {
+    entities,
+    rows,
+    revenueByEntity,
+    expensesByEntity,
+    netByEntity,
+    firmRevenue,
+    firmExpenses,
+    firmNet: firmRevenue - firmExpenses,
+    totalRevenue,
+    totalExpenses,
+    totalNet: totalRevenue - totalExpenses,
+  };
+}
+
+/**
+ * Balance sheet broken out by client entity as of `asOf`. Rows are asset /
+ * liability / equity accounts with non-zero balance; columns are each entity
+ * with any activity ≤ asOf, plus a "firm" bucket for unattributed postings.
+ *
+ * Note on equity: we just sum what's posted to credit-normal equity accounts.
+ * Period-end Net Income is NOT folded in here — the caller can compute it
+ * separately if needed.
+ */
+export async function getBalanceSheetByEntity(
+  asOf: string,
+  scope?: string | null,
+): Promise<{
+  entities: Entity[];
+  rows: ByEntityRow[];
+  assetsByEntity: number[];
+  liabilitiesByEntity: number[];
+  equityByEntity: number[];
+  firmAssets: number;
+  firmLiabilities: number;
+  firmEquity: number;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+}> {
+  const [accounts, allEntities, { cells, entityIdsSeen }] = await Promise.all([
+    getAccounts("all"),
+    getEntities(),
+    fetchByEntityCells({ end: asOf, scope }),
+  ]);
+
+  const entities = allEntities
+    .filter((e) => entityIdsSeen.has(e.id))
+    .sort((a, b) => a.code.localeCompare(b.code));
+  const entityIndex = new Map(entities.map((e, i) => [e.id, i] as const));
+
+  const accountIndex = new Map(accounts.map((a) => [a.id, a]));
+  const rows: ByEntityRow[] = [];
+  const assetsByEntity = new Array<number>(entities.length).fill(0);
+  const liabilitiesByEntity = new Array<number>(entities.length).fill(0);
+  const equityByEntity = new Array<number>(entities.length).fill(0);
+  let firmAssets = 0;
+  let firmLiabilities = 0;
+  let firmEquity = 0;
+
+  for (const [accountId, inner] of cells) {
+    const acct = accountIndex.get(accountId);
+    if (!acct) continue;
+    if (
+      acct.accountType !== "asset" &&
+      acct.accountType !== "liability" &&
+      acct.accountType !== "equity"
+    )
+      continue;
+
+    // Flip sign for credit-normal accounts so liabilities + equity display
+    // as positive when "normal".
+    const flip = acct.accountType === "asset" ? 1 : -1;
+    const byEntity = new Array<number>(entities.length).fill(0);
+    let firm = 0;
+    let total = 0;
+    for (const [eId, raw] of inner) {
+      const v = raw * flip;
+      if (v === 0) continue;
+      if (eId === null) firm += v;
+      else {
+        const idx = entityIndex.get(eId);
+        if (idx === undefined) continue;
+        byEntity[idx] += v;
+      }
+      total += v;
+    }
+    if (total === 0 && firm === 0 && byEntity.every((v) => v === 0)) continue;
+    rows.push({
+      accountId,
+      code: acct.code,
+      name: acct.name,
+      accountType: acct.accountType,
+      byEntity,
+      firm,
+      total,
+    });
+    if (acct.accountType === "asset") {
+      firmAssets += firm;
+      for (let i = 0; i < entities.length; i++) assetsByEntity[i] += byEntity[i];
+    } else if (acct.accountType === "liability") {
+      firmLiabilities += firm;
+      for (let i = 0; i < entities.length; i++)
+        liabilitiesByEntity[i] += byEntity[i];
+    } else {
+      firmEquity += firm;
+      for (let i = 0; i < entities.length; i++) equityByEntity[i] += byEntity[i];
+    }
+  }
+
+  rows.sort((a, b) => {
+    const order: Record<AccountType, number> = {
+      asset: 0,
+      liability: 1,
+      equity: 2,
+      revenue: 3,
+      expense: 4,
+    };
+    if (a.accountType !== b.accountType) {
+      return order[a.accountType] - order[b.accountType];
+    }
+    return a.code.localeCompare(b.code);
+  });
+
+  const totalAssets = assetsByEntity.reduce((s, v) => s + v, 0) + firmAssets;
+  const totalLiabilities =
+    liabilitiesByEntity.reduce((s, v) => s + v, 0) + firmLiabilities;
+  const totalEquity = equityByEntity.reduce((s, v) => s + v, 0) + firmEquity;
+  return {
+    entities,
+    rows,
+    assetsByEntity,
+    liabilitiesByEntity,
+    equityByEntity,
+    firmAssets,
+    firmLiabilities,
+    firmEquity,
+    totalAssets,
+    totalLiabilities,
+    totalEquity,
+  };
+}
+
 export type MonthlyIncomeStatement = {
   year: number;
   months: number[]; // 1..12

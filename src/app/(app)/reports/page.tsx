@@ -12,15 +12,18 @@ import { YearPicker } from "./YearPicker";
 import {
   DEMO_TODAY,
   accountsByType,
+  getBalanceSheetByEntity,
   getBaseCurrency,
   getBudgetByAccount,
   getEntities,
+  getIncomeStatementByEntity,
   getIncomeStatementForPeriod,
   getKpisAsOf,
   getMonthlyIncomeStatement,
   getRegions,
   getSignedBalancesAsOf,
   getTrialBalance,
+  type ByEntityRow,
   type IncomeStatementRow,
   type KpisSummary,
 } from "@/lib/data";
@@ -37,10 +40,16 @@ import {
 } from "@/lib/report-periods";
 import type { Account } from "@/lib/types";
 
-type TabId = "balance" | "income" | "trial" | "monthly";
+type TabId = "balance" | "income" | "trial" | "monthly" | "by-entity";
 
 function isTab(s: string | undefined): s is TabId {
-  return s === "balance" || s === "income" || s === "trial" || s === "monthly";
+  return (
+    s === "balance" ||
+    s === "income" ||
+    s === "trial" ||
+    s === "monthly" ||
+    s === "by-entity"
+  );
 }
 
 function formatDateLabel(iso: string): string {
@@ -226,17 +235,19 @@ export default async function Page({
         }
         actions={
           <>
-            <CsvDownloadButton
-              report={
-                tab === "balance"
-                  ? "balance-sheet"
-                  : tab === "income"
-                    ? "income-statement"
-                    : tab === "monthly"
-                      ? "income-statement-monthly"
-                      : "trial-balance"
-              }
-            />
+            {tab !== "by-entity" && (
+              <CsvDownloadButton
+                report={
+                  tab === "balance"
+                    ? "balance-sheet"
+                    : tab === "income"
+                      ? "income-statement"
+                      : tab === "monthly"
+                        ? "income-statement-monthly"
+                        : "trial-balance"
+                }
+              />
+            )}
             <PrintButton />
           </>
         }
@@ -252,6 +263,11 @@ export default async function Page({
             href: tabHref("monthly", params),
           },
           { id: "trial", label: "Trial Balance", href: tabHref("trial", params) },
+          {
+            id: "by-entity",
+            label: "By entity",
+            href: tabHref("by-entity", params),
+          },
         ]}
         activeId={tab}
       />
@@ -261,6 +277,8 @@ export default async function Page({
         <div className="flex flex-wrap items-center gap-3 no-print">
           {tab === "monthly" ? (
             <YearPicker current={fiscalYear} />
+          ) : tab === "by-entity" ? (
+            <PeriodPicker />
           ) : tab !== "trial" ? (
             <>
               <PeriodPicker />
@@ -330,6 +348,14 @@ export default async function Page({
           />
         )}
         {tab === "trial" && <TrialBalanceCard baseCode={baseCode} /> }
+        {tab === "by-entity" && (
+          <ByEntitySection
+            period={period}
+            scope={scope}
+            compact={compact}
+            baseCode={baseCode}
+          />
+        )}
       </div>
     </>
   );
@@ -1027,6 +1053,425 @@ async function TrialBalanceCard({ baseCode }: { baseCode: string }) {
           </TR>
         </TBody>
       </Table>
+    </Card>
+  );
+}
+
+// ------- By Entity (grids: IS + BS) -------
+
+async function ByEntitySection({
+  period,
+  scope,
+  compact,
+  baseCode,
+}: {
+  period: { start: string; end: string; label: string };
+  scope: string | null;
+  compact: boolean;
+  baseCode: string;
+}) {
+  return (
+    <>
+      <IncomeByEntityCard
+        period={period}
+        scope={scope}
+        compact={compact}
+        baseCode={baseCode}
+      />
+      <BalanceByEntityCard
+        period={period}
+        scope={scope}
+        compact={compact}
+        baseCode={baseCode}
+      />
+    </>
+  );
+}
+
+// Shared header row for by-entity grids: Code, Account, per-entity columns,
+// Firm-level, Total. `entities` is whatever the data helper returned.
+function ByEntityHeader({
+  entities,
+}: {
+  entities: Array<{ id: string; code: string; name: string }>;
+}) {
+  return (
+    <TR hover={false}>
+      <TH>Code</TH>
+      <TH>Account</TH>
+      {entities.map((e) => (
+        <TH key={e.id} num title={e.name}>
+          {e.code}
+        </TH>
+      ))}
+      <TH num>Firm</TH>
+      <TH num>Total</TH>
+    </TR>
+  );
+}
+
+async function IncomeByEntityCard({
+  period,
+  scope,
+  compact,
+  baseCode,
+}: {
+  period: { start: string; end: string; label: string };
+  scope: string | null;
+  compact: boolean;
+  baseCode: string;
+}) {
+  const fmt = (n: number) =>
+    formatMoney(n, "USD", { paren: true, compact, hideCurrency: true });
+  const data = await getIncomeStatementByEntity(period.start, period.end, scope);
+  const { entities, rows } = data;
+
+  const revenueRows = rows.filter((r) => r.accountType === "revenue");
+  const expenseRows = rows.filter((r) => r.accountType === "expense");
+  const colCount = 2 + entities.length + 2; // code + name + entities + firm + total
+
+  // One cell per amount, drillable to /journal filtered to that account + entity.
+  function valueCell(
+    accountId: string,
+    entityId: string | "firm" | null,
+    value: number,
+    key: string,
+  ) {
+    if (value === 0) {
+      return (
+        <TD key={key} num>
+          —
+        </TD>
+      );
+    }
+    const qs = new URLSearchParams();
+    qs.set("account", accountId);
+    if (entityId === "firm") qs.set("entity", "firm");
+    else if (entityId) qs.set("entity", entityId);
+    qs.set("from", period.start);
+    qs.set("to", period.end);
+    const href = `/journal?${qs.toString()}`;
+    return (
+      <TD key={key} num neg={value < 0}>
+        <DrillNumber
+          value={value}
+          href={href}
+          currencyCode={null}
+          compact={compact}
+        />
+      </TD>
+    );
+  }
+
+  function renderRow(r: ByEntityRow) {
+    return (
+      <TR key={r.accountId}>
+        <TD mono>{r.code}</TD>
+        <TD>{r.name}</TD>
+        {entities.map((e, i) =>
+          valueCell(r.accountId, e.id, r.byEntity[i], e.id),
+        )}
+        {valueCell(r.accountId, "firm", r.firm, "firm")}
+        <TD num neg={r.total < 0} style={{ fontWeight: 600 }}>
+          {fmt(r.total)}
+        </TD>
+      </TR>
+    );
+  }
+
+  function totalRow(
+    label: string,
+    byEntity: number[],
+    firm: number,
+    total: number,
+    grand: boolean = false,
+  ) {
+    const cellStyle = grand
+      ? {
+          fontWeight: 700,
+          color: "var(--p-formation-fg)",
+          background: "var(--p-formation-bg)",
+        }
+      : { fontWeight: 600, color: "var(--ink)" };
+    return (
+      <TR total hover={false}>
+        <TD colSpan={2} style={cellStyle}>
+          {label}
+        </TD>
+        {byEntity.map((v, i) => (
+          <TD key={i} num neg={v < 0} style={cellStyle}>
+            {fmt(v)}
+          </TD>
+        ))}
+        <TD num neg={firm < 0} style={cellStyle}>
+          {fmt(firm)}
+        </TD>
+        <TD num neg={total < 0} style={cellStyle}>
+          {fmt(total)}
+        </TD>
+      </TR>
+    );
+  }
+
+  return (
+    <Card title={`Income Statement by Entity · ${baseCode} — ${period.label}`}>
+      {entities.length === 0 && rows.length === 0 ? (
+        <div className="px-3 py-4 text-[12px]" style={{ color: "var(--ink-3)" }}>
+          No activity in {period.label}.
+        </div>
+      ) : (
+        <Table>
+          <THead>
+            <ByEntityHeader entities={entities} />
+          </THead>
+          <TBody>
+            <TR hover={false}>
+              <TH style={{ width: "120px" }} colSpan={colCount}>
+                Revenue
+              </TH>
+            </TR>
+            {revenueRows.length === 0 ? (
+              <TR>
+                <TD colSpan={colCount} style={{ color: "var(--ink-3)" }}>
+                  No revenue in period.
+                </TD>
+              </TR>
+            ) : (
+              revenueRows.map(renderRow)
+            )}
+            {totalRow(
+              "Total Revenue",
+              data.revenueByEntity,
+              data.firmRevenue,
+              data.totalRevenue,
+            )}
+            <TR hover={false}>
+              <TH style={{ width: "120px" }} colSpan={colCount}>
+                Expenses
+              </TH>
+            </TR>
+            {expenseRows.length === 0 ? (
+              <TR>
+                <TD colSpan={colCount} style={{ color: "var(--ink-3)" }}>
+                  No expenses in period.
+                </TD>
+              </TR>
+            ) : (
+              expenseRows.map(renderRow)
+            )}
+            {totalRow(
+              "Total Expenses",
+              data.expensesByEntity,
+              data.firmExpenses,
+              data.totalExpenses,
+            )}
+            {totalRow(
+              "Net Income",
+              data.netByEntity,
+              data.firmNet,
+              data.totalNet,
+              true,
+            )}
+          </TBody>
+        </Table>
+      )}
+    </Card>
+  );
+}
+
+async function BalanceByEntityCard({
+  period,
+  scope,
+  compact,
+  baseCode,
+}: {
+  period: { start: string; end: string; label: string };
+  scope: string | null;
+  compact: boolean;
+  baseCode: string;
+}) {
+  const fmt = (n: number) =>
+    formatMoney(n, "USD", { paren: true, compact, hideCurrency: true });
+  const asOf = period.end;
+  const data = await getBalanceSheetByEntity(asOf, scope);
+  const { entities, rows } = data;
+
+  const assetRows = rows.filter((r) => r.accountType === "asset");
+  const liabilityRows = rows.filter((r) => r.accountType === "liability");
+  const equityRows = rows.filter((r) => r.accountType === "equity");
+  const colCount = 2 + entities.length + 2;
+
+  function valueCell(
+    accountId: string,
+    entityId: string | "firm" | null,
+    value: number,
+    key: string,
+  ) {
+    if (value === 0) {
+      return (
+        <TD key={key} num>
+          —
+        </TD>
+      );
+    }
+    // BS rows drill into the journal filtered to the account/entity up to asOf
+    // (no start date — gives the user the full ledger leading up to the cutoff).
+    const qs = new URLSearchParams();
+    qs.set("account", accountId);
+    if (entityId === "firm") qs.set("entity", "firm");
+    else if (entityId) qs.set("entity", entityId);
+    qs.set("to", asOf);
+    const href = `/journal?${qs.toString()}`;
+    return (
+      <TD key={key} num neg={value < 0}>
+        <DrillNumber
+          value={value}
+          href={href}
+          currencyCode={null}
+          compact={compact}
+        />
+      </TD>
+    );
+  }
+
+  function renderRow(r: ByEntityRow) {
+    return (
+      <TR key={r.accountId}>
+        <TD mono>{r.code}</TD>
+        <TD>{r.name}</TD>
+        {entities.map((e, i) =>
+          valueCell(r.accountId, e.id, r.byEntity[i], e.id),
+        )}
+        {valueCell(r.accountId, "firm", r.firm, "firm")}
+        <TD num neg={r.total < 0} style={{ fontWeight: 600 }}>
+          {fmt(r.total)}
+        </TD>
+      </TR>
+    );
+  }
+
+  function totalRow(
+    label: string,
+    byEntity: number[],
+    firm: number,
+    total: number,
+    grand: boolean = false,
+  ) {
+    const cellStyle = grand
+      ? {
+          fontWeight: 700,
+          color: "var(--p-formation-fg)",
+          background: "var(--p-formation-bg)",
+        }
+      : { fontWeight: 600, color: "var(--ink)" };
+    return (
+      <TR total hover={false}>
+        <TD colSpan={2} style={cellStyle}>
+          {label}
+        </TD>
+        {byEntity.map((v, i) => (
+          <TD key={i} num neg={v < 0} style={cellStyle}>
+            {fmt(v)}
+          </TD>
+        ))}
+        <TD num neg={firm < 0} style={cellStyle}>
+          {fmt(firm)}
+        </TD>
+        <TD num neg={total < 0} style={cellStyle}>
+          {fmt(total)}
+        </TD>
+      </TR>
+    );
+  }
+
+  const liabPlusEquityByEntity = data.liabilitiesByEntity.map(
+    (v, i) => v + data.equityByEntity[i],
+  );
+  const liabPlusEquityFirm = data.firmLiabilities + data.firmEquity;
+  const liabPlusEquityTotal = data.totalLiabilities + data.totalEquity;
+
+  return (
+    <Card title={`Balance Sheet by Entity · ${baseCode} — As of ${asOf}`}>
+      {entities.length === 0 && rows.length === 0 ? (
+        <div className="px-3 py-4 text-[12px]" style={{ color: "var(--ink-3)" }}>
+          No activity as of {asOf}.
+        </div>
+      ) : (
+        <Table>
+          <THead>
+            <ByEntityHeader entities={entities} />
+          </THead>
+          <TBody>
+            <TR hover={false}>
+              <TH style={{ width: "120px" }} colSpan={colCount}>
+                Assets
+              </TH>
+            </TR>
+            {assetRows.length === 0 ? (
+              <TR>
+                <TD colSpan={colCount} style={{ color: "var(--ink-3)" }}>
+                  No asset balances as of {asOf}.
+                </TD>
+              </TR>
+            ) : (
+              assetRows.map(renderRow)
+            )}
+            {totalRow(
+              "Total Assets",
+              data.assetsByEntity,
+              data.firmAssets,
+              data.totalAssets,
+            )}
+            <TR hover={false}>
+              <TH style={{ width: "120px" }} colSpan={colCount}>
+                Liabilities
+              </TH>
+            </TR>
+            {liabilityRows.length === 0 ? (
+              <TR>
+                <TD colSpan={colCount} style={{ color: "var(--ink-3)" }}>
+                  No liability balances as of {asOf}.
+                </TD>
+              </TR>
+            ) : (
+              liabilityRows.map(renderRow)
+            )}
+            {totalRow(
+              "Total Liabilities",
+              data.liabilitiesByEntity,
+              data.firmLiabilities,
+              data.totalLiabilities,
+            )}
+            <TR hover={false}>
+              <TH style={{ width: "120px" }} colSpan={colCount}>
+                Equity
+              </TH>
+            </TR>
+            {equityRows.length === 0 ? (
+              <TR>
+                <TD colSpan={colCount} style={{ color: "var(--ink-3)" }}>
+                  No equity balances as of {asOf}.
+                </TD>
+              </TR>
+            ) : (
+              equityRows.map(renderRow)
+            )}
+            {totalRow(
+              "Total Equity",
+              data.equityByEntity,
+              data.firmEquity,
+              data.totalEquity,
+            )}
+            {totalRow(
+              "Liabilities + Equity",
+              liabPlusEquityByEntity,
+              liabPlusEquityFirm,
+              liabPlusEquityTotal,
+              true,
+            )}
+          </TBody>
+        </Table>
+      )}
     </Card>
   );
 }
