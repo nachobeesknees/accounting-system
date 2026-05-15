@@ -670,6 +670,7 @@ function mapJournalEntry(
     recurringNextDate: r.recurringNextDate ?? null,
     recurringEndDate: r.recurringEndDate ?? null,
     recurringParentId: r.recurringParentId ?? null,
+    fxRate: (r as { fxRate?: string | null }).fxRate ?? null,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }
@@ -722,6 +723,7 @@ function mapInvoice(
       (r as { billingPeriodStart?: string | null }).billingPeriodStart ?? null,
     billingPeriodEnd:
       (r as { billingPeriodEnd?: string | null }).billingPeriodEnd ?? null,
+    fxRate: (r as { fxRate?: string | null }).fxRate ?? null,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }
@@ -752,6 +754,7 @@ function mapBill(r: typeof schema.bills.$inferSelect, lines: BillLine[]): Bill {
     rebillAmount: r.rebillAmount ?? null,
     chargebackInvoiceId: r.chargebackInvoiceId ?? null,
     chargebackNotes: r.chargebackNotes ?? null,
+    fxRate: (r as { fxRate?: string | null }).fxRate ?? null,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }
@@ -877,6 +880,27 @@ export async function getLatestFxRates(): Promise<Map<string, number>> {
   const base = await getBaseCurrency();
   if (base) latest.set(base.code, 1);
   return latest;
+}
+
+/**
+ * Latest fx_rate (rate_per_base) for a single currency, or null when
+ * we have no rate row for it. Used by the new-invoice / new-bill /
+ * new-JE forms to pre-fill the FX-rate input. The base currency
+ * always resolves to 1.
+ */
+export async function getLatestFxRateForCurrency(
+  currencyCode: string,
+): Promise<number | null> {
+  const base = await getBaseCurrency();
+  if (base && base.code === currencyCode) return 1;
+  const db = getDb();
+  const [row] = await db
+    .select({ ratePerBase: schema.fxRates.ratePerBase })
+    .from(schema.fxRates)
+    .where(eq(schema.fxRates.currencyCode, currencyCode))
+    .orderBy(desc(schema.fxRates.rateDate))
+    .limit(1);
+  return row ? parseFloat(row.ratePerBase) : null;
 }
 
 /**

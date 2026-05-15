@@ -76,6 +76,21 @@ function parseTrailingInt(s: string | undefined): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
+/**
+ * Coerce an FX-rate input (number or numeric string) to the
+ * 8-decimal-string the DB expects. Returns null for null/undefined/0/1
+ * (base currency, no conversion stored). Negative or NaN values become
+ * null too so callers don't have to validate.
+ */
+function serializeFxRate(v: number | string | null | undefined): string | null {
+  if (v == null || v === "") return null;
+  const n = typeof v === "string" ? parseFloat(v) : v;
+  if (!Number.isFinite(n) || n <= 0) return null;
+  // Treat exactly 1.0 as "same as base — don't bother storing"
+  if (n === 1) return null;
+  return n.toFixed(8);
+}
+
 // --------- Number generators ---------
 
 export async function nextEntryNumber(): Promise<string> {
@@ -190,6 +205,12 @@ export type CreateJournalEntryInput = {
   recurringNextDate?: string | null;
   recurringEndDate?: string | null;
   recurringParentId?: string | null;
+  /**
+   * Optional FX snapshot. "1 base currency = fxRate native units" (same
+   * convention as fx_rates.ratePerBase). null/undefined → no FX info
+   * stored (treat as 1.0 / base currency).
+   */
+  fxRate?: number | string | null;
 };
 
 export async function createJournalEntry(
@@ -275,6 +296,7 @@ export async function createJournalEntry(
       recurringNextDate: isTemplate ? input.recurringNextDate ?? null : null,
       recurringEndDate: isTemplate ? input.recurringEndDate ?? null : null,
       recurringParentId: input.recurringParentId ?? null,
+      fxRate: serializeFxRate(input.fxRate),
       createdAt: now,
       updatedAt: now,
     });
@@ -2299,6 +2321,13 @@ export type CreateInvoiceInput = {
   billingPeriodEnd?: string | null;
   /** Time entries to mark as billed against the new invoice once created. */
   timeEntryIds?: string[];
+  /**
+   * Optional FX snapshot at create time. Same convention as
+   * fx_rates.ratePerBase: 1 base currency = fxRate native units.
+   * Defaults to null (base currency); the UI fills the latest rate
+   * when the invoice is in a foreign currency.
+   */
+  fxRate?: number | string | null;
 };
 
 export async function createInvoice(user: SessionUser, input: CreateInvoiceInput) {
@@ -2393,6 +2422,7 @@ export async function createInvoice(user: SessionUser, input: CreateInvoiceInput
       recurringParentId: input.recurringParentId ?? null,
       billingPeriodStart: input.billingPeriodStart ?? null,
       billingPeriodEnd: input.billingPeriodEnd ?? null,
+      fxRate: serializeFxRate(input.fxRate),
       createdAt: now,
       updatedAt: now,
     });
@@ -2546,6 +2576,9 @@ export async function postInvoice(
     entityId,
     firmEntityId,
     periodOverrideReason,
+    // Propagate the invoice's FX snapshot to the JE so reports can
+    // tell "this entry was booked at a 1 USD = 0.925 EUR rate".
+    fxRate: (inv as { fxRate?: string | null }).fxRate ?? null,
     lines: jeLines,
   });
 
@@ -2977,6 +3010,12 @@ export type CreateBillInput = {
   markupPct?: number | null;
   rebillAmount?: number | null;
   chargebackNotes?: string | null;
+  /**
+   * Optional FX snapshot at create time. Same convention as
+   * fx_rates.ratePerBase: 1 base currency = fxRate native units.
+   * Defaults to null (base currency).
+   */
+  fxRate?: number | string | null;
 };
 
 export async function createBill(user: SessionUser, input: CreateBillInput) {
@@ -3035,6 +3074,7 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
       rebillAmount:
         input.rebillAmount != null ? toDecimalString(input.rebillAmount) : null,
       chargebackNotes: input.chargebackNotes ?? null,
+      fxRate: serializeFxRate(input.fxRate),
       createdAt: now,
       updatedAt: now,
     });
@@ -3125,6 +3165,9 @@ export async function approveBill(
     status: "posted",
     firmEntityId,
     periodOverrideReason,
+    // Propagate the bill's FX snapshot to the JE for symmetry with the
+    // invoice posting flow.
+    fxRate: (bill as { fxRate?: string | null }).fxRate ?? null,
     lines: jeLines,
   });
 

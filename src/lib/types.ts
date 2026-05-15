@@ -99,6 +99,12 @@ export type JournalEntry = {
   recurringEndDate?: string | null;
   /** On a generated entry: id of the template it came from. */
   recurringParentId?: string | null;
+  /**
+   * Foreign-currency snapshot. "1 base currency = fxRate native units"
+   * (same convention as FxRate.ratePerBase). NULL = entry is in base
+   * currency / no conversion needed.
+   */
+  fxRate?: string | null;
   lines: JournalLine[];
 };
 
@@ -601,6 +607,11 @@ export type Invoice = {
   /** On a generated invoice: start/end of the billing period it represents. */
   billingPeriodStart?: string | null;
   billingPeriodEnd?: string | null;
+  /**
+   * Foreign-currency snapshot. "1 base currency = fxRate native units".
+   * NULL = invoice is in base currency / no conversion needed.
+   */
+  fxRate?: string | null;
   lines: InvoiceLine[];
 };
 
@@ -678,6 +689,11 @@ export type Bill = {
   /** Set once this chargeback has been rebilled on a client invoice. */
   chargebackInvoiceId?: string | null;
   chargebackNotes?: string | null;
+  /**
+   * Foreign-currency snapshot. "1 base currency = fxRate native units".
+   * NULL = bill is in base currency / no conversion needed.
+   */
+  fxRate?: string | null;
   lines: BillLine[];
 };
 
