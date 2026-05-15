@@ -18,6 +18,11 @@ const jetbrains = JetBrains_Mono({
 export const metadata: Metadata = {
   title: "Thistlewood & Associates",
   description: "Double-entry accounting for a small professional services firm.",
+  robots: {
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false },
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

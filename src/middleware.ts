@@ -31,6 +31,7 @@ const DATA_REGION = "eu-central-1";
 
 function withRegion(res: NextResponse): NextResponse {
   res.headers.set("X-Data-Region", DATA_REGION);
+  res.headers.set("X-Robots-Tag", "noindex, nofollow");
   return res;
 }
 
