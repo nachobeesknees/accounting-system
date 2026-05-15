@@ -126,11 +126,13 @@ export function NewInvoiceForm({
   // Bill IDs already added to the invoice (sent to server action).
   const [chargebackBillIds, setChargebackBillIds] = useState<string[]>([]);
 
-  // Unbilled time entries widget state.
+  // Unbilled time entries widget state. Default to "consolidated" so the
+  // user gets one flat-dollar line by default — the common case — and
+  // can opt into per-staff or per-entry detail.
   const [selectedTimeIds, setSelectedTimeIds] = useState<Set<string>>(new Set());
-  const [timeAggregation, setTimeAggregation] = useState<"per-entry" | "per-staff">(
-    "per-entry",
-  );
+  const [timeAggregation, setTimeAggregation] = useState<
+    "consolidated" | "per-entry" | "per-staff"
+  >("consolidated");
   const [appliedTimeIds, setAppliedTimeIds] = useState<string[]>([]);
 
   // Recurring template state. When the user toggles "Make recurring" on,
@@ -366,7 +368,28 @@ export function NewInvoiceForm({
     const picks = pendingTimeEntries.filter((r) => selectedTimeIds.has(r.id));
     if (picks.length === 0) return;
     let newLines: Line[];
-    if (timeAggregation === "per-staff") {
+    if (timeAggregation === "consolidated") {
+      // Single flat-dollar line — the most common invoice layout for
+      // professional services. Total = sum of all picked entries'
+      // billable amounts; quantity is 1 and unit price equals total so
+      // the per-line math reads cleanly without exposing hours/rate.
+      const total = picks.reduce((s, r) => s + r.amount, 0);
+      // Date range string from earliest to latest entry — used in the
+      // default description; user can edit freely afterwards.
+      const dates = picks.map((p) => p.entryDate).sort();
+      const start = dates[0];
+      const end = dates[dates.length - 1];
+      const range = start === end ? formatDate(start) : `${formatDate(start)}–${formatDate(end)}`;
+      newLines = [
+        {
+          description: `Professional services — ${range}`,
+          accountId: defaultServiceRevenueAccountId,
+          quantity: "1",
+          unitPrice: total.toFixed(2),
+          dimensions: {},
+        },
+      ];
+    } else if (timeAggregation === "per-staff") {
       // One summary line per staff member: "Professional services — <name> (X hrs @ Y/hr)".
       // When entries share a rate we use that; mixed rates show the
       // blended hourly average for honesty.
@@ -803,17 +826,17 @@ export function NewInvoiceForm({
             </Table>
             <div className="p-3.5 flex items-center justify-between gap-3 flex-wrap">
               <div
-                className="flex items-center gap-3 text-[12.5px]"
+                className="flex items-center gap-3 text-[12.5px] flex-wrap"
                 style={{ color: "var(--ink-2)" }}
               >
                 <label className="inline-flex items-center gap-1.5">
                   <input
                     type="radio"
                     name="timeAggregation"
-                    checked={timeAggregation === "per-entry"}
-                    onChange={() => setTimeAggregation("per-entry")}
+                    checked={timeAggregation === "consolidated"}
+                    onChange={() => setTimeAggregation("consolidated")}
                   />
-                  One line per entry
+                  One consolidated line ($ amount)
                 </label>
                 <label className="inline-flex items-center gap-1.5">
                   <input
@@ -823,6 +846,15 @@ export function NewInvoiceForm({
                     onChange={() => setTimeAggregation("per-staff")}
                   />
                   Summary by staff
+                </label>
+                <label className="inline-flex items-center gap-1.5">
+                  <input
+                    type="radio"
+                    name="timeAggregation"
+                    checked={timeAggregation === "per-entry"}
+                    onChange={() => setTimeAggregation("per-entry")}
+                  />
+                  One line per entry
                 </label>
               </div>
               <Button
