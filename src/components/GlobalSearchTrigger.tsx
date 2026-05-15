@@ -1,10 +1,21 @@
 "use client";
 
+import { useEffect, useState } from "react";
+
 /**
  * Visible affordance for ⌘K. Dispatches a synthetic keydown so the search
  * modal (mounted by AppShell) opens via the same code path as the shortcut.
  */
 export function GlobalSearchTrigger() {
+  // Defer platform sniffing to after hydration — `navigator` is undefined on
+  // the server, so reading it during render produces SSR/CSR text mismatches
+  // (React error #418). We render "⌘K" as the default and swap to "Ctrl+K"
+  // on non-Mac browsers after mount.
+  const [isMac, setIsMac] = useState(true);
+  useEffect(() => {
+    setIsMac(/mac/i.test(navigator.platform));
+  }, []);
+
   function open() {
     const ev = new KeyboardEvent("keydown", {
       key: "k",
@@ -14,9 +25,6 @@ export function GlobalSearchTrigger() {
     });
     window.dispatchEvent(ev);
   }
-
-  const isMac =
-    typeof navigator !== "undefined" && /mac/i.test(navigator.platform);
 
   return (
     <button
