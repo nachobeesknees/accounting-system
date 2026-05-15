@@ -28,7 +28,7 @@ import {
   type KpisSummary,
 } from "@/lib/data";
 import { SmartSelect } from "@/components/ui/SmartSelect";
-import { getEntityScope } from "@/lib/entity-scope";
+import { getEntityScope, resolveEntityScope } from "@/lib/entity-scope";
 import { formatMoney } from "@/lib/money";
 import {
   parseCompare,
@@ -196,6 +196,11 @@ export default async function Page({
   const preset = parsePreset(params.preset);
   const compareMode = parseCompare(params.compare) as CompareMode;
   const period = resolvePeriod(preset, DEMO_TODAY, params.from, params.to);
+  // Topbar scope can be either a single office, "all", or a region. The
+  // legacy single-id helper is kept for the inner reports cards (typed as
+  // `string | null`), while the resolved object is used to derive any
+  // region-driven entity-id list when no `?region=` param is set.
+  const resolved = await resolveEntityScope();
   const scope = await getEntityScope();
   const fiscalYear = parseInt(
     params.year ?? String(DEMO_TODAY.getUTCFullYear()),
@@ -206,18 +211,23 @@ export default async function Page({
   const base = await getBaseCurrency();
   const baseCode = base?.code ?? "USD";
   // Region scope: narrows to entries whose firmEntity sits in the chosen
-  // region. Supersedes the topbar single-entity scope when set so the user
-  // can compare entire territories.
-  const regionId = (params.region ?? "").trim();
+  // region. The explicit `?region=` URL param wins over the topbar; if it's
+  // absent and the topbar holds a region cookie, fall back to that.
+  const explicitRegionId = (params.region ?? "").trim();
   const [regions, allEntities] = await Promise.all([
     getRegions(),
     getEntities(),
   ]);
-  const entityIdsInRegion = regionId
+  const regionId =
+    explicitRegionId ||
+    (resolved.kind === "region" ? resolved.regionId : "");
+  const entityIdsInRegion = explicitRegionId
     ? allEntities
-        .filter((e) => (e.regionId ?? null) === regionId)
+        .filter((e) => (e.regionId ?? null) === explicitRegionId)
         .map((e) => e.id)
-    : undefined;
+    : resolved.kind === "region"
+      ? resolved.officeIds
+      : undefined;
   const regionName = regionId
     ? regions.find((r) => r.id === regionId)?.name ?? null
     : null;
@@ -1070,17 +1080,25 @@ async function ByEntitySection({
   compact: boolean;
   baseCode: string;
 }) {
+  // The fetchByEntityCells helper treats `scope === null` as
+  // "firm-level only" (firm_entity_id IS NULL). Since every JE now
+  // carries a firm_entity_id after the restructure, null here returns
+  // zero rows — which read as an empty grid. The topbar's "All
+  // entities" sentinel really means "no firm filter", which the helper
+  // expresses as "all" (or undefined). Convert here so the page-level
+  // null cookie translates to a useful default.
+  const effectiveScope: string | "all" | null = scope ?? "all";
   return (
     <>
       <IncomeByEntityCard
         period={period}
-        scope={scope}
+        scope={effectiveScope}
         compact={compact}
         baseCode={baseCode}
       />
       <BalanceByEntityCard
         period={period}
-        scope={scope}
+        scope={effectiveScope}
         compact={compact}
         baseCode={baseCode}
       />
@@ -1117,7 +1135,7 @@ async function IncomeByEntityCard({
   baseCode,
 }: {
   period: { start: string; end: string; label: string };
-  scope: string | null;
+  scope: string | "all" | null;
   compact: boolean;
   baseCode: string;
 }) {
@@ -1286,7 +1304,7 @@ async function BalanceByEntityCard({
   baseCode,
 }: {
   period: { start: string; end: string; label: string };
-  scope: string | null;
+  scope: string | "all" | null;
   compact: boolean;
   baseCode: string;
 }) {

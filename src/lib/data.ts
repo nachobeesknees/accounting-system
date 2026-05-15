@@ -14,7 +14,37 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from "dr
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumDebits, sumCredits } from "./money";
-import { getEntityScope } from "./entity-scope";
+import { getEntityScope, resolveEntityScope, type EntityScope } from "./entity-scope";
+
+/**
+ * Filter helpers accept either:
+ *   - the legacy `string | null | "all"` shape (string = a single firm
+ *     entity, null = firm-level-only, "all" = no filter), or
+ *   - an `EntityScope` tagged union (used for region scope).
+ *
+ * Internal helpers normalize both into the same set of conditions.
+ */
+type FirmScopeArg = string | null | "all" | EntityScope;
+
+type NormalizedFirmScope =
+  | { kind: "all" }
+  | { kind: "firm-level-null" }
+  | { kind: "office"; officeId: string }
+  | { kind: "region"; officeIds: string[] };
+
+function normalizeFirmScope(s: FirmScopeArg): NormalizedFirmScope {
+  if (s === "all") return { kind: "all" };
+  if (s === null) return { kind: "firm-level-null" };
+  if (typeof s === "string") return { kind: "office", officeId: s };
+  switch (s.kind) {
+    case "all":
+      return { kind: "all" };
+    case "office":
+      return { kind: "office", officeId: s.officeId };
+    case "region":
+      return { kind: "region", officeIds: s.officeIds };
+  }
+}
 import type {
   Account,
   AccountType,
@@ -1689,12 +1719,13 @@ export async function getPendingChargebacksForClient(
  *   - `string` → just that entity.
  */
 export async function getJournalEntries(
-  scope?: string | null | "all",
+  scope?: FirmScopeArg,
 ): Promise<JournalEntry[]> {
   // Undefined → read from cookie. Explicit "all" or null/entityId still
   // override so internal calls (consolidation rollups, etc.) can bypass.
-  const effective =
+  const effective: FirmScopeArg =
     scope === undefined ? (await getEntityScope()) ?? "all" : scope;
+  const n = normalizeFirmScope(effective);
   const db = getDb();
   // Templates are blueprints, never part of the ledger — exclude from the
   // regular list. Use getJournalEntryTemplates() for the Templates tab.
@@ -1705,16 +1736,24 @@ export async function getJournalEntries(
   const notTemplate = eq(schema.journalEntries.isTemplate, false);
   // Scope by FIRM entity (which of our corporate entities issued the JE),
   // not by the legacy client-entity tag.
-  const heads =
-    effective === "all"
-      ? await base.where(notTemplate)
-      : effective == null
-        ? await base.where(
-            and(notTemplate, isNull(schema.journalEntries.firmEntityId)),
-          )
-        : await base.where(
-            and(notTemplate, eq(schema.journalEntries.firmEntityId, effective)),
-          );
+  let heads;
+  if (n.kind === "all") {
+    heads = await base.where(notTemplate);
+  } else if (n.kind === "firm-level-null") {
+    heads = await base.where(
+      and(notTemplate, isNull(schema.journalEntries.firmEntityId)),
+    );
+  } else if (n.kind === "office") {
+    heads = await base.where(
+      and(notTemplate, eq(schema.journalEntries.firmEntityId, n.officeId)),
+    );
+  } else {
+    // region — empty set yields no rows by design
+    if (n.officeIds.length === 0) return [];
+    heads = await base.where(
+      and(notTemplate, inArray(schema.journalEntries.firmEntityId, n.officeIds)),
+    );
+  }
   if (heads.length === 0) return [];
   const ids = heads.map((h) => h.id);
   const lineRows = await db
@@ -1737,10 +1776,11 @@ export async function getJournalEntries(
  * can preview totals and so generation can copy them verbatim.
  */
 export async function getJournalEntryTemplates(
-  scope?: string | null | "all",
+  scope?: FirmScopeArg,
 ): Promise<JournalEntry[]> {
-  const effective =
+  const effective: FirmScopeArg =
     scope === undefined ? (await getEntityScope()) ?? "all" : scope;
+  const n = normalizeFirmScope(effective);
   const db = getDb();
   const isTemplate = eq(schema.journalEntries.isTemplate, true);
   const base = db
@@ -1750,16 +1790,23 @@ export async function getJournalEntryTemplates(
       asc(schema.journalEntries.recurringNextDate),
       desc(schema.journalEntries.entryNumber),
     );
-  const heads =
-    effective === "all"
-      ? await base.where(isTemplate)
-      : effective == null
-        ? await base.where(
-            and(isTemplate, isNull(schema.journalEntries.firmEntityId)),
-          )
-        : await base.where(
-            and(isTemplate, eq(schema.journalEntries.firmEntityId, effective)),
-          );
+  let heads;
+  if (n.kind === "all") {
+    heads = await base.where(isTemplate);
+  } else if (n.kind === "firm-level-null") {
+    heads = await base.where(
+      and(isTemplate, isNull(schema.journalEntries.firmEntityId)),
+    );
+  } else if (n.kind === "office") {
+    heads = await base.where(
+      and(isTemplate, eq(schema.journalEntries.firmEntityId, n.officeId)),
+    );
+  } else {
+    if (n.officeIds.length === 0) return [];
+    heads = await base.where(
+      and(isTemplate, inArray(schema.journalEntries.firmEntityId, n.officeIds)),
+    );
+  }
   if (heads.length === 0) return [];
   const ids = heads.map((h) => h.id);
   const lineRows = await db
@@ -1782,7 +1829,7 @@ export async function getJournalEntryTemplates(
  */
 export async function getDueRecurringTemplateCount(
   today: string,
-  scope?: string | null | "all",
+  scope?: FirmScopeArg,
 ): Promise<number> {
   const templates = await getJournalEntryTemplates(scope);
   return templates.filter((t) => {
@@ -1937,7 +1984,7 @@ export async function getUserById(id: string): Promise<User | undefined> {
  * accounts page).
  */
 async function getSignedBalancesByAccount(
-  scope: string | null | "all" = "all",
+  scope: FirmScopeArg = "all",
 ): Promise<Map<string, number>> {
   const db = getDb();
   const q = db
@@ -1954,11 +2001,12 @@ async function getSignedBalancesByAccount(
 
   // Elimination JEs are consolidation-only adjustments. They're INCLUDED at
   // the firm-level consolidated view (scope === "all") but EXCLUDED when
-  // drilling into a single firm entity's books.
+  // drilling into a single firm entity or a region's books.
+  const n = normalizeFirmScope(scope);
   let rows;
-  if (scope === "all") {
+  if (n.kind === "all") {
     rows = await q.where(eq(schema.journalEntries.status, "posted"));
-  } else if (scope == null) {
+  } else if (n.kind === "firm-level-null") {
     rows = await q.where(
       and(
         eq(schema.journalEntries.status, "posted"),
@@ -1966,11 +2014,21 @@ async function getSignedBalancesByAccount(
         isNull(schema.journalEntries.eliminationEntryId),
       ),
     );
-  } else {
+  } else if (n.kind === "office") {
     rows = await q.where(
       and(
         eq(schema.journalEntries.status, "posted"),
-        eq(schema.journalEntries.firmEntityId, scope),
+        eq(schema.journalEntries.firmEntityId, n.officeId),
+        isNull(schema.journalEntries.eliminationEntryId),
+      ),
+    );
+  } else {
+    // region — empty set yields no rows by design
+    if (n.officeIds.length === 0) return new Map();
+    rows = await q.where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        inArray(schema.journalEntries.firmEntityId, n.officeIds),
         isNull(schema.journalEntries.eliminationEntryId),
       ),
     );
@@ -2024,7 +2082,7 @@ export type EntityPlRow = {
  *                       "All entities" minus the visible firms add up.
  */
 export async function getEntityPlRollup(
-  scope: string | null | "all" = "all",
+  scope: FirmScopeArg = "all",
 ): Promise<EntityPlRow[]> {
   const db = getDb();
   const q = db
@@ -2044,21 +2102,31 @@ export async function getEntityPlRollup(
       eq(schema.journalLines.accountId, schema.accounts.id),
     );
 
+  const n = normalizeFirmScope(scope);
   let rows;
-  if (scope === "all") {
+  if (n.kind === "all") {
     rows = await q.where(eq(schema.journalEntries.status, "posted"));
-  } else if (scope == null) {
+  } else if (n.kind === "firm-level-null") {
     rows = await q.where(
       and(
         eq(schema.journalEntries.status, "posted"),
         isNull(schema.journalEntries.firmEntityId),
       ),
     );
-  } else {
+  } else if (n.kind === "office") {
     rows = await q.where(
       and(
         eq(schema.journalEntries.status, "posted"),
-        eq(schema.journalEntries.firmEntityId, scope),
+        eq(schema.journalEntries.firmEntityId, n.officeId),
+      ),
+    );
+  } else {
+    // region — empty set yields no rows by design
+    if (n.officeIds.length === 0) return [];
+    rows = await q.where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        inArray(schema.journalEntries.firmEntityId, n.officeIds),
       ),
     );
   }
@@ -2082,11 +2150,11 @@ export async function getEntityPlRollup(
 }
 
 export async function getKpis() {
-  const scope = await getEntityScope();
+  const scope = await resolveEntityScope();
   // Chart of Accounts is firm-level (shared across entities), so we always
   // read the full chart. Only the postings get filtered by entity scope.
   const accounts = await getAccounts("all");
-  const balances = await getSignedBalancesByAccount(scope ?? "all");
+  const balances = await getSignedBalancesByAccount(scope);
   let revenue = 0,
     expenses = 0,
     assets = 0,
@@ -2114,9 +2182,9 @@ export async function getKpis() {
 }
 
 export async function getTrialBalance() {
-  const scope = await getEntityScope();
+  const scope = await resolveEntityScope();
   const accounts = await getAccounts("all");
-  const balances = await getSignedBalancesByAccount(scope ?? "all");
+  const balances = await getSignedBalancesByAccount(scope);
   return accounts
     .filter((a) => (balances.get(a.id) ?? 0) !== 0) // drop unused rows when entity-scoped
     .map((a) => {
@@ -2310,7 +2378,7 @@ export async function getApAging(today: Date) {
 async function getSignedBalancesInRange(
   start: string, // inclusive
   end: string, // inclusive
-  scope: string | null | "all" = "all",
+  scope: FirmScopeArg = "all",
   entityIds?: string[],
 ): Promise<Map<string, number>> {
   const db = getDb();
@@ -2332,17 +2400,26 @@ async function getSignedBalancesInRange(
     lte(schema.journalEntries.entryDate, end),
   ];
   if (entityIds !== undefined) {
-    // Region scope: restrict to entries posted on any entity in the set.
-    // An empty set yields zero rows by design.
+    // Region scope (explicit ID list, e.g. from the reports-page region
+    // picker): restrict to entries posted on any entity in the set. An
+    // empty set yields zero rows by design.
     if (entityIds.length === 0) return new Map();
     conds.push(inArray(schema.journalEntries.firmEntityId, entityIds));
     conds.push(isNull(schema.journalEntries.eliminationEntryId));
-  } else if (scope === null) {
-    conds.push(isNull(schema.journalEntries.firmEntityId));
-    conds.push(isNull(schema.journalEntries.eliminationEntryId));
-  } else if (scope !== "all") {
-    conds.push(eq(schema.journalEntries.firmEntityId, scope));
-    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  } else {
+    const n = normalizeFirmScope(scope);
+    if (n.kind === "firm-level-null") {
+      conds.push(isNull(schema.journalEntries.firmEntityId));
+      conds.push(isNull(schema.journalEntries.eliminationEntryId));
+    } else if (n.kind === "office") {
+      conds.push(eq(schema.journalEntries.firmEntityId, n.officeId));
+      conds.push(isNull(schema.journalEntries.eliminationEntryId));
+    } else if (n.kind === "region") {
+      if (n.officeIds.length === 0) return new Map();
+      conds.push(inArray(schema.journalEntries.firmEntityId, n.officeIds));
+      conds.push(isNull(schema.journalEntries.eliminationEntryId));
+    }
+    // kind === "all" → no firm filter
   }
   const rows = await q.where(and(...conds));
 
@@ -2360,7 +2437,7 @@ async function getSignedBalancesInRange(
  */
 export async function getSignedBalancesAsOf(
   asOf: string,
-  scope: string | null | "all" = "all",
+  scope: FirmScopeArg = "all",
   entityIds?: string[],
 ): Promise<Map<string, number>> {
   const db = getDb();
@@ -2384,12 +2461,20 @@ export async function getSignedBalancesAsOf(
     if (entityIds.length === 0) return new Map();
     conds.push(inArray(schema.journalEntries.firmEntityId, entityIds));
     conds.push(isNull(schema.journalEntries.eliminationEntryId));
-  } else if (scope === null) {
-    conds.push(isNull(schema.journalEntries.firmEntityId));
-    conds.push(isNull(schema.journalEntries.eliminationEntryId));
-  } else if (scope !== "all") {
-    conds.push(eq(schema.journalEntries.firmEntityId, scope));
-    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  } else {
+    const n = normalizeFirmScope(scope);
+    if (n.kind === "firm-level-null") {
+      conds.push(isNull(schema.journalEntries.firmEntityId));
+      conds.push(isNull(schema.journalEntries.eliminationEntryId));
+    } else if (n.kind === "office") {
+      conds.push(eq(schema.journalEntries.firmEntityId, n.officeId));
+      conds.push(isNull(schema.journalEntries.eliminationEntryId));
+    } else if (n.kind === "region") {
+      if (n.officeIds.length === 0) return new Map();
+      conds.push(inArray(schema.journalEntries.firmEntityId, n.officeIds));
+      conds.push(isNull(schema.journalEntries.eliminationEntryId));
+    }
+    // kind === "all" → no firm filter
   }
   const rows = await q.where(and(...conds));
 
@@ -2421,7 +2506,7 @@ export type KpisSummary = {
  */
 export async function getKpisAsOf(
   asOf: string,
-  scope?: string | null,
+  scope?: FirmScopeArg,
   entityIds?: string[],
 ): Promise<KpisSummary> {
   const accounts = await getAccounts("all");
@@ -2467,7 +2552,7 @@ export type IncomeStatementRow = {
 export async function getIncomeStatementForPeriod(
   start: string,
   end: string,
-  scope?: string | null,
+  scope?: FirmScopeArg,
   entityIds?: string[],
 ): Promise<{ rows: IncomeStatementRow[]; revenue: number; expenses: number; netIncome: number }> {
   const accounts = await getAccounts("all");
@@ -2541,7 +2626,7 @@ export type ByEntityRow = {
 async function fetchByEntityCells(opts: {
   start?: string;
   end: string;
-  scope?: string | null;
+  scope?: FirmScopeArg;
 }): Promise<{
   /** Map of accountId → { entityId | null → signed (debit - credit) sum } */
   cells: Map<string, Map<string | null, number>>;
@@ -2573,11 +2658,21 @@ async function fetchByEntityCells(opts: {
   // scope semantics mirror getSignedBalancesInRange/AsOf:
   //   "all" | undefined → no firm filter
   //   null              → firm-level only (firm_entity_id IS NULL)
-  //   string            → specific firm entity
-  if (opts.scope === null) {
-    conds.push(isNull(schema.journalEntries.firmEntityId));
-  } else if (opts.scope && opts.scope !== "all") {
-    conds.push(eq(schema.journalEntries.firmEntityId, opts.scope));
+  //   string / office   → specific firm entity
+  //   region            → any firm entity in the resolved id list
+  if (opts.scope !== undefined) {
+    const n = normalizeFirmScope(opts.scope);
+    if (n.kind === "firm-level-null") {
+      conds.push(isNull(schema.journalEntries.firmEntityId));
+    } else if (n.kind === "office") {
+      conds.push(eq(schema.journalEntries.firmEntityId, n.officeId));
+    } else if (n.kind === "region") {
+      if (n.officeIds.length === 0) {
+        return { cells: new Map(), entityIdsSeen: new Set() };
+      }
+      conds.push(inArray(schema.journalEntries.firmEntityId, n.officeIds));
+    }
+    // kind === "all" → no firm filter
   }
   const rows = await q.where(and(...conds));
 
@@ -2609,7 +2704,7 @@ async function fetchByEntityCells(opts: {
 export async function getIncomeStatementByEntity(
   start: string,
   end: string,
-  scope?: string | null,
+  scope?: FirmScopeArg,
 ): Promise<{
   entities: Entity[];
   rows: ByEntityRow[];
@@ -2718,7 +2813,7 @@ export async function getIncomeStatementByEntity(
  */
 export async function getBalanceSheetByEntity(
   asOf: string,
-  scope?: string | null,
+  scope?: FirmScopeArg,
 ): Promise<{
   entities: Entity[];
   rows: ByEntityRow[];
@@ -2858,7 +2953,7 @@ export type MonthlyIncomeStatement = {
  */
 export async function getMonthlyIncomeStatement(
   year: number,
-  scope?: string | null,
+  scope?: FirmScopeArg,
   entityIds?: string[],
 ): Promise<MonthlyIncomeStatement> {
   const accounts = await getAccounts("all");
@@ -2875,26 +2970,35 @@ export async function getMonthlyIncomeStatement(
     gte(schema.journalEntries.entryDate, start),
     lte(schema.journalEntries.entryDate, end),
   ];
+  const zeroReport = () => ({
+    year,
+    months,
+    rows: [],
+    revenueByMonth: Array(12).fill(0) as number[],
+    expensesByMonth: Array(12).fill(0) as number[],
+    netByMonth: Array(12).fill(0) as number[],
+  });
   if (entityIds !== undefined) {
     if (entityIds.length === 0) {
       // Region scope with no entities: return a zero-filled report.
-      return {
-        year,
-        months,
-        rows: [],
-        revenueByMonth: Array(12).fill(0),
-        expensesByMonth: Array(12).fill(0),
-        netByMonth: Array(12).fill(0),
-      };
+      return zeroReport();
     }
     conds.push(inArray(schema.journalEntries.firmEntityId, entityIds));
     conds.push(isNull(schema.journalEntries.eliminationEntryId));
-  } else if (scope === null) {
-    conds.push(isNull(schema.journalEntries.firmEntityId));
-    conds.push(isNull(schema.journalEntries.eliminationEntryId));
-  } else if (scope && scope !== "all") {
-    conds.push(eq(schema.journalEntries.firmEntityId, scope));
-    conds.push(isNull(schema.journalEntries.eliminationEntryId));
+  } else if (scope !== undefined) {
+    const n = normalizeFirmScope(scope);
+    if (n.kind === "firm-level-null") {
+      conds.push(isNull(schema.journalEntries.firmEntityId));
+      conds.push(isNull(schema.journalEntries.eliminationEntryId));
+    } else if (n.kind === "office") {
+      conds.push(eq(schema.journalEntries.firmEntityId, n.officeId));
+      conds.push(isNull(schema.journalEntries.eliminationEntryId));
+    } else if (n.kind === "region") {
+      if (n.officeIds.length === 0) return zeroReport();
+      conds.push(inArray(schema.journalEntries.firmEntityId, n.officeIds));
+      conds.push(isNull(schema.journalEntries.eliminationEntryId));
+    }
+    // kind === "all" → no firm filter
   }
 
   const rows = await db
@@ -3017,10 +3121,10 @@ export async function accountsByType(): Promise<Map<AccountType, Account[]>> {
  * negated for credit-normal so the value follows accounting conventions).
  */
 export async function getDisplayBalances(): Promise<Map<string, number>> {
-  const scope = await getEntityScope();
+  const scope = await resolveEntityScope();
   // Chart of accounts is firm-level. Only postings are filtered by entity.
   const accounts = await getAccounts("all");
-  const balances = await getSignedBalancesByAccount(scope ?? "all");
+  const balances = await getSignedBalancesByAccount(scope);
   const out = new Map<string, number>();
   for (const a of accounts) {
     const signed = balances.get(a.id) ?? 0;

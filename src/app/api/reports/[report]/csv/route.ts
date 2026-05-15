@@ -10,7 +10,7 @@ import {
   getMonthlyIncomeStatement,
   getTrialBalance,
 } from "@/lib/data";
-import { getEntityScope } from "@/lib/entity-scope";
+import { resolveEntityScope } from "@/lib/entity-scope";
 import {
   parseCompare,
   parsePreset,
@@ -85,7 +85,9 @@ export async function GET(
   const key = report as ReportKey;
   const url = new URL(request.url);
   const sp = url.searchParams;
-  const scope = await getEntityScope();
+  // resolveEntityScope handles office / region / all. Downstream helpers
+  // accept the tagged-union directly via FirmScopeArg.
+  const scope = await resolveEntityScope();
   const today = DEMO_TODAY;
 
   if (key === "trial-balance") {
