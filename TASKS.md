@@ -5,6 +5,7 @@ Agents: read this file before starting work. Check off items as you complete the
 ---
 
 ## ✅ Completed
+- [x] QA pass 2026-05-15 — every nav page, every create/list/detail flow, ⌘K, drill-downs, region filters all green. Fixed React #418 hydration error in `GlobalSearchTrigger` (server-rendered "Ctrl+K", client "⌘K" on Mac → swapped to deferred `useEffect` platform sniff).
 - [x] Real Postgres persistence (Neon + Drizzle ORM)
 - [x] Client → entity/asset ownership hierarchy
 - [x] Annual fees per entity + time tracking (Clockify-style)
