@@ -1721,10 +1721,11 @@ export async function getPendingChargebacksForClient(
 export async function getJournalEntries(
   scope?: FirmScopeArg,
 ): Promise<JournalEntry[]> {
-  // Undefined → read from cookie. Explicit "all" or null/entityId still
-  // override so internal calls (consolidation rollups, etc.) can bypass.
+  // Undefined → read from cookie (honors region scope). Explicit "all" or
+  // null/entityId still override so internal calls (consolidation rollups,
+  // etc.) can bypass.
   const effective: FirmScopeArg =
-    scope === undefined ? (await getEntityScope()) ?? "all" : scope;
+    scope === undefined ? await resolveEntityScope() : scope;
   const n = normalizeFirmScope(effective);
   const db = getDb();
   // Templates are blueprints, never part of the ledger — exclude from the
@@ -1779,7 +1780,7 @@ export async function getJournalEntryTemplates(
   scope?: FirmScopeArg,
 ): Promise<JournalEntry[]> {
   const effective: FirmScopeArg =
-    scope === undefined ? (await getEntityScope()) ?? "all" : scope;
+    scope === undefined ? await resolveEntityScope() : scope;
   const n = normalizeFirmScope(effective);
   const db = getDb();
   const isTemplate = eq(schema.journalEntries.isTemplate, true);

@@ -6,10 +6,13 @@ import { SidebarToggle } from "./SidebarToggle";
 import { setEntityScope } from "@/lib/entity-scope";
 import type { SessionUser } from "@/lib/types";
 
-type EntityOption = { id: string; code: string; name: string };
+type EntityOption = { id: string; code: string; name: string; regionId?: string | null };
+type RegionOption = { id: string; name: string };
 
 async function changeEntityScope(entityId: string | null) {
   "use server";
+  // Value is stored verbatim — accepts an office id (e.g. "of-teton") or
+  // a region-scope string ("region:rgn-us"). Null clears to "all".
   await setEntityScope(entityId);
 }
 
@@ -17,11 +20,13 @@ export function Topbar({
   user,
   breadcrumb,
   entities,
+  regions,
   currentEntityId,
 }: {
   user: SessionUser;
   breadcrumb?: string;
   entities: EntityOption[];
+  regions?: RegionOption[];
   currentEntityId: string | null;
 }) {
   return (
@@ -60,6 +65,7 @@ export function Topbar({
         <GlobalSearchTrigger />
         <EntityScopePicker
           entities={entities}
+          regions={regions ?? []}
           current={currentEntityId}
           onChange={changeEntityScope}
         />
