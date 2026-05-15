@@ -48,16 +48,11 @@ export function EntityScopePicker({
   // attached office (it does), trust that filter even when our local
   // entities[].regionId arrives stripped of nullable optionals via SSR
   // serialization. The previous defensive filter was emptying the list
-  // when entities arrived without regionId set.
+  // in that case.
   const usableRegions =
     officeCountByRegion.size === 0
       ? regions
       : regions.filter((r) => (officeCountByRegion.get(r.id) ?? 0) > 0);
-  // eslint-disable-next-line no-console
-  if (typeof window !== "undefined" && (window as { __pickerDebug?: boolean }).__pickerDebug !== false) {
-    (window as { __pickerDebug?: boolean }).__pickerDebug = false;
-    console.log("[EntityScopePicker] entities=", entities.length, "regions=", regions.length, "usableRegions=", usableRegions.length, "sample entity:", entities[0]);
-  }
 
   return (
     <div
