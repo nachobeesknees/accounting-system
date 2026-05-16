@@ -94,19 +94,14 @@ export default async function Page({
     return candidate ?? null;
   }
 
-  // Compute "Cash on hand" from bank accounts. We sum native balances only
-  // for accounts in the base currency (USD) — non-USD accounts are not
-  // mixed into this tile (avoids fake precision without an FX engine).
+  // Cash on hand is now driven by which bank account the user picks to pay
+  // from (see PayRunForm). The page no longer sums all USD bank balances —
+  // each account's own balance is passed down and the client picks among
+  // them. Fall back to GL cash (account 1000) only when there are no bank
+  // accounts at all, so the tile still shows something useful on a fresh
+  // demo DB.
   const cashCurrency = "USD";
-  let cashOnHand = 0;
-  for (const ba of bankAccounts) {
-    if (ba.currencyCode !== cashCurrency) continue;
-    cashOnHand += parseAmount(ba.currentBalance);
-  }
-  // Fall back to GL cash (account 1000) when no bank accounts are loaded.
-  if (cashOnHand === 0 && bankAccounts.length === 0) {
-    cashOnHand = kpis.cash;
-  }
+  const fallbackCash = bankAccounts.length === 0 ? kpis.cash : 0;
 
   // Topbar scope filter — narrow bills by the office set when scoped.
   const scopedRegionIds = new Set<string>();
@@ -115,15 +110,6 @@ export default async function Page({
   } else if (scope.kind === "office") {
     const ofc = firmById.get(scope.officeId);
     if (ofc?.regionId) scopedRegionIds.add(ofc.regionId);
-  }
-
-  let cashLabel = "All bank accounts (USD)";
-  if (scope.kind === "region") {
-    const r = regionsById.get(scope.regionId);
-    cashLabel = `Scoped to ${r?.name ?? "region"}`;
-  } else if (scope.kind === "office") {
-    const ofc = firmById.get(scope.officeId);
-    cashLabel = `Scoped to ${ofc?.name ?? "office"}`;
   }
 
   // Filter to payable bills (open balance, approved or partial).
@@ -223,7 +209,7 @@ export default async function Page({
   return (
     <>
       <PageHeader
-        title="AP Pay Run"
+        title="Select bills to pay"
         meta={`${totalBills} payable bill${totalBills === 1 ? "" : "s"}`}
       />
 
@@ -268,14 +254,14 @@ export default async function Page({
         <PayRunFormSlot
           totalBills={totalBills}
           groups={groups}
-          cashOnHand={cashOnHand}
           cashCurrency={cashCurrency}
-          cashLabel={cashLabel}
+          fallbackCash={fallbackCash}
           bankAccounts={usdBanks.map((b) => ({
             id: b.id,
             name: b.name,
             currencyCode: b.currencyCode,
             lastFour: b.lastFour,
+            balance: parseAmount(b.currentBalance),
           }))}
           defaultBankAccountId={defaultBankAccountId}
           defaultPaymentDate={demoTodayIso}

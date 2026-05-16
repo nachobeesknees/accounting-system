@@ -39,12 +39,16 @@ export type PayRunBankOption = {
   name: string;
   currencyCode: string;
   lastFour: string | null;
+  /** Current balance in the account's native currency. Used to drive the
+   * "Cash on hand" tile when this bank is the active payment source. */
+  balance: number;
 };
 
 export type PayRunFormProps = {
-  cashOnHand: number;
   cashCurrency: string;
-  cashLabel: string;
+  /** Used when no bank accounts are available (fresh demo DB) — falls back
+   * to GL account 1000. Otherwise zero. */
+  fallbackCash: number;
   bankAccounts: PayRunBankOption[];
   defaultBankAccountId: string | null;
   defaultPaymentDate: string;
@@ -58,9 +62,8 @@ export type PayRunFormProps = {
  * through `recordBillPayment` server-side.
  */
 export function PayRunForm({
-  cashOnHand,
   cashCurrency,
-  cashLabel,
+  fallbackCash,
   bankAccounts,
   defaultBankAccountId,
   defaultPaymentDate,
@@ -69,6 +72,29 @@ export function PayRunForm({
 }: PayRunFormProps) {
   // Selected bill ids — start empty. The big "Pay X bills" tile reads this.
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+
+  // Bank account the user is paying from. Drives the "Cash on hand" tile
+  // (showing this single account's balance, not a sum across accounts) and
+  // is the account the server action debits when payments are recorded.
+  const [bankAccountId, setBankAccountId] = useState<string>(
+    defaultBankAccountId ?? "",
+  );
+
+  const banksById = useMemo(() => {
+    const m = new Map<string, PayRunBankOption>();
+    for (const b of bankAccounts) m.set(b.id, b);
+    return m;
+  }, [bankAccounts]);
+
+  const activeBank = bankAccountId ? banksById.get(bankAccountId) ?? null : null;
+  const cashOnHand = activeBank ? activeBank.balance : fallbackCash;
+  const cashLabel = activeBank
+    ? `${activeBank.name}${
+        activeBank.lastFour ? ` ··${activeBank.lastFour}` : ""
+      } · ${activeBank.currencyCode}`
+    : bankAccounts.length === 0
+      ? "GL cash (no bank accounts)"
+      : "Select a bank account to see cash on hand";
 
   // Index of bill-id → balance, for the live total. Built once; bills are
   // stable for the life of this client component.
@@ -114,6 +140,60 @@ export function PayRunForm({
 
   return (
     <>
+      {/* Top-of-page bank selector — drives the Cash on hand tile and is
+          the account the server action debits when payments run. */}
+      <div className="px-6 pb-3">
+        <div
+          className="rounded-lg px-3.5 py-3 flex items-center gap-4 flex-wrap"
+          style={{
+            background: "var(--raised)",
+            border: "1px solid var(--line)",
+          }}
+        >
+          <label className="flex flex-col gap-1">
+            <span
+              className="text-[10.5px] uppercase font-semibold"
+              style={{ color: "var(--ink-4)", letterSpacing: "0.08em" }}
+            >
+              Pay from
+            </span>
+            <select
+              value={bankAccountId}
+              onChange={(e) => setBankAccountId(e.currentTarget.value)}
+              className="px-2.5 py-1.5 text-[13px] rounded-md outline-none"
+              style={{
+                background: "var(--paper)",
+                border: "1px solid var(--line-2)",
+                color: "var(--ink)",
+                minWidth: 280,
+              }}
+              aria-label="Bank account to pay from"
+            >
+              {bankAccounts.length === 0 && (
+                <option value="">— No bank accounts —</option>
+              )}
+              {bankAccounts.length > 0 && (
+                <option value="">— Select bank account —</option>
+              )}
+              {bankAccounts.map((ba) => (
+                <option key={ba.id} value={ba.id}>
+                  {ba.name}
+                  {ba.lastFour ? ` ··${ba.lastFour}` : ""} · {ba.currencyCode} ·{" "}
+                  {formatAmount(ba.balance, { paren: true, compact: true })}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div
+            className="text-[11.5px]"
+            style={{ color: "var(--ink-3)", maxWidth: 320 }}
+          >
+            The selected account's balance drives <strong>Cash on hand</strong>{" "}
+            and is the account debited when payments are recorded.
+          </div>
+        </div>
+      </div>
+
       {/* Cash status tiles */}
       <div className="px-6 pb-3">
         <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
@@ -160,6 +240,9 @@ export function PayRunForm({
         {Array.from(selected).map((id) => (
           <input key={id} type="hidden" name="billIds" value={id} />
         ))}
+        {/* Bank account is picked in the top-of-page selector; mirror its
+            value through a hidden input so the server action receives it. */}
+        <input type="hidden" name="bankAccountId" value={bankAccountId} />
 
         <div className="px-6 pb-24 flex flex-col gap-3">
           {groups.map((g) => {
@@ -295,34 +378,29 @@ export function PayRunForm({
         >
           <div className="flex items-end justify-between gap-4 flex-wrap">
             <div className="flex items-end gap-3 flex-wrap">
-              <label className="flex flex-col gap-1">
+              <div className="flex flex-col gap-1">
                 <span
                   className="text-[11.5px]"
                   style={{ color: "var(--ink-3)" }}
                 >
-                  Bank account
+                  Pay from
                 </span>
-                <select
-                  name="bankAccountId"
-                  defaultValue={defaultBankAccountId ?? ""}
-                  className="px-2.5 py-1.5 text-[13px] rounded-md outline-none"
+                <div
+                  className="px-2.5 py-1.5 text-[13px] rounded-md"
                   style={{
                     background: "var(--paper)",
                     border: "1px solid var(--line-2)",
-                    color: "var(--ink)",
+                    color: activeBank ? "var(--ink)" : "var(--ink-4)",
                     minWidth: 220,
                   }}
                 >
-                  <option value="">— Default cash —</option>
-                  {bankAccounts.map((ba) => (
-                    <option key={ba.id} value={ba.id}>
-                      {ba.name}
-                      {ba.lastFour ? ` ··${ba.lastFour}` : ""} ·{" "}
-                      {ba.currencyCode}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  {activeBank
+                    ? `${activeBank.name}${
+                        activeBank.lastFour ? ` ··${activeBank.lastFour}` : ""
+                      }`
+                    : "No bank account selected"}
+                </div>
+              </div>
               <label className="flex flex-col gap-1">
                 <span
                   className="text-[11.5px]"
@@ -356,9 +434,15 @@ export function PayRunForm({
               <Button
                 type="submit"
                 variant="primary"
-                disabled={selected.size === 0 || insufficient}
+                disabled={
+                  selected.size === 0 ||
+                  insufficient ||
+                  (bankAccounts.length > 0 && !bankAccountId)
+                }
                 style={
-                  selected.size === 0 || insufficient
+                  selected.size === 0 ||
+                  insufficient ||
+                  (bankAccounts.length > 0 && !bankAccountId)
                     ? { opacity: 0.5, cursor: "not-allowed" }
                     : undefined
                 }
