@@ -9,7 +9,6 @@ import { IconFile } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
-  DEMO_TODAY,
   getBills,
   getCustomers,
   getEntities,
@@ -152,7 +151,7 @@ export default async function Page({
     clientId,
     entityId,
     bucket,
-    DEMO_TODAY,
+    new Date(),
     scopedBillIds,
   )
     .slice()

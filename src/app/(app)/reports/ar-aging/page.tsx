@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/SmartSelect";
 import { DrillNumber } from "@/components/DrillNumber";
 import {
-  DEMO_TODAY,
   getAllCustomerAssignments,
   getCustomers,
   getEntities,
@@ -62,7 +61,7 @@ export default async function Page({
   const view = params.view === "mine" ? "mine" : "all";
   const employeeFilter = params.employee ?? "";
 
-  const today = DEMO_TODAY;
+  const today = new Date();
   const sessionUser = await getSessionUser();
 
   const [invoices, customers, entities, allAssignments, users] = await Promise.all([

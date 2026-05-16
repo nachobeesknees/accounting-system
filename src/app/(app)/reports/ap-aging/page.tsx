@@ -5,7 +5,6 @@ import { Card } from "@/components/ui/Card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { DrillNumber } from "@/components/DrillNumber";
 import {
-  DEMO_TODAY,
   getBankAccounts,
   getBills,
   getCustomers,
@@ -41,7 +40,7 @@ function daysBetween(from: Date, to: Date): number {
 }
 
 export default async function Page() {
-  const today = DEMO_TODAY;
+  const today = new Date();
 
   const [bills, vendors, customers, entities, kpis, bankAccounts] =
     await Promise.all([

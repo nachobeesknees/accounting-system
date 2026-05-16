@@ -6,7 +6,7 @@ import { Empty } from "@/components/ui/Empty";
 import { Field } from "@/components/ui/Field";
 import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { DEMO_TODAY, getAccounts, getJournalEntries } from "@/lib/data";
+import { getAccounts, getJournalEntries } from "@/lib/data";
 import { formatMoney, parseAmount } from "@/lib/money";
 
 function formatRowDate(iso: string): string {
@@ -143,7 +143,7 @@ export default async function Page({
     }
   }
 
-  const todayIso = DEMO_TODAY.toISOString().slice(0, 10);
+  const todayIso = new Date().toISOString().slice(0, 10);
 
   return (
     <>

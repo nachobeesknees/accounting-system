@@ -5,7 +5,6 @@ import { Card } from "@/components/ui/Card";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
-  DEMO_TODAY,
   convertToBase,
   getApAging,
   getArAging,
@@ -164,7 +163,8 @@ export default async function Page() {
   const firmScope = await resolveEntityScope();
   const plScope = firmScope;
 
-  const demoTodayIso = DEMO_TODAY.toISOString().slice(0, 10);
+  const today = new Date();
+  const demoTodayIso = today.toISOString().slice(0, 10);
   const [
     kpis,
     ar,
@@ -183,8 +183,8 @@ export default async function Page() {
     dueTemplateCount,
   ] = await Promise.all([
     getKpis(),
-    getArAging(DEMO_TODAY),
-    getApAging(DEMO_TODAY),
+    getArAging(today),
+    getApAging(today),
     getJournalEntries(),
     getBills(),
     getInvoices(),
@@ -272,7 +272,7 @@ export default async function Page() {
       const bal = parseAmount(i.balanceDue);
       if (bal <= 0) return false;
       const due = new Date(`${i.dueDate}T00:00:00Z`);
-      return due.getTime() < DEMO_TODAY.getTime();
+      return due.getTime() < today.getTime();
     })
     .slice()
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
@@ -281,7 +281,7 @@ export default async function Page() {
     <>
       <PageHeader
         title="Dashboard"
-        meta={`${formatLongDate(DEMO_TODAY)} · ${role} view`}
+        meta={`${formatLongDate(today)} · ${role} view`}
         actions={
           <>
             <ButtonLink variant="secondary" href="/reports">

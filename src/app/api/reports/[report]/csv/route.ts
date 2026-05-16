@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { serializeCsv } from "@/lib/csv";
 import { getSessionUser } from "@/lib/session";
 import {
-  DEMO_TODAY,
   accountsByType,
   getBudgetByAccount,
   getIncomeStatementForPeriod,
@@ -88,7 +87,7 @@ export async function GET(
   // resolveEntityScope handles office / region / all. Downstream helpers
   // accept the tagged-union directly via FirmScopeArg.
   const scope = await resolveEntityScope();
-  const today = DEMO_TODAY;
+  const today = new Date();
 
   if (key === "trial-balance") {
     const tb = await getTrialBalance();

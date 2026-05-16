@@ -10,9 +10,12 @@
 import NextAuth, { type DefaultSession } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { eq } from "drizzle-orm";
+import { and, eq, gte, count } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { authConfig } from "./auth.config";
+
+const LOGIN_FAILED_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_FAILED_LIMIT = 5;
 
 declare module "next-auth" {
   interface Session {
@@ -34,6 +37,9 @@ declare module "@auth/core/jwt" {
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
+  // JWT sessions expire 8 hours after issue; users have to sign in again
+  // once the window closes.
+  session: { strategy: "jwt", maxAge: 8 * 60 * 60 },
   providers: [
     Credentials({
       credentials: {
@@ -50,6 +56,27 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!email || !password) return null;
 
         const db = getDb();
+
+        // Rate-limit: refuse if this email has racked up >=5 failed
+        // attempts in the last 15 minutes. Login failures are written by
+        // the /login server action as `user.login_failed` rows in audit_log.
+        const since = new Date(Date.now() - LOGIN_FAILED_WINDOW_MS);
+        const [{ value: recentFailures }] = await db
+          .select({ value: count() })
+          .from(schema.auditLog)
+          .where(
+            and(
+              eq(schema.auditLog.action, "user.login_failed"),
+              eq(schema.auditLog.userEmail, email),
+              gte(schema.auditLog.timestamp, since),
+            ),
+          );
+        if (Number(recentFailures) >= LOGIN_FAILED_LIMIT) {
+          throw new Error(
+            "Too many failed attempts. Try again in 15 minutes.",
+          );
+        }
+
         const [user] = await db
           .select()
           .from(schema.users)

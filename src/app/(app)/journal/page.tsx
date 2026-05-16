@@ -9,7 +9,6 @@ import { Field, SelectField } from "@/components/ui/Field";
 import { Empty } from "@/components/ui/Empty";
 import { IconBookOpen } from "@/components/ui/Icon";
 import {
-  DEMO_TODAY,
   getCustomers,
   getEntities,
   getJournalEntries,
@@ -162,7 +161,7 @@ export default async function Page({
       : allEntriesRaw.filter(
           (e) => e.entityId == null || allowedEntityIds.has(e.entityId),
         );
-  const todayIso = DEMO_TODAY.toISOString().slice(0, 10);
+  const todayIso = new Date().toISOString().slice(0, 10);
   const dueTemplates = templates.filter((t) => isTemplateDue(t, todayIso));
 
   // If a customer was requested, narrow the entity filter to entities that

@@ -4,7 +4,6 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
-  DEMO_TODAY,
   getBills,
   getCustomers,
   getInvoices,
@@ -62,7 +61,7 @@ function iso(d: Date): string {
 }
 
 export default async function Page() {
-  const today = DEMO_TODAY;
+  const today = new Date();
   const startMonday = startOfWeekMonday(today);
 
   const [kpis, invoices, bills, customers, vendors] = await Promise.all([

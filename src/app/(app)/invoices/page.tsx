@@ -10,7 +10,6 @@ import { IconReceipt } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
-  DEMO_TODAY,
   getCustomers,
   getInvoices,
   getInvoiceTemplates,
@@ -158,7 +157,7 @@ export default async function Page({
     status,
     customerId,
     bucket,
-    DEMO_TODAY,
+    new Date(),
     customerIdsInRegion,
   )
     .slice()
@@ -169,7 +168,7 @@ export default async function Page({
   const activeBucketLabel =
     bucket && VALID_BUCKETS.has(bucket) ? BUCKET_LABEL[bucket as Bucket] : null;
 
-  const todayIso = DEMO_TODAY.toISOString().slice(0, 10);
+  const todayIso = new Date().toISOString().slice(0, 10);
   const dueTemplates = templates.filter((t) => isTemplateDue(t, todayIso));
 
   const totalSum = rows.reduce((s, inv) => s + parseAmount(inv.total), 0);

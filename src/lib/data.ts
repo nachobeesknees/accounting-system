@@ -3296,5 +3296,3 @@ export async function getDimensionsWithValues(): Promise<
   return dims.map((d) => ({ dimension: d, values: byDim.get(d.id) ?? [] }));
 }
 
-// The "today" for the demo. Fix it so reports match the seeded data.
-export const DEMO_TODAY = new Date("2026-05-13T00:00:00Z");

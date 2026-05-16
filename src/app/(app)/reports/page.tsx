@@ -10,7 +10,6 @@ import { PrintButton } from "@/components/PrintButton";
 import { DrillNumber, drillToAccount } from "@/components/DrillNumber";
 import { YearPicker } from "./YearPicker";
 import {
-  DEMO_TODAY,
   accountsByType,
   getBalanceSheetByEntity,
   getBaseCurrency,
@@ -195,7 +194,8 @@ export default async function Page({
   const tab: TabId = isTab(params.tab) ? params.tab : "balance";
   const preset = parsePreset(params.preset);
   const compareMode = parseCompare(params.compare) as CompareMode;
-  const period = resolvePeriod(preset, DEMO_TODAY, params.from, params.to);
+  const today = new Date();
+  const period = resolvePeriod(preset, today, params.from, params.to);
   // Topbar scope can be either a single office, "all", or a region. The
   // legacy single-id helper is kept for the inner reports cards (typed as
   // `string | null`), while the resolved object is used to derive any
@@ -203,7 +203,7 @@ export default async function Page({
   const resolved = await resolveEntityScope();
   const scope = await getEntityScope();
   const fiscalYear = parseInt(
-    params.year ?? String(DEMO_TODAY.getUTCFullYear()),
+    params.year ?? String(today.getUTCFullYear()),
     10,
   );
   const showCents = params.cents === "1";
@@ -240,7 +240,7 @@ export default async function Page({
           tab === "monthly"
             ? `Fiscal year ${fiscalYear}`
             : tab === "trial"
-              ? `As of ${formatDateLabel(DEMO_TODAY.toISOString().slice(0, 10))}`
+              ? `As of ${formatDateLabel(today.toISOString().slice(0, 10))}`
               : period.label
         }
         actions={

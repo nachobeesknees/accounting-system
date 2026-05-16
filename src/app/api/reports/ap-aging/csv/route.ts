@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { serializeCsv } from "@/lib/csv";
 import {
-  DEMO_TODAY,
   getBankAccounts,
   getBills,
   getCustomers,
@@ -81,7 +80,7 @@ export async function GET(req: NextRequest): Promise<Response> {
     return fallbackBank;
   }
 
-  const today = DEMO_TODAY;
+  const today = new Date();
 
   const rows: Array<Record<string, string>> = [];
   for (const bill of bills) {

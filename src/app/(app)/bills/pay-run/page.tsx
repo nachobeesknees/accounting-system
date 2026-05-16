@@ -3,7 +3,6 @@ import { Card } from "@/components/ui/Card";
 import { Empty } from "@/components/ui/Empty";
 import { IconFile } from "@/components/ui/Icon";
 import {
-  DEMO_TODAY,
   getBankAccounts,
   getBills,
   getCustomers,
@@ -145,7 +144,7 @@ export default async function Page({
   type RegionBucket = { region: Region | null; bills: PayRunBillRow[] };
   const buckets = new Map<string, RegionBucket>();
 
-  const today = DEMO_TODAY;
+  const today = new Date();
   for (const b of payable) {
     const regionId = regionForBill(b);
     const region = regionId ? regionsById.get(regionId) ?? null : null;
@@ -209,7 +208,7 @@ export default async function Page({
   );
   const defaultBankAccountId = usdBanks[0]?.id ?? null;
 
-  const demoTodayIso = DEMO_TODAY.toISOString().slice(0, 10);
+  const demoTodayIso = today.toISOString().slice(0, 10);
 
   // Scope banner text.
   let scopeBanner: string | null = null;

@@ -4,7 +4,7 @@ import { Empty } from "@/components/ui/Empty";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Pill, type PillVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { DEMO_TODAY, getKpis } from "@/lib/data";
+import { getKpis } from "@/lib/data";
 import { getCashForecast, type ForecastItem } from "@/lib/forecast";
 import { formatDate } from "@/lib/format";
 import { formatMoney } from "@/lib/money";
@@ -56,7 +56,7 @@ export default async function Page({
   const weeks = parseHorizon(params.weeks);
 
   const kpis = await getKpis();
-  const { rows, items } = await getCashForecast(kpis.cash, DEMO_TODAY, weeks);
+  const { rows, items } = await getCashForecast(kpis.cash, new Date(), weeks);
 
   const totalInflows = rows.reduce(
     (s, r) => s + r.inflowsFromInvoices + r.inflowsFromEntityFees,

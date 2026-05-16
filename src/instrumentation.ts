@@ -9,19 +9,15 @@
  * that surfaces them server-side.
  */
 
-export function register() {
-  // No-op for now; placeholder for future telemetry.
+import * as Sentry from "@sentry/nextjs";
+
+export async function register() {
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    await import("../sentry.server.config");
+  }
+  if (process.env.NEXT_RUNTIME === "edge") {
+    await import("../sentry.edge.config");
+  }
 }
 
-export async function onRequestError(
-  error: { digest?: string } & Error,
-  request: { path: string; method: string },
-  context: { routerKind: string; routePath: string; routeType: string },
-) {
-  // eslint-disable-next-line no-console
-  console.error(
-    `[onRequestError] ${request.method} ${request.path} (${context.routerKind} ${context.routeType}) digest=${error.digest ?? "?"}`,
-    "\n",
-    error.stack ?? error.message,
-  );
-}
+export const onRequestError = Sentry.captureRequestError;
