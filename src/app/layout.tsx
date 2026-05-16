@@ -27,11 +27,21 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrains.variable}`}>
+    // suppressHydrationWarning on <html> is required because <ThemeBootstrap />
+    // runs an inline script that sets data-theme on <html> before React
+    // hydrates. Without this, the server-rendered <html> (no attribute) and
+    // the client (with data-theme="dark") differ → React error #418 +
+    // cascading "parentNode of null" errors. Standard pattern from the
+    // next-themes / system-preference theme docs.
+    <html
+      lang="en"
+      className={`${inter.variable} ${jetbrains.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <ThemeBootstrap />
       </head>
-      <body>{children}</body>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }
