@@ -2150,6 +2150,55 @@ export async function createVendor(
   return created;
 }
 
+/**
+ * Compute the next available vendor code on the `VEND-NNN` ladder. The DB
+ * regex filter keeps non-conforming codes (e.g. legacy imports) from
+ * skewing the max; everything else parses to an integer and we pick max+1.
+ */
+async function nextVendorCode(): Promise<string> {
+  const db = getDb();
+  const [row] = await db
+    .select({ code: schema.vendors.code })
+    .from(schema.vendors)
+    .where(sql`${schema.vendors.code} ~ '^VEND-[0-9]+$'`)
+    .orderBy(desc(schema.vendors.code))
+    .limit(1);
+  const trailing = row?.code?.match(/^VEND-(\d+)$/)?.[1];
+  const next = (trailing ? parseInt(trailing, 10) : 0) + 1;
+  return `VEND-${String(next).padStart(3, "0")}`;
+}
+
+/**
+ * Look up a vendor by name (case-insensitive, trimmed). If none exists,
+ * create one with sensible defaults: next sequential `VEND-NNN` code,
+ * Net-30 terms, and the rest of the fields left blank for the user to
+ * fill in later. Used by the bill-entry OCR path so an extracted vendor
+ * name automatically materializes a vendor record instead of being lost
+ * to the notes field.
+ */
+export async function findOrCreateVendorByName(
+  user: SessionUser,
+  rawName: string,
+): Promise<{ vendor: typeof schema.vendors.$inferSelect; created: boolean }> {
+  const name = rawName.trim();
+  if (!name) throw new Error("Vendor name is required.");
+  const db = getDb();
+  const [existing] = await db
+    .select()
+    .from(schema.vendors)
+    .where(sql`lower(${schema.vendors.name}) = lower(${name})`)
+    .limit(1);
+  if (existing) return { vendor: existing, created: false };
+
+  const code = await nextVendorCode();
+  const vendor = await createVendor(user, {
+    code,
+    name,
+    paymentTerms: 30,
+  });
+  return { vendor, created: true };
+}
+
 export async function updateVendorInvoiceNumberRule(
   _user: SessionUser,
   vendorId: string,

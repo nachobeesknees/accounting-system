@@ -28,7 +28,11 @@ import type {
 import { suggestNextVendorInvoiceNumber } from "@/lib/vendor-invoice-numbers";
 import { PeriodStatusBanner } from "@/components/PeriodStatusBanner";
 
-import { createBillAction, type CreateBillState } from "./actions";
+import {
+  createBillAction,
+  ensureVendorByNameAction,
+  type CreateBillState,
+} from "./actions";
 
 type Recipient = "none" | "client" | "entity";
 type CbMethod = "cost" | "markup" | "fixed" | "included";
@@ -54,7 +58,7 @@ function blankLine(accountId = ""): Line {
 const INITIAL_STATE: CreateBillState = { error: null };
 
 export function NewBillForm({
-  vendors,
+  vendors: initialVendors,
   expenseAccounts,
   customers,
   entities,
@@ -78,6 +82,17 @@ export function NewBillForm({
   currencyCode: string;
   latestFxRates: Record<string, number>;
 }) {
+  // Local vendor list seeded from server. The OCR auto-fill path may
+  // append a newly-created vendor (when the extracted name doesn't match
+  // any existing one), and the rest of the form picks it up via the
+  // memoized vendor map / options below.
+  const [vendors, setVendors] = useState<Vendor[]>(initialVendors);
+  // Pill shown above the form when OCR auto-created a vendor — gives the
+  // user a chance to notice & edit before submitting the bill.
+  const [autoCreatedVendor, setAutoCreatedVendor] = useState<{
+    code: string;
+    name: string;
+  } | null>(null);
   // FX snapshot is only meaningful for non-base bills. Defaults to the
   // latest rate stored in fx_rates so the common case is "press save".
   const isForeignCurrency = currencyCode !== baseCode;
@@ -162,7 +177,7 @@ export function NewBillForm({
     };
   }, [vendorId, vendorInvoiceNumber]);
 
-  function applyOcr(data: OcrExtraction, raw: string) {
+  async function applyOcr(data: OcrExtraction, raw: string) {
     setOcrText(raw);
     setShowReview(true);
     if (data.date && billDate === today) setBillDate(data.date);
@@ -173,10 +188,11 @@ export function NewBillForm({
       setVendorInvoiceNumber(data.invoiceNumber);
       userTypedRef.current = true;
     }
-    if (data.vendorName && notes === "") {
-      setNotes(`Vendor: ${data.vendorName}`);
-    }
-    // Auto-pick vendor if we can match the extracted name to a known vendor.
+    // Vendor resolution: try fuzzy-match an existing vendor first, fall
+    // back to auto-creating one via the server action when no match
+    // exists. Only auto-create when the form is still on the default
+    // vendor — if the user already picked one we don't override.
+    let vendorResolved = false;
     if (data.vendorName) {
       const needle = data.vendorName.toLowerCase().trim();
       const match = vendors.find(
@@ -185,9 +201,55 @@ export function NewBillForm({
           v.name.toLowerCase().includes(needle) ||
           needle.includes(v.name.toLowerCase()),
       );
-      if (match && (!vendorId || vendorId === vendors[0]?.id)) {
+      const userHasNotPickedVendor =
+        !vendorId || vendorId === initialVendors[0]?.id;
+      if (match && userHasNotPickedVendor) {
         onVendorChange(match.id);
+        vendorResolved = true;
+      } else if (!match && userHasNotPickedVendor) {
+        // No fuzzy match — ask the server to find-or-create. We still
+        // call the action when offline / errored; the catch path keeps
+        // the user where they were so nothing is silently dropped.
+        try {
+          const result = await ensureVendorByNameAction(data.vendorName);
+          if (result.ok) {
+            // Materialize the new vendor in local state so the
+            // SmartSelect renders it as a real option.
+            const created: Vendor = {
+              id: result.vendor.id,
+              code: result.vendor.code,
+              name: result.vendor.name,
+              email: null,
+              phone: null,
+              address: null,
+              paymentTerms: 30,
+              defaultExpenseAccountId: null,
+              isActive: true,
+              notes: null,
+              invoiceNumberPrefix: null,
+              invoiceNumberPattern: null,
+              invoiceNumberLastUsed: null,
+            };
+            setVendors((prev) =>
+              prev.some((v) => v.id === created.id) ? prev : [...prev, created],
+            );
+            setVendorId(created.id);
+            if (result.created) {
+              setAutoCreatedVendor({ code: created.code, name: created.name });
+            }
+            vendorResolved = true;
+          }
+        } catch {
+          // Network / server error — leave the vendor field alone so the
+          // user can pick manually.
+        }
       }
+    }
+    // Only fall back to dropping the name into Notes if we still couldn't
+    // associate it with a vendor record — keeps the demo's previous
+    // behavior for permission-blocked / offline cases.
+    if (data.vendorName && !vendorResolved && notes === "") {
+      setNotes(`Vendor: ${data.vendorName}`);
     }
     if (data.lineItems && data.lineItems.length > 0) {
       const userEmpty = lines.every(
@@ -384,6 +446,39 @@ export function NewBillForm({
 
       <OcrUpload formType="bill" onExtracted={applyOcr} />
       {showReview && <ReviewBanner onDismiss={() => setShowReview(false)} />}
+      {autoCreatedVendor && (
+        <div
+          className="rounded-md px-3 py-2 text-[12.5px] flex items-center justify-between gap-3"
+          style={{
+            background: "var(--p-active-bg)",
+            color: "var(--p-active-fg)",
+            border: "1px solid var(--p-active-fg)",
+          }}
+        >
+          <span>
+            Created new vendor{" "}
+            <strong>
+              {autoCreatedVendor.code} — {autoCreatedVendor.name}
+            </strong>{" "}
+            from the uploaded document. You can edit it later under Vendors.
+          </span>
+          <button
+            type="button"
+            onClick={() => setAutoCreatedVendor(null)}
+            aria-label="Dismiss new-vendor notice"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "inherit",
+              cursor: "pointer",
+              fontSize: 14,
+              padding: 0,
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
       <input type="hidden" name="ocrText" value={ocrText} />
       <PeriodStatusBanner date={billDate} periods={accountingPeriods} />
 

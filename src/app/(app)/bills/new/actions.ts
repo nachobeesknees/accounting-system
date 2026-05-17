@@ -8,11 +8,55 @@ import { PermissionError, requirePermission } from "@/lib/permissions";
 import {
   approveBill,
   createBill,
+  findOrCreateVendorByName,
   type CreateBillInput,
   type DraftBillLine,
 } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
+
+/**
+ * Called by the OCR auto-fill path on the new-bill form when the
+ * extracted vendor name doesn't match any existing vendor. Looks the
+ * name up case-insensitively and creates a vendor with sensible
+ * defaults if missing. Used purely client-side via a fetch-like call;
+ * returns a small shape the client can merge into its local vendor list.
+ */
+export type EnsureVendorResult =
+  | { ok: true; vendor: { id: string; code: string; name: string }; created: boolean }
+  | { ok: false; error: string };
+
+export async function ensureVendorByNameAction(
+  rawName: string,
+): Promise<EnsureVendorResult> {
+  const user = await getSessionUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  // Gated on bill.create — anyone who can submit this form already has
+  // the same write-books trust level; we don't want a separate gate that
+  // blocks the OCR auto-fill when the user can otherwise create the bill.
+  try {
+    requirePermission(user, "bill.create");
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      return { ok: false, error: "You don't have permission to create vendors." };
+    }
+    throw err;
+  }
+  const trimmed = rawName.trim();
+  if (!trimmed) return { ok: false, error: "Vendor name was empty." };
+  try {
+    const { vendor, created } = await findOrCreateVendorByName(user, trimmed);
+    revalidatePath("/vendors");
+    return {
+      ok: true,
+      vendor: { id: vendor.id, code: vendor.code, name: vendor.name },
+      created,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Failed to create vendor.";
+    return { ok: false, error: msg };
+  }
+}
 
 type ChargebackType = "cost" | "markup" | "fixed" | "included";
 
