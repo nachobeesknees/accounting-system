@@ -9,6 +9,7 @@ import {
   getInvoicesAwaitingApproval,
   getJournalEntries,
   getRegions,
+  getVendorsNeedingApproval,
 } from "@/lib/data";
 import { parseAmount } from "@/lib/money";
 import { cookies } from "next/headers";
@@ -29,29 +30,40 @@ export async function AppShell({
   const cookieScope = (await cookies()).get("tw_entity_scope")?.value ?? null;
   const currentScope =
     !cookieScope || cookieScope === "all" ? null : cookieScope;
-  const [entries, invoices, bills, awaiting, firmEntities, regions] =
-    await Promise.all([
-      getJournalEntries(),
-      getInvoices(),
-      getBills(),
-      getInvoicesAwaitingApproval(user.userId, user.role, user.isSuperuser),
-      getFirmEntities(),
-      getRegions(),
-    ]);
+  const [
+    entries,
+    invoices,
+    bills,
+    awaiting,
+    pendingVendors,
+    firmEntities,
+    regions,
+  ] = await Promise.all([
+    getJournalEntries(),
+    getInvoices(),
+    getBills(),
+    getInvoicesAwaitingApproval(user.userId, user.role, user.isSuperuser),
+    getVendorsNeedingApproval(),
+    getFirmEntities(),
+    getRegions(),
+  ]);
   const jeCount = entries.length;
   const outstandingInvoiceCount = invoices.filter(
     (i) => parseAmount(i.balanceDue) > 0,
   ).length;
   const billCount = bills.filter((b) => parseAmount(b.balanceDue) > 0).length;
   const approvalsCount = awaiting.length;
+  const pendingVendorCount = pendingVendors.length;
 
   const counts = {
     "/journal": jeCount,
     "/invoices": approvalsCount > 0 ? approvalsCount : outstandingInvoiceCount,
     "/bills": billCount,
+    "/vendors/pending": pendingVendorCount,
   };
   const urgentItems = {
     "/invoices": approvalsCount > 0,
+    "/vendors/pending": pendingVendorCount > 0,
   };
 
   // The topbar picker shows OUR firm's corporate entities — what we

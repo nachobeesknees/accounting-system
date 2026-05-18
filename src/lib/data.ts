@@ -518,6 +518,17 @@ function mapCustomer(r: typeof schema.customers.$inferSelect): Customer {
 }
 
 function mapVendor(r: typeof schema.vendors.$inferSelect): Vendor {
+  // approvalStatus stored as text — narrow to the union; anything unknown
+  // falls back to "approved" so old rows without the column behave as
+  // before the migration.
+  const rawStatus = (r as { approvalStatus?: string | null }).approvalStatus;
+  const approvalStatus: Vendor["approvalStatus"] =
+    rawStatus === "pending" || rawStatus === "rejected" ? rawStatus : "approved";
+  const approvedAt = (r as { approvedAt?: Date | null }).approvedAt ?? null;
+  const approvedByUserId =
+    (r as { approvedByUserId?: string | null }).approvedByUserId ?? null;
+  const approvalNotes =
+    (r as { approvalNotes?: string | null }).approvalNotes ?? null;
   return {
     id: r.id,
     name: r.name,
@@ -532,6 +543,10 @@ function mapVendor(r: typeof schema.vendors.$inferSelect): Vendor {
     invoiceNumberPrefix: r.invoiceNumberPrefix,
     invoiceNumberPattern: r.invoiceNumberPattern,
     invoiceNumberLastUsed: r.invoiceNumberLastUsed,
+    approvalStatus,
+    approvedAt: approvedAt ? approvedAt.toISOString() : null,
+    approvedByUserId,
+    approvalNotes,
   };
 }
 
@@ -1423,6 +1438,26 @@ export async function getLatestSnapshotByAssetAsOf(
 export async function getVendors(): Promise<Vendor[]> {
   const db = getDb();
   const rows = await db.select().from(schema.vendors).orderBy(schema.vendors.code);
+  return rows.map(mapVendor);
+}
+
+/**
+ * Vendors waiting on a manager-or-higher to approve (or that have been
+ * rejected). Drives the /vendors/pending review queue and the sidebar
+ * count badge.
+ */
+export async function getVendorsNeedingApproval(): Promise<Vendor[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.vendors)
+    .where(
+      or(
+        eq(schema.vendors.approvalStatus, "pending"),
+        eq(schema.vendors.approvalStatus, "rejected"),
+      ),
+    )
+    .orderBy(desc(schema.vendors.createdAt));
   return rows.map(mapVendor);
 }
 

@@ -229,6 +229,13 @@ export function NewBillForm({
               invoiceNumberPrefix: null,
               invoiceNumberPattern: null,
               invoiceNumberLastUsed: null,
+              // OCR auto-creates always land pending — the form shows the
+              // dismissible banner and the bill can still be saved as a
+              // draft. bill.approve enforces the gate at post time.
+              approvalStatus: "pending",
+              approvedAt: null,
+              approvedByUserId: null,
+              approvalNotes: null,
             };
             setVendors((prev) =>
               prev.some((v) => v.id === created.id) ? prev : [...prev, created],

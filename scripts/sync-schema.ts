@@ -133,6 +133,14 @@ const COLUMNS: ColumnSpec[] = [
   { table: "vendors", column: "invoice_number_prefix", type: "text" },
   { table: "vendors", column: "invoice_number_pattern", type: "text" },
   { table: "vendors", column: "invoice_number_last_used", type: "text" },
+  // ---- Vendor approval workflow ----
+  // OCR-created vendors land in `pending`; bills against them can be
+  // drafted but not approved/paid. Existing rows backfill to `approved`
+  // so nothing in the seed data is locked out retroactively.
+  { table: "vendors", column: "approval_status", type: "text", notNull: true, default: "'approved'" },
+  { table: "vendors", column: "approved_at", type: "timestamptz" },
+  { table: "vendors", column: "approved_by_user_id", type: "text" },
+  { table: "vendors", column: "approval_notes", type: "text" },
   // The vendor's own invoice number recorded on a bill (separate from our
   // internal bill_number). Used for duplicate detection per (vendor, number).
   { table: "bills", column: "vendor_invoice_number", type: "text" },

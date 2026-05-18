@@ -411,7 +411,12 @@ export const ENTITY_FEES: EntityFee[] = [
   { id: id("ef-010"), entityId: "e-010", billingYear: 2026, feeScheduleId: "fs-003", annualFee: "9000.00", includedHours: "20", status: "draft", invoiceId: null, notes: "Dormant — reduced fee" },
 ];
 
-export const VENDORS: Vendor[] = [
+// Seeded vendors omit approval fields — they get the column default
+// ("approved") at insert time. Using Omit keeps the literal list flat
+// rather than repeating four null fields on every row.
+export const VENDORS: Array<
+  Omit<Vendor, "approvalStatus" | "approvedAt" | "approvedByUserId" | "approvalNotes">
+> = [
   { id: id("v-001"), code: "VEND-001", name: "Bramblewick Office Supply", email: "orders@bramblewick.com", phone: "(312) 555-2200", address: "401 W Adams St, Chicago IL 60606", paymentTerms: 30, defaultExpenseAccountId: "a-5200", isActive: true, notes: null, invoiceNumberPrefix: "BMB-", invoiceNumberPattern: "BMB-YYYY-####", invoiceNumberLastUsed: null },
   { id: id("v-002"), code: "VEND-002", name: "Quillfeather Technology", email: "ar@quillfeather.tech", phone: "(206) 555-3304", address: "500 Pine St, Seattle WA 98101", paymentTerms: 30, defaultExpenseAccountId: "a-1500", isActive: true, notes: null, invoiceNumberPrefix: "QF-", invoiceNumberPattern: "QF-YYYY-####", invoiceNumberLastUsed: null },
   { id: id("v-003"), code: "VEND-003", name: "Nettlesome Property Management", email: "leases@nettlesome.com", phone: "(415) 555-9020", address: "55 Sutter St, San Francisco CA 94104", paymentTerms: 30, defaultExpenseAccountId: "a-5000", isActive: true, notes: null, invoiceNumberPrefix: null, invoiceNumberPattern: null, invoiceNumberLastUsed: null },

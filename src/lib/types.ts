@@ -630,7 +630,14 @@ export type Vendor = {
   invoiceNumberPrefix: string | null;
   invoiceNumberPattern: string | null;
   invoiceNumberLastUsed: string | null;
+  /** Approval workflow status. See `vendors.approvalStatus` in schema.ts. */
+  approvalStatus: VendorApprovalStatus;
+  approvedAt: string | null;
+  approvedByUserId: string | null;
+  approvalNotes: string | null;
 };
+
+export type VendorApprovalStatus = "pending" | "approved" | "rejected";
 
 export type BillStatus = "draft" | "approved" | "partial" | "paid" | "overdue" | "void";
 

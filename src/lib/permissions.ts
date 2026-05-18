@@ -67,6 +67,9 @@ export type Action =
   | "bill.update"
   | "bill.approve"
   | "bill.void"
+  // Vendor approval workflow — OCR auto-creates land pending and need a
+  // manager-or-higher to approve before bills against them can be posted.
+  | "vendor.approve"
   // Banking
   | "bank.reconcile"
   | "bank.create_transaction"
@@ -107,7 +110,11 @@ const WRITE_BOOKS: Action[] = [
   "report.export_csv",
 ];
 
-const APPROVALS: Action[] = ["invoice.approve", "bill.approve"];
+const APPROVALS: Action[] = [
+  "invoice.approve",
+  "bill.approve",
+  "vendor.approve",
+];
 
 const ADMIN_ACTIONS: Action[] = [
   "read.settings",

@@ -132,7 +132,17 @@ export default async function Page({
                           {v.code}
                         </Link>
                       </TD>
-                      <TD>{v.name}</TD>
+                      <TD>
+                        <span className="inline-flex items-center gap-2 flex-wrap">
+                          <span>{v.name}</span>
+                          {v.approvalStatus === "pending" && (
+                            <Pill variant="pending">Pending approval</Pill>
+                          )}
+                          {v.approvalStatus === "rejected" && (
+                            <Pill variant="review">Rejected</Pill>
+                          )}
+                        </span>
+                      </TD>
                       <TD style={{ color: "var(--ink-3)" }}>
                         {v.email ?? "—"}
                       </TD>

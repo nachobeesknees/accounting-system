@@ -36,6 +36,7 @@ const SECTIONS: Section[] = [
       { href: "/bills", label: "Bills" },
       { href: "/bills/pay-run", label: "Select bills to pay" },
       { href: "/vendors", label: "Vendors" },
+      { href: "/vendors/pending", label: "Vendor approvals" },
     ],
   },
   {

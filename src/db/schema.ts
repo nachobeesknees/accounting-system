@@ -892,6 +892,17 @@ export const vendors = pgTable("vendors", {
   invoiceNumberPrefix: text("invoice_number_prefix"),
   invoiceNumberPattern: text("invoice_number_pattern"),
   invoiceNumberLastUsed: text("invoice_number_last_used"),
+  /**
+   * Vendor approval state. Bills against pending/rejected vendors can be
+   * drafted but not approved or paid until the vendor is approved. New
+   * vendors created by hand default to "approved" (someone with bill.create
+   * is intentionally adding them); vendors auto-created by the OCR flow
+   * default to "pending" so a human reviews them before money moves.
+   */
+  approvalStatus: text("approval_status").notNull().default("approved"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  approvedByUserId: text("approved_by_user_id"),
+  approvalNotes: text("approval_notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

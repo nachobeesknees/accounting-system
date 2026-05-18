@@ -2105,7 +2105,7 @@ export async function createCustomer(
 }
 
 export async function createVendor(
-  _user: SessionUser,
+  user: SessionUser,
   input: {
     code: string;
     name: string;
@@ -2117,6 +2117,13 @@ export async function createVendor(
     invoiceNumberPrefix?: string | null;
     invoiceNumberPattern?: string | null;
     invoiceNumberLastUsed?: string | null;
+    /**
+     * Approval state at creation. Defaults to "approved" — manual creation
+     * is itself the act of approving. The OCR auto-create path overrides
+     * to "pending" so a human reviews the row before bills against the
+     * new vendor can be approved or paid.
+     */
+    approvalStatus?: "pending" | "approved";
   },
 ) {
   const db = getDb();
@@ -2129,6 +2136,7 @@ export async function createVendor(
     throw new Error(`Vendor code ${input.code} already exists.`);
   }
   const id = uid("v");
+  const status = input.approvalStatus ?? "approved";
   const [created] = await db
     .insert(schema.vendors)
     .values({
@@ -2145,8 +2153,20 @@ export async function createVendor(
       invoiceNumberPrefix: input.invoiceNumberPrefix ?? null,
       invoiceNumberPattern: input.invoiceNumberPattern ?? null,
       invoiceNumberLastUsed: input.invoiceNumberLastUsed ?? null,
+      approvalStatus: status,
+      // If created already-approved we record the approver immediately so
+      // the audit trail has a who/when even for hand-created vendors.
+      approvedAt: status === "approved" ? new Date() : null,
+      approvedByUserId: status === "approved" ? user.userId : null,
     })
     .returning();
+  await logAuditEvent(user, {
+    action: status === "approved" ? "vendor.create" : "vendor.create_pending",
+    resourceType: "vendor",
+    resourceId: id,
+    resourceName: input.code,
+    metadata: { name: input.name, approvalStatus: status },
+  });
   return created;
 }
 
@@ -2195,8 +2215,85 @@ export async function findOrCreateVendorByName(
     code,
     name,
     paymentTerms: 30,
+    // OCR-created vendors land pending — a manager / admin must
+    // approve them in /vendors/pending before bills can be approved
+    // against them. Keeps unattended AP flows from silently posting
+    // money to brand-new payees.
+    approvalStatus: "pending",
   });
   return { vendor, created: true };
+}
+
+/**
+ * Mark a pending vendor as approved. Bills against the vendor become
+ * postable once this lands. Idempotent — re-approving a vendor refreshes
+ * the approver / timestamp but the audit log records every transition.
+ */
+export async function approveVendor(
+  user: SessionUser,
+  vendorId: string,
+  notes: string | null,
+): Promise<void> {
+  const db = getDb();
+  const [vendor] = await db
+    .select()
+    .from(schema.vendors)
+    .where(eq(schema.vendors.id, vendorId))
+    .limit(1);
+  if (!vendor) throw new Error("Vendor not found.");
+  await db
+    .update(schema.vendors)
+    .set({
+      approvalStatus: "approved",
+      approvedAt: new Date(),
+      approvedByUserId: user.userId,
+      approvalNotes: notes && notes.trim() !== "" ? notes.trim() : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.vendors.id, vendorId));
+  await logAuditEvent(user, {
+    action: "vendor.approve",
+    resourceType: "vendor",
+    resourceId: vendorId,
+    resourceName: vendor.code,
+    metadata: { code: vendor.code, name: vendor.name, notes },
+  });
+}
+
+/**
+ * Reject a pending vendor. The row stays in the table (so historical
+ * drafts that reference it still resolve) but bills against it can never
+ * be approved. The user can update the row + re-approve later.
+ */
+export async function rejectVendor(
+  user: SessionUser,
+  vendorId: string,
+  notes: string | null,
+): Promise<void> {
+  const db = getDb();
+  const [vendor] = await db
+    .select()
+    .from(schema.vendors)
+    .where(eq(schema.vendors.id, vendorId))
+    .limit(1);
+  if (!vendor) throw new Error("Vendor not found.");
+  await db
+    .update(schema.vendors)
+    .set({
+      approvalStatus: "rejected",
+      approvedAt: new Date(),
+      approvedByUserId: user.userId,
+      approvalNotes: notes && notes.trim() !== "" ? notes.trim() : null,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.vendors.id, vendorId));
+  await logAuditEvent(user, {
+    action: "vendor.reject",
+    resourceType: "vendor",
+    resourceId: vendorId,
+    resourceName: vendor.code,
+    metadata: { code: vendor.code, name: vendor.name, notes },
+  });
 }
 
 export async function updateVendorInvoiceNumberRule(
@@ -3179,6 +3276,29 @@ export async function approveBill(
     .limit(1);
   if (!bill) throw new Error("Bill not found.");
   if (bill.status !== "draft") throw new Error(`Bill is already ${bill.status}.`);
+
+  // Vendor approval gate: bills referencing a pending or rejected vendor
+  // cannot be approved. The user has to either approve the vendor in
+  // /vendors/pending or swap to an already-approved vendor. Drafts are
+  // intentionally allowed (so OCR autofill can still save) — this gate
+  // only fires when money is about to move.
+  const [vendor] = await db
+    .select({
+      code: schema.vendors.code,
+      name: schema.vendors.name,
+      approvalStatus: schema.vendors.approvalStatus,
+    })
+    .from(schema.vendors)
+    .where(eq(schema.vendors.id, bill.vendorId))
+    .limit(1);
+  if (!vendor) throw new Error("Vendor not found.");
+  if (vendor.approvalStatus !== "approved") {
+    const label =
+      vendor.approvalStatus === "rejected" ? "rejected" : "pending approval";
+    throw new Error(
+      `Vendor ${vendor.code} — ${vendor.name} is ${label}. Approve the vendor in Vendor approvals before approving this bill.`,
+    );
+  }
 
   const lines = await db
     .select()
