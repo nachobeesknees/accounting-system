@@ -41,6 +41,7 @@ import {
   generateNextRecurringInvoiceAction,
 } from "../../duplicate-actions";
 import { Attachments } from "@/components/Attachments";
+import { hasPermission } from "@/lib/permissions";
 
 function todayISO(): string {
   return new Date().toISOString().slice(0, 10);
@@ -230,10 +231,17 @@ export default async function Page({
   const isPendingCfo = status === "pending_cfo";
   const isPendingAssigned = status === "pending_assigned";
   const isPending = isPendingCfo || isPendingAssigned;
+  const canCreateInvoice = hasPermission(sessionUser, "invoice.create");
+  const canSubmit = isDraft && hasPermission(sessionUser, "invoice.update");
   const canPay =
     !isTemplate &&
-    (status === "sent" || status === "partial" || status === "overdue");
-  const canVoid = !isTemplate && status !== "paid" && status !== "void";
+    (status === "sent" || status === "partial" || status === "overdue") &&
+    hasPermission(sessionUser, "bank.create_transaction");
+  const canVoid =
+    !isTemplate &&
+    status !== "paid" &&
+    status !== "void" &&
+    hasPermission(sessionUser, "invoice.void");
 
   const templateEnded =
     isTemplate &&
@@ -241,11 +249,11 @@ export default async function Page({
     invoice.recurringNextDate != null &&
     invoice.recurringNextDate > invoice.recurringEndDate;
 
-  const isCfo =
-    !!sessionUser && (sessionUser.role === "CFO" || sessionUser.isSuperuser);
+  const isCfo = hasPermission(sessionUser, "invoice.approve");
   const isAssignedApprover =
     !!sessionUser &&
-    (sessionUser.isSuperuser || approverIds.has(sessionUser.userId));
+    (hasPermission(sessionUser, "invoice.approve") ||
+      approverIds.has(sessionUser.userId));
   const canActOnPending =
     (isPendingCfo && isCfo) || (isPendingAssigned && isAssignedApprover);
 
@@ -255,6 +263,7 @@ export default async function Page({
         ← All invoices
       </ButtonLink>
       {isTemplate ? (
+        canCreateInvoice && (
         <form
           action={generateNextRecurringInvoiceAction}
           style={{ display: "inline-flex" }}
@@ -273,15 +282,18 @@ export default async function Page({
             Generate next invoice
           </Button>
         </form>
+        )
       ) : (
+        canCreateInvoice && (
         <form action={duplicateInvoiceAction} style={{ display: "inline-flex" }}>
           <input type="hidden" name="invoiceId" value={invoice.id} />
           <Button variant="secondary" type="submit">
             Duplicate
           </Button>
         </form>
+        )
       )}
-      {isDraft && (
+      {canSubmit && (
         <form action={submitInvoiceForApprovalAction}>
           <input type="hidden" name="invoiceId" value={invoice.id} />
           <Button variant="primary" type="submit">

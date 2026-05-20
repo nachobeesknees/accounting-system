@@ -38,9 +38,7 @@ export async function runPaymentsAction(formData: FormData) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  // `bill.approve` is the closest existing permission for paying — admins
-  // and managers carry it; viewers / employees / accountants do not.
-  const action: Action = "bill.approve";
+  const action: Action = "bank.create_transaction";
   try {
     requirePermission(user, action);
   } catch (err) {

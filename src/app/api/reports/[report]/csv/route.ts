@@ -19,6 +19,7 @@ import {
   type CompareMode,
 } from "@/lib/report-periods";
 import { formatAmount } from "@/lib/money";
+import { requirePermission } from "@/lib/permissions";
 
 type ReportKey =
   | "trial-balance"
@@ -76,6 +77,11 @@ export async function GET(
   const user = await getSessionUser();
   if (!user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  try {
+    requirePermission(user, "report.export_csv");
+  } catch {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const { report } = await context.params;
   if (!VALID.includes(report as ReportKey)) {

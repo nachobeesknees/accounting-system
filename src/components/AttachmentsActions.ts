@@ -6,6 +6,10 @@ import { put, del } from "@vercel/blob";
 import { getSessionUser } from "@/lib/session";
 import { getAttachmentById } from "@/lib/data";
 import { createAttachment, deleteAttachment } from "@/lib/mutations";
+import {
+  requireReadRecord,
+  requireWriteAttachmentRecord,
+} from "@/lib/record-access";
 import type { AttachmentRecordType } from "@/lib/types";
 
 const VALID_TYPES: AttachmentRecordType[] = [
@@ -55,6 +59,20 @@ export async function uploadAttachmentAction(formData: FormData) {
   if (!recordId) {
     redirect(backTo(redirectPath, { error: "Missing record id." }));
   }
+  try {
+    requireWriteAttachmentRecord(user, recordTypeRaw as AttachmentRecordType);
+    await requireReadRecord(
+      user,
+      recordTypeRaw as AttachmentRecordType,
+      recordId,
+    );
+  } catch {
+    redirect(
+      backTo(redirectPath, {
+        error: "You don't have permission to attach files to this record.",
+      }),
+    );
+  }
   if (!(file instanceof File) || file.size === 0) {
     redirect(backTo(redirectPath, { error: "Pick a file to upload." }));
   }
@@ -85,7 +103,7 @@ export async function uploadAttachmentAction(formData: FormData) {
   let blobPathname: string;
   try {
     const blob = await put(pathname, file, {
-      access: "public",
+      access: "private",
       addRandomSuffix: false,
       contentType: file.type || "application/octet-stream",
     });
@@ -126,6 +144,17 @@ export async function deleteAttachmentAction(formData: FormData) {
   if (!id) redirect(redirectPath);
 
   const existing = await getAttachmentById(id);
+  if (!existing) redirect(redirectPath);
+  try {
+    requireWriteAttachmentRecord(user, existing.recordType);
+    await requireReadRecord(user, existing.recordType, existing.recordId);
+  } catch {
+    redirect(
+      backTo(redirectPath, {
+        error: "You don't have permission to remove this attachment.",
+      }),
+    );
+  }
   if (existing?.blobPathname && process.env.BLOB_READ_WRITE_TOKEN) {
     try {
       await del(existing.blobPathname);

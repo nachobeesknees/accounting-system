@@ -26,6 +26,7 @@ import { getJournalEntryById } from "./data";
 import { getEntityScope } from "./entity-scope";
 import { checkPeriodForPost } from "./periods";
 import { logAuditEvent } from "./audit";
+import { hasPermission, requirePermission } from "./permissions";
 
 /**
  * Currency to use for a new transaction issued by the firm. Prefers the
@@ -217,6 +218,10 @@ export async function createJournalEntry(
   user: SessionUser,
   input: CreateJournalEntryInput,
 ): Promise<JournalEntry> {
+  if (input.bypassControlWarning) {
+    requirePermission(user, "journal_entry.bypass_control");
+  }
+
   if (input.lines.length < 2) {
     throw new Error("Journal entry must have at least 2 lines.");
   }
@@ -2477,6 +2482,8 @@ export type CreateInvoiceInput = {
 };
 
 export async function createInvoice(user: SessionUser, input: CreateInvoiceInput) {
+  requirePermission(user, "invoice.create");
+
   if (input.lines.length === 0) throw new Error("Invoice must have at least 1 line.");
   for (const [i, l] of input.lines.entries()) {
     if (!l.accountId) throw new Error(`Line ${i + 1}: account is required.`);
@@ -2649,6 +2656,15 @@ export async function postInvoice(
   invoiceId: string,
   options: { periodOverrideReason?: string | null } = {},
 ) {
+  requirePermission(user, "invoice.update");
+  return postInvoiceCore(user, invoiceId, options);
+}
+
+async function postInvoiceCore(
+  user: SessionUser,
+  invoiceId: string,
+  options: { periodOverrideReason?: string | null } = {},
+) {
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2764,6 +2780,8 @@ export async function recordInvoicePayment(
   user: SessionUser,
   input: RecordInvoicePaymentInput,
 ) {
+  requirePermission(user, "bank.create_transaction");
+
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2830,6 +2848,8 @@ export async function recordInvoicePayment(
 }
 
 export async function voidInvoice(user: SessionUser, invoiceId: string, reason: string) {
+  requirePermission(user, "invoice.void");
+
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2865,9 +2885,11 @@ export async function voidInvoice(user: SessionUser, invoiceId: string, reason: 
  */
 
 export async function submitInvoiceForApproval(
-  _user: SessionUser,
+  user: SessionUser,
   invoiceId: string,
 ) {
+  requirePermission(user, "invoice.update");
+
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2891,6 +2913,8 @@ export async function submitInvoiceForApproval(
 }
 
 export async function cfoApproveInvoice(user: SessionUser, invoiceId: string) {
+  requirePermission(user, "invoice.approve");
+
   const db = getDb();
   const [inv] = await db
     .select()
@@ -2965,7 +2989,7 @@ export async function assignedApproveInvoice(user: SessionUser, invoiceId: strin
   if (approverIds.size === 0) {
     throw new Error("Client has no assigned employee.");
   }
-  if (!approverIds.has(user.userId) && !user.isSuperuser) {
+  if (!approverIds.has(user.userId) && !hasPermission(user, "invoice.approve")) {
     throw new Error(
       "Only an assigned employee (or an Admin) can grant the final approval.",
     );
@@ -2982,7 +3006,7 @@ export async function assignedApproveInvoice(user: SessionUser, invoiceId: strin
       updatedAt: new Date(),
     })
     .where(eq(schema.invoices.id, invoiceId));
-  await postInvoice(user, invoiceId);
+  await postInvoiceCore(user, invoiceId);
 }
 
 export async function rejectInvoice(
@@ -2999,6 +3023,29 @@ export async function rejectInvoice(
   if (!inv) throw new Error("Invoice not found.");
   if (inv.status !== "pending_cfo" && inv.status !== "pending_assigned") {
     throw new Error(`Cannot reject invoice in status "${inv.status}".`);
+  }
+  if (inv.status === "pending_cfo") {
+    requirePermission(user, "invoice.approve");
+  } else if (!hasPermission(user, "invoice.approve")) {
+    const assignments = await db
+      .select({
+        userId: schema.customerAssignments.userId,
+        canApprove: schema.customerAssignments.canApprove,
+      })
+      .from(schema.customerAssignments)
+      .where(eq(schema.customerAssignments.customerId, inv.customerId));
+    const [cust] = await db
+      .select({ assignedUserId: schema.customers.assignedUserId })
+      .from(schema.customers)
+      .where(eq(schema.customers.id, inv.customerId))
+      .limit(1);
+    const approverIds = new Set<string>(
+      assignments.filter((a) => a.canApprove).map((a) => a.userId),
+    );
+    if (cust?.assignedUserId) approverIds.add(cust.assignedUserId);
+    if (!approverIds.has(user.userId)) {
+      throw new Error("Only an assigned approver can reject this invoice.");
+    }
   }
   await db
     .update(schema.invoices)
@@ -3165,6 +3212,8 @@ export type CreateBillInput = {
 };
 
 export async function createBill(user: SessionUser, input: CreateBillInput) {
+  requirePermission(user, "bill.create");
+
   if (input.lines.length === 0) throw new Error("Bill must have at least 1 line.");
   for (const [i, l] of input.lines.entries()) {
     if (!l.accountId) throw new Error(`Line ${i + 1}: account is required.`);
@@ -3268,6 +3317,8 @@ export async function approveBill(
   billId: string,
   options: { periodOverrideReason?: string | null } = {},
 ) {
+  requirePermission(user, "bill.approve");
+
   const db = getDb();
   const [bill] = await db
     .select()
@@ -3374,6 +3425,8 @@ export async function recordBillPayment(
   user: SessionUser,
   input: RecordBillPaymentInput,
 ) {
+  requirePermission(user, "bank.create_transaction");
+
   const db = getDb();
   const [bill] = await db
     .select()
@@ -3434,6 +3487,8 @@ export async function recordBillPayment(
 }
 
 export async function voidBill(user: SessionUser, billId: string, reason: string) {
+  requirePermission(user, "bill.void");
+
   const db = getDb();
   const [bill] = await db
     .select()
@@ -3482,9 +3537,11 @@ export type SetBillChargebackInput = {
  * change anything — clear it through the invoice instead.
  */
 export async function setBillChargeback(
-  _user: SessionUser,
+  user: SessionUser,
   input: SetBillChargebackInput,
 ) {
+  requirePermission(user, "bill.update");
+
   const db = getDb();
   const [bill] = await db
     .select()
@@ -3922,10 +3979,12 @@ export async function deleteRecurringPayment(_user: SessionUser, id: string) {
 }
 
 export async function setInvoiceExpectedPaymentDate(
-  _user: SessionUser,
+  user: SessionUser,
   invoiceId: string,
   expectedPaymentDate: string | null,
 ) {
+  requirePermission(user, "invoice.update");
+
   const db = getDb();
   await db
     .update(schema.invoices)

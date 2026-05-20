@@ -8,5 +8,5 @@ export async function globalSearchAction(
 ): Promise<SearchResult[]> {
   const user = await getSessionUser();
   if (!user) return [];
-  return searchGlobal(query);
+  return searchGlobal(query, user);
 }

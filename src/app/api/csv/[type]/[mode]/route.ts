@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ADAPTERS, type CsvTypeKey } from "@/lib/csv-adapters";
 import { serializeCsv } from "@/lib/csv";
+import { hasPermission } from "@/lib/permissions";
 import { getSessionUser } from "@/lib/session";
 
 export async function GET(
@@ -9,7 +10,7 @@ export async function GET(
 ) {
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  if (!user.isSuperuser) {
+  if (!hasPermission(user, "settings.write")) {
     return NextResponse.json({ error: "admin only" }, { status: 403 });
   }
 

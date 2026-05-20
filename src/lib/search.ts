@@ -10,6 +10,13 @@ import "server-only";
 import { or, sql } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
+import {
+  getAccessScope,
+  isClientIdAllowed,
+  isEntityIdAllowed,
+  isScopedRecordAllowed,
+} from "./record-access";
+import type { SessionUser } from "./types";
 
 export type SearchResultType =
   | "client"
@@ -33,12 +40,17 @@ export type SearchResult = {
 };
 
 const PER_TYPE_LIMIT = 8;
+const SEARCH_LIMIT = PER_TYPE_LIMIT * 4;
 
-export async function searchGlobal(query: string): Promise<SearchResult[]> {
+export async function searchGlobal(
+  query: string,
+  user: SessionUser,
+): Promise<SearchResult[]> {
   const q = query.trim();
   if (q.length < 1) return [];
   const db = getDb();
   const pattern = `%${q.replace(/[%_]/g, (m) => `\\${m}`)}%`;
+  const accessScope = await getAccessScope(user);
 
   const [
     customers,
@@ -66,11 +78,12 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
           sql`${schema.customers.email} ILIKE ${pattern}`,
         ),
       )
-      .limit(PER_TYPE_LIMIT),
+      .limit(SEARCH_LIMIT),
 
     db
       .select({
         id: schema.entities.id,
+        clientId: schema.entities.clientId,
         name: schema.entities.name,
         code: schema.entities.code,
         kind: schema.entities.kind,
@@ -84,11 +97,13 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
           sql`${schema.entities.ein} ILIKE ${pattern}`,
         ),
       )
-      .limit(PER_TYPE_LIMIT),
+      .limit(SEARCH_LIMIT),
 
     db
       .select({
         id: schema.contacts.id,
+        customerId: schema.contacts.customerId,
+        userId: schema.contacts.userId,
         name: schema.contacts.name,
         code: schema.contacts.code,
         email: schema.contacts.email,
@@ -102,13 +117,15 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
           sql`${schema.contacts.ocrText} ILIKE ${pattern}`,
         ),
       )
-      .limit(PER_TYPE_LIMIT),
+      .limit(SEARCH_LIMIT),
 
     db
       .select({
         id: schema.invoices.id,
         invoiceNumber: schema.invoices.invoiceNumber,
         customerId: schema.invoices.customerId,
+        clientId: schema.invoices.clientId,
+        entityId: schema.invoices.entityId,
         total: schema.invoices.total,
         status: schema.invoices.status,
         currencyCode: schema.invoices.currencyCode,
@@ -122,13 +139,17 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
           sql`${schema.invoices.ocrText} ILIKE ${pattern}`,
         ),
       )
-      .limit(PER_TYPE_LIMIT),
+      .limit(SEARCH_LIMIT),
 
     db
       .select({
         id: schema.bills.id,
         billNumber: schema.bills.billNumber,
         vendorId: schema.bills.vendorId,
+        clientId: schema.bills.clientId,
+        entityId: schema.bills.entityId,
+        chargebackClientId: schema.bills.chargebackClientId,
+        chargebackEntityId: schema.bills.chargebackEntityId,
         total: schema.bills.total,
         status: schema.bills.status,
         currencyCode: schema.bills.currencyCode,
@@ -142,11 +163,12 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
           sql`${schema.bills.ocrText} ILIKE ${pattern}`,
         ),
       )
-      .limit(PER_TYPE_LIMIT),
+      .limit(SEARCH_LIMIT),
 
     db
       .select({
         id: schema.journalEntries.id,
+        entityId: schema.journalEntries.entityId,
         entryNumber: schema.journalEntries.entryNumber,
         description: schema.journalEntries.description,
         entryDate: schema.journalEntries.entryDate,
@@ -161,11 +183,12 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
           sql`${schema.journalEntries.reference} ILIKE ${pattern}`,
         ),
       )
-      .limit(PER_TYPE_LIMIT),
+      .limit(SEARCH_LIMIT),
 
     db
       .select({
         id: schema.accounts.id,
+        entityId: schema.accounts.entityId,
         code: schema.accounts.code,
         name: schema.accounts.name,
         accountType: schema.accounts.accountType,
@@ -177,11 +200,13 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
           sql`${schema.accounts.name} ILIKE ${pattern}`,
         ),
       )
-      .limit(PER_TYPE_LIMIT),
+      .limit(SEARCH_LIMIT),
 
     db
       .select({
         id: schema.assets.id,
+        clientId: schema.assets.clientId,
+        entityId: schema.assets.entityId,
         name: schema.assets.name,
         kind: schema.assets.kind,
         externalRef: schema.assets.externalRef,
@@ -194,11 +219,13 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
           sql`${schema.assets.externalRef} ILIKE ${pattern}`,
         ),
       )
-      .limit(PER_TYPE_LIMIT),
+      .limit(SEARCH_LIMIT),
 
     db
       .select({
         id: schema.bankAccounts.id,
+        clientId: schema.bankAccounts.clientId,
+        entityId: schema.bankAccounts.entityId,
         name: schema.bankAccounts.name,
         institution: schema.bankAccounts.institution,
         lastFour: schema.bankAccounts.lastFour,
@@ -212,12 +239,14 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
           sql`${schema.bankAccounts.lastFour} ILIKE ${pattern}`,
         ),
       )
-      .limit(PER_TYPE_LIMIT),
+      .limit(SEARCH_LIMIT),
   ]);
 
   const out: SearchResult[] = [];
 
-  for (const r of customers) {
+  for (const r of customers
+    .filter((x) => isClientIdAllowed(accessScope, x.id))
+    .slice(0, PER_TYPE_LIMIT)) {
     out.push({
       type: "client",
       id: r.id,
@@ -226,7 +255,13 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
       href: `/customers/${r.id}`,
     });
   }
-  for (const r of entities) {
+  for (const r of entities
+    .filter(
+      (x) =>
+        isEntityIdAllowed(accessScope, x.id) ||
+        isClientIdAllowed(accessScope, x.clientId),
+    )
+    .slice(0, PER_TYPE_LIMIT)) {
     out.push({
       type: "entity",
       id: r.id,
@@ -237,7 +272,13 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
       href: `/entities/${r.id}`,
     });
   }
-  for (const r of contacts) {
+  for (const r of contacts
+    .filter(
+      (x) =>
+        x.userId === user.userId ||
+        isClientIdAllowed(accessScope, x.customerId),
+    )
+    .slice(0, PER_TYPE_LIMIT)) {
     out.push({
       type: "contact",
       id: r.id,
@@ -246,7 +287,9 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
       href: `/contacts/${r.id}`,
     });
   }
-  for (const r of invoices) {
+  for (const r of invoices
+    .filter((x) => isScopedRecordAllowed(accessScope, x))
+    .slice(0, PER_TYPE_LIMIT)) {
     out.push({
       type: "invoice",
       id: r.id,
@@ -260,7 +303,16 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
       href: `/invoices/${r.id}`,
     });
   }
-  for (const r of bills) {
+  for (const r of bills
+    .filter(
+      (x) =>
+        isScopedRecordAllowed(accessScope, x) ||
+        isScopedRecordAllowed(accessScope, {
+          clientId: x.chargebackClientId,
+          entityId: x.chargebackEntityId,
+        }),
+    )
+    .slice(0, PER_TYPE_LIMIT)) {
     out.push({
       type: "bill",
       id: r.id,
@@ -274,7 +326,11 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
       href: `/bills/${r.id}`,
     });
   }
-  for (const r of journalEntries) {
+  for (const r of journalEntries
+    .filter((x) =>
+      isEntityIdAllowed(accessScope, x.entityId, { allowUnscoped: true }),
+    )
+    .slice(0, PER_TYPE_LIMIT)) {
     out.push({
       type: "journal_entry",
       id: r.id,
@@ -286,7 +342,11 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
       href: `/journal/${r.entryNumber}`,
     });
   }
-  for (const r of accounts) {
+  for (const r of accounts
+    .filter((x) =>
+      isEntityIdAllowed(accessScope, x.entityId, { allowUnscoped: true }),
+    )
+    .slice(0, PER_TYPE_LIMIT)) {
     out.push({
       type: "account",
       id: r.id,
@@ -295,7 +355,9 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
       href: `/ledger?account=${encodeURIComponent(r.code)}`,
     });
   }
-  for (const r of assets) {
+  for (const r of assets
+    .filter((x) => isScopedRecordAllowed(accessScope, x))
+    .slice(0, PER_TYPE_LIMIT)) {
     out.push({
       type: "asset",
       id: r.id,
@@ -305,7 +367,9 @@ export async function searchGlobal(query: string): Promise<SearchResult[]> {
       href: `/aua/${r.id}`,
     });
   }
-  for (const r of bankAccounts) {
+  for (const r of bankAccounts
+    .filter((x) => isScopedRecordAllowed(accessScope, x))
+    .slice(0, PER_TYPE_LIMIT)) {
     out.push({
       type: "bank_account",
       id: r.id,

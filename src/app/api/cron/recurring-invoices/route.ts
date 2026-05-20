@@ -19,12 +19,17 @@ import { getUserById } from "@/lib/data";
  *   }
  *
  * Auth: Vercel cron requests carry an Authorization header of
- * `Bearer ${CRON_SECRET}`. We require it in production. GET is also
- * accepted so the route can be triggered by hand from a browser when
- * CRON_SECRET isn't set (local dev / smoke tests).
+ * `Bearer ${CRON_SECRET}`. Production requires CRON_SECRET. GET is only
+ * accepted in local development for smoke tests.
  */
 async function run(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret && process.env.NODE_ENV === "production") {
+    return NextResponse.json(
+      { error: "CRON_SECRET is not configured" },
+      { status: 503 },
+    );
+  }
   if (cronSecret) {
     const auth = request.headers.get("authorization") ?? "";
     if (auth !== `Bearer ${cronSecret}`) {
@@ -47,7 +52,7 @@ async function run(request: Request) {
         userId: "u-admin",
         email: "system@thistlewood.local",
         fullName: "Recurring Cron",
-        role: "Admin",
+        role: "admin",
         isSuperuser: true,
       };
 
@@ -66,5 +71,8 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "method not allowed" }, { status: 405 });
+  }
   return run(request);
 }

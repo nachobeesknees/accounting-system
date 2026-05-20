@@ -7,6 +7,11 @@ import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { getAttachments, getLookupValues, getUserById } from "@/lib/data";
 import { formatDate } from "@/lib/format";
+import {
+  canReadRecord,
+  canWriteAttachmentRecord,
+} from "@/lib/record-access";
+import { getSessionUser } from "@/lib/session";
 import type { AttachmentRecordType } from "@/lib/types";
 import {
   deleteAttachmentAction,
@@ -41,6 +46,9 @@ export async function Attachments({
   recordId: string;
   redirectPath: string;
 }) {
+  const user = await getSessionUser();
+  if (!(await canReadRecord(user, recordType, recordId))) return null;
+  const canWrite = user ? canWriteAttachmentRecord(user, recordType) : false;
   const [list, docTypes] = await Promise.all([
     getAttachments(recordType, recordId),
     getLookupValues("document_type"),
@@ -106,7 +114,7 @@ export async function Attachments({
               <TR key={a.id}>
                 <TD>
                   <a
-                    href={a.fileUrl}
+                    href={`/api/attachments/${a.id}/download`}
                     target="_blank"
                     rel="noreferrer"
                     style={{ color: "var(--ink)", textDecoration: "none" }}
@@ -138,7 +146,7 @@ export async function Attachments({
                 <TD>
                   <div className="flex gap-2">
                     <a
-                      href={a.fileUrl}
+                      href={`/api/attachments/${a.id}/download`}
                       download={a.fileName}
                       className="px-2 py-1 text-[12px] rounded"
                       style={{
@@ -149,17 +157,19 @@ export async function Attachments({
                     >
                       Download
                     </a>
-                    <form action={deleteAttachmentAction}>
-                      <input type="hidden" name="id" value={a.id} />
-                      <input
-                        type="hidden"
-                        name="redirectPath"
-                        value={redirectPath}
-                      />
-                      <Button variant="ghost" type="submit">
-                        Remove
-                      </Button>
-                    </form>
+                    {canWrite && (
+                      <form action={deleteAttachmentAction}>
+                        <input type="hidden" name="id" value={a.id} />
+                        <input
+                          type="hidden"
+                          name="redirectPath"
+                          value={redirectPath}
+                        />
+                        <Button variant="ghost" type="submit">
+                          Remove
+                        </Button>
+                      </form>
+                    )}
                   </div>
                 </TD>
               </TR>
@@ -168,34 +178,36 @@ export async function Attachments({
         </Table>
       )}
 
-      <form action={uploadAttachmentAction} className="mt-3.5">
-        <input type="hidden" name="recordType" value={recordType} />
-        <input type="hidden" name="recordId" value={recordId} />
-        <input type="hidden" name="redirectPath" value={redirectPath} />
-        <div className="flex flex-col gap-3">
-          <input
-            type="file"
-            name="file"
-            required
-            className="text-[13px]"
-          />
-          <Row>
-            <SmartSelectField
-              label="Document type"
-              name="documentType"
-              options={docTypes.map((d) => ({ value: d.code, label: d.label }))}
-              emptyLabel="—"
-              clearable
+      {canWrite && (
+        <form action={uploadAttachmentAction} className="mt-3.5">
+          <input type="hidden" name="recordType" value={recordType} />
+          <input type="hidden" name="recordId" value={recordId} />
+          <input type="hidden" name="redirectPath" value={redirectPath} />
+          <div className="flex flex-col gap-3">
+            <input
+              type="file"
+              name="file"
+              required
+              className="text-[13px]"
             />
-            <Field label="Notes" name="notes" />
-          </Row>
-          <div className="flex justify-end">
-            <Button variant="primary" type="submit">
-              Upload attachment
-            </Button>
+            <Row>
+              <SmartSelectField
+                label="Document type"
+                name="documentType"
+                options={docTypes.map((d) => ({ value: d.code, label: d.label }))}
+                emptyLabel="—"
+                clearable
+              />
+              <Field label="Notes" name="notes" />
+            </Row>
+            <div className="flex justify-end">
+              <Button variant="primary" type="submit">
+                Upload attachment
+              </Button>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      )}
     </Card>
   );
 }

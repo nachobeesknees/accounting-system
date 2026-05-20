@@ -9,6 +9,11 @@ import {
   getVendors,
 } from "@/lib/data";
 import { formatAmount, parseAmount } from "@/lib/money";
+import { requirePermission } from "@/lib/permissions";
+import {
+  getAccessScope,
+  isScopedRecordAllowed,
+} from "@/lib/record-access";
 import { getSessionUser } from "@/lib/session";
 
 type Bucket = "current" | "d30" | "d60" | "d90" | "d90p";
@@ -34,6 +39,12 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!user) {
     return new NextResponse("Unauthorized", { status: 401 });
   }
+  try {
+    requirePermission(user, "report.export_csv");
+  } catch {
+    return new NextResponse("Forbidden", { status: 403 });
+  }
+  const accessScope = await getAccessScope(user);
 
   const url = new URL(req.url);
   const idsRaw = url.searchParams.get("ids") ?? "";
@@ -54,7 +65,15 @@ export async function GET(req: NextRequest): Promise<Response> {
   const vendorsById = new Map(vendors.map((v) => [v.id, v] as const));
   const customersById = new Map(customers.map((c) => [c.id, c] as const));
   const entitiesById = new Map(entities.map((e) => [e.id, e] as const));
-  const activeBanks = bankAccounts.filter((b) => b.isActive);
+  const visibleBills = bills.filter((b) =>
+    isScopedRecordAllowed(accessScope, {
+      clientId: b.clientId ?? b.chargebackClientId ?? null,
+      entityId: b.entityId ?? b.chargebackEntityId ?? null,
+    }),
+  );
+  const activeBanks = bankAccounts.filter(
+    (b) => b.isActive && isScopedRecordAllowed(accessScope, b),
+  );
   const bankByEntity = new Map(
     activeBanks
       .filter((b) => b.entityId)
@@ -83,7 +102,7 @@ export async function GET(req: NextRequest): Promise<Response> {
   const today = new Date();
 
   const rows: Array<Record<string, string>> = [];
-  for (const bill of bills) {
+  for (const bill of visibleBills) {
     if (idSet.size > 0 && !idSet.has(bill.id)) continue;
     const balance = parseAmount(bill.balanceDue);
     if (balance <= 0) continue;

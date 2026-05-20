@@ -12,6 +12,7 @@ import {
 } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
+import { PermissionError, requirePermission, type Action } from "@/lib/permissions";
 
 type ChargebackType = "cost" | "markup" | "fixed" | "included";
 function parseChargebackType(raw: string): ChargebackType | null {
@@ -38,6 +39,27 @@ function revalidateCommon(billId: string) {
   revalidatePath("/journal");
 }
 
+function guardPermission(
+  user: Awaited<ReturnType<typeof getSessionUser>>,
+  action: Action,
+  billId: string | null,
+): asserts user {
+  if (!user) redirect("/login");
+  try {
+    requirePermission(user, action);
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      const target = billId ? `/bills/${billId}` : "/bills";
+      redirect(
+        `${target}?error=${encodeURIComponent(
+          "You don't have permission for that action.",
+        )}`,
+      );
+    }
+    throw err;
+  }
+}
+
 export async function approveBillAction(formData: FormData) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
@@ -47,6 +69,7 @@ export async function approveBillAction(formData: FormData) {
     formData.get("periodOverrideReason") ?? "",
   ).trim();
   if (!billId) redirect("/bills");
+  guardPermission(user, "bill.approve", billId);
 
   try {
     const result = await approveBill(user, billId, {
@@ -69,6 +92,7 @@ export async function recordBillPaymentAction(formData: FormData) {
 
   const billId = String(formData.get("billId") ?? "");
   if (!billId) redirect("/bills");
+  guardPermission(user, "bank.create_transaction", billId);
 
   const amountRaw = String(formData.get("amount") ?? "");
   const paymentDate = String(formData.get("paymentDate") ?? "");
@@ -111,6 +135,7 @@ export async function setBillChargebackAction(formData: FormData) {
 
   const billId = String(formData.get("billId") ?? "");
   if (!billId) redirect("/bills");
+  guardPermission(user, "bill.update", billId);
 
   const intent = String(formData.get("intent") ?? "save");
 
@@ -193,6 +218,7 @@ export async function voidBillAction(formData: FormData) {
 
   const billId = String(formData.get("billId") ?? "");
   if (!billId) redirect("/bills");
+  guardPermission(user, "bill.void", billId);
 
   const reason = String(formData.get("reason") ?? "").trim();
 

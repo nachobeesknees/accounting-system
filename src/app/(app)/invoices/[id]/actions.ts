@@ -16,6 +16,7 @@ import {
 } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
+import { PermissionError, requirePermission, type Action } from "@/lib/permissions";
 
 function isRedirectError(err: unknown): boolean {
   return (
@@ -34,6 +35,27 @@ function revalidateAfterMutation(invoiceId: string): void {
   revalidatePath("/journal");
 }
 
+function guardPermission(
+  user: Awaited<ReturnType<typeof getSessionUser>>,
+  action: Action,
+  invoiceId: string | null,
+): asserts user {
+  if (!user) redirect("/login");
+  try {
+    requirePermission(user, action);
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      const target = invoiceId ? `/invoices/${invoiceId}` : "/invoices";
+      redirect(
+        `${target}?error=${encodeURIComponent(
+          "You don't have permission for that action.",
+        )}`,
+      );
+    }
+    throw err;
+  }
+}
+
 export async function postInvoiceAction(formData: FormData): Promise<void> {
   const user = await getSessionUser();
   if (!user) redirect("/login");
@@ -45,6 +67,7 @@ export async function postInvoiceAction(formData: FormData): Promise<void> {
   if (!invoiceId) {
     redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
   }
+  guardPermission(user, "invoice.update", invoiceId);
 
   try {
     await postInvoice(user, invoiceId, {
@@ -70,6 +93,7 @@ export async function recordPaymentAction(formData: FormData): Promise<void> {
   if (!invoiceId) {
     redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
   }
+  guardPermission(user, "bank.create_transaction", invoiceId);
 
   const amountRaw = String(formData.get("amount") ?? "");
   const paymentDate = String(formData.get("paymentDate") ?? "");
@@ -120,6 +144,7 @@ export async function voidInvoiceAction(formData: FormData): Promise<void> {
   if (!invoiceId) {
     redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
   }
+  guardPermission(user, "invoice.void", invoiceId);
 
   try {
     await voidInvoice(user, invoiceId, reason);
@@ -143,6 +168,7 @@ export async function submitInvoiceForApprovalAction(
   if (!invoiceId) {
     redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
   }
+  guardPermission(user, "invoice.update", invoiceId);
 
   try {
     await submitInvoiceForApproval(user, invoiceId);
@@ -167,6 +193,7 @@ export async function cfoApproveInvoiceAction(
   if (!invoiceId) {
     redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
   }
+  guardPermission(user, "invoice.approve", invoiceId);
 
   try {
     await cfoApproveInvoice(user, invoiceId);
@@ -215,6 +242,7 @@ export async function setExpectedPaymentDateAction(
   if (!invoiceId) {
     redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
   }
+  guardPermission(user, "invoice.update", invoiceId);
 
   const raw = String(formData.get("expectedPaymentDate") ?? "").trim();
   const expectedPaymentDate = raw === "" ? null : raw;

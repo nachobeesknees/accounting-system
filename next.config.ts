@@ -37,9 +37,7 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
-  experimental: {
-    typedRoutes: false,
-  },
+  typedRoutes: false,
   eslint: {
     ignoreDuringBuilds: true,
   },

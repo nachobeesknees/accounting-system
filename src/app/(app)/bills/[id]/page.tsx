@@ -25,6 +25,8 @@ import {
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
+import { hasPermission } from "@/lib/permissions";
+import { getSessionUser } from "@/lib/session";
 import type { Bill } from "@/lib/types";
 
 import {
@@ -69,6 +71,7 @@ export default async function Page({
 }) {
   const { id } = await params;
   const { paid, approved, voided, error, cb } = await searchParams;
+  const sessionUser = await getSessionUser();
   const bill = await getBillById(id);
   if (!bill) notFound();
 
@@ -158,26 +161,32 @@ export default async function Page({
   const isOverdue = status === "overdue";
   const today = new Date().toISOString().slice(0, 10);
 
-  const canApprove = status === "draft";
+  const canDuplicate = hasPermission(sessionUser, "bill.create");
+  const canApprove =
+    status === "draft" && hasPermission(sessionUser, "bill.approve");
   const canPay =
-    status === "approved" || status === "partial" || status === "overdue";
+    (status === "approved" || status === "partial" || status === "overdue") &&
+    hasPermission(sessionUser, "bank.create_transaction");
   const canVoid =
-    status === "draft" ||
-    status === "approved" ||
-    status === "partial" ||
-    status === "overdue";
+    (status === "draft" ||
+      status === "approved" ||
+      status === "partial" ||
+      status === "overdue") &&
+    hasPermission(sessionUser, "bill.void");
 
   const actionButtons = (
     <>
       <ButtonLink href="/bills" variant="secondary">
         ← All bills
       </ButtonLink>
-      <form action={duplicateBillAction} style={{ display: "inline-flex" }}>
-        <input type="hidden" name="billId" value={bill.id} />
-        <Button variant="secondary" type="submit">
-          Duplicate
-        </Button>
-      </form>
+      {canDuplicate && (
+        <form action={duplicateBillAction} style={{ display: "inline-flex" }}>
+          <input type="hidden" name="billId" value={bill.id} />
+          <Button variant="secondary" type="submit">
+            Duplicate
+          </Button>
+        </form>
+      )}
       {canApprove && (
         <form action={approveBillAction} style={{ display: "inline-flex" }}>
           <input type="hidden" name="billId" value={bill.id} />

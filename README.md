@@ -2,9 +2,9 @@
 
 A double-entry accounting demo for a small professional services firm.
 
-**Stack:** Next.js 15 (App Router, server components, server actions) · Drizzle ORM · Neon Postgres (optional) · Tailwind CSS v4 · cookie-based sessions · Vercel.
+**Stack:** Next.js 15 (App Router, server components, server actions) · Drizzle ORM · Neon Postgres · Tailwind CSS v4 · Auth.js credentials sessions · Vercel.
 
-The app ships with seed data so it works end-to-end without a database. When `DATABASE_URL` is set (Neon recommended), the same code paths swap over to real persistence.
+The app requires a Postgres database. Neon is recommended for hosted deployments.
 
 ## Local development
 
@@ -13,9 +13,9 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:3000>. Click any demo account on the sign-in page (`demo123` is the password for all of them).
+Set `DATABASE_URL` and `AUTH_SECRET` in `.env.local`, run the database setup below, then open <http://localhost:3000>. Click any demo account on the sign-in page.
 
-## Database (optional)
+## Database
 
 Provision a Neon Postgres instance, set `DATABASE_URL` in `.env.local`, then:
 
@@ -30,5 +30,9 @@ Push to the connected GitHub repo. Vercel auto-detects Next.js. Add the followin
 
 | Key | Required | Notes |
 |---|---|---|
-| `DATABASE_URL` | optional | Neon connection string for real persistence |
-| `SESSION_SECRET` | recommended | 32+ random bytes for HMAC-signing the session cookie |
+| `DATABASE_URL` | yes | Neon connection string |
+| `AUTH_SECRET` | yes | 32+ random bytes for Auth.js JWT cookies |
+| `CRON_SECRET` | yes | Bearer token required by `/api/cron/recurring-invoices` in production |
+| `BLOB_READ_WRITE_TOKEN` | if using attachments | Vercel Blob token for private attachment storage |
+| `ANTHROPIC_API_KEY` | if using OCR | Claude OCR extraction |
+| `NEXT_PUBLIC_SENTRY_DSN` | no | Client/server error reporting |
