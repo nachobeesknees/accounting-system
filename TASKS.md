@@ -1,4 +1,4 @@
-# Thistlewood ERP — Task Backlog
+# Wyzird ERP — Task Backlog
 
 Agents: read this file before starting work. Check off items as you complete them. Add new items at the bottom of the relevant section with `- [ ]`.
 

@@ -6,7 +6,7 @@ After `vercel --prod` (or any git push that triggers a Vercel build), do a quick
 
 The test:
 
-1. Navigate to https://accounting-system-sepia.vercel.app/login
+1. Navigate to https://wyzird.com/login
 2. Click one of the demo account buttons (typically "Demo Admin") and confirm you land on the dashboard with KPIs populated
 3. Visit **5 random feature pages** out of the sidebar (e.g. Journal Entries detail, Trial Balance, Entities, Assets/AUA, Time Entries, Reconciliation, Bank Accounts, Fees, etc.). Screenshot each.
 4. Confirm each page renders without errors and shows real data from Postgres

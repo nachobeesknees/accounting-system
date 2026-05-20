@@ -36,7 +36,7 @@ export async function GET(
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="thistlewood-${type}-${mode}-${today}.csv"`,
+      "Content-Disposition": `attachment; filename="wyzird-${type}-${mode}-${today}.csv"`,
       "Cache-Control": "no-store",
     },
   });

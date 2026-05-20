@@ -16,8 +16,8 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Thistlewood & Associates",
-  description: "Double-entry accounting for a small professional services firm.",
+  title: "Wyzird",
+  description: "Double-entry accounting, approvals, and reporting.",
   robots: {
     index: false,
     follow: false,

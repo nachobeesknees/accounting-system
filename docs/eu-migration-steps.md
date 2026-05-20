@@ -1,6 +1,6 @@
 # EU migration cutover — manual steps
 
-This runbook walks through migrating the Thistlewood ERP database from
+This runbook walks through migrating the Wyzird ERP database from
 Neon US (`iad1`) to Neon EU (`eu-central-1` / Frankfurt) for GDPR
 compliance. The repo changes (scripts, middleware header, docs) are
 already merged; this document is the **operator runbook** for the
@@ -98,7 +98,7 @@ EU connection string.
 
 Follow the QC checklist in [CLAUDE.md](../CLAUDE.md):
 
-1. https://accounting-system-sepia.vercel.app/login
+1. https://wyzird.com/login
 2. Log in as Demo Admin, confirm dashboard renders.
 3. Visit five random feature pages (Journal Entries, Trial Balance,
    Entities, Reconciliation, Bank Accounts, etc.) and confirm they

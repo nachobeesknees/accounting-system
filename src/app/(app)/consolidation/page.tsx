@@ -51,7 +51,7 @@ export default async function Page() {
       label: entity ? `${entity.code} — ${entity.name}` : "Firm-level books",
       clientName: entity
         ? (customerById.get(entity.clientId)?.name ?? "—")
-        : "Thistlewood",
+        : "Wyzird",
       ccy,
       revenueNative: r.revenue,
       expensesNative: r.expenses,

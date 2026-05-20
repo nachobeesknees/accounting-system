@@ -46,7 +46,7 @@ export default async function Page() {
       <div className="px-6 py-3.5 flex flex-col gap-3.5">
         <Section title="Company">
           <KVGrid>
-            <KV k="Legal name" v="Thistlewood & Associates, LLC" />
+            <KV k="Legal name" v="Wyzird, LLC" />
             <KV
               k="Base currency"
               v={

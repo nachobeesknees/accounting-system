@@ -156,16 +156,16 @@ export default async function LoginPage({
               justifyContent: "center",
             }}
           >
-            T
+            W
           </div>
           <div>
             <div style={{ fontSize: 14, fontWeight: 600 }}>
-              Thistlewood &amp; Associates
+              Wyzird
             </div>
             <div
               style={{ fontSize: 11.5, color: "var(--ink-4)", marginTop: 2 }}
             >
-              Accounting · General ledger · Reporting
+              ERP · Accounting · Reporting
             </div>
           </div>
         </div>
@@ -178,7 +178,7 @@ export default async function LoginPage({
             margin: "24px 0 4px",
           }}
         >
-          Sign in to your demo workspace
+          Sign in to Wyzird
         </h1>
         <p
           style={{

@@ -237,7 +237,7 @@ export default async function Page({
                   label="Name"
                   name="name"
                   required
-                  placeholder="Thistlewood — City"
+                  placeholder="Wyzird — City"
                 />
               </Row>
               <Row>

@@ -1,4 +1,4 @@
-# Thistlewood & Associates — Accounting
+# Wyzird — ERP Accounting
 
 A double-entry accounting demo for a small professional services firm.
 
@@ -21,7 +21,7 @@ Provision a Neon Postgres instance, set `DATABASE_URL` in `.env.local`, then:
 
 ```bash
 npm run db:push        # apply schema
-npm run db:seed        # seed Thistlewood demo data
+npm run db:seed        # seed demo data
 ```
 
 ## Deployment (Vercel)

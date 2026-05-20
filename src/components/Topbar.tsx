@@ -46,11 +46,11 @@ export function Topbar({
           className="inline-flex items-center justify-center rounded-md w-[22px] h-[22px] font-bold text-[12px] shrink-0"
           style={{ background: "var(--accent)", color: "var(--accent-fg)" }}
         >
-          T
+          W
         </Link>
         <div className="topbar-brand flex items-center gap-1.5 text-[12.5px] min-w-0" style={{ color: "var(--ink-3)" }}>
           <Link href="/" style={{ color: "var(--ink-3)", textDecoration: "none" }}>
-            Thistlewood &amp; Associates
+            Wyzird
           </Link>
           {breadcrumb && (
             <>
