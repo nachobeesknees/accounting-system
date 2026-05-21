@@ -11,14 +11,13 @@
 
 import "server-only";
 
+import { randomInt } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import type { SessionUser } from "./types";
-import { requirePermission, type Role } from "./permissions";
+import { isRole, requirePermission, type Role } from "./permissions";
 import { logAuditEvent } from "./audit";
-
-const TEMP_PASSWORD = "ChangeMe123!";
 
 function uid(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random()
@@ -37,6 +36,8 @@ export type AppUserRow = {
   createdAt: string;
   entityAccessCount: number;
 };
+
+export type AppUserCreateResult = AppUserRow & { tempPassword?: string };
 
 export async function listUsers(): Promise<AppUserRow[]> {
   const db = getDb();
@@ -76,19 +77,60 @@ export type CreateUserInput = {
   email: string;
   fullName: string;
   role: Role;
-  /** Optional — defaults to TEMP_PASSWORD when omitted (invite flow). */
+  /** Optional — generated when omitted by the invite flow. */
   password?: string;
 };
+
+function actorCanManageSuperAdmin(actor: SessionUser): boolean {
+  return actor.isSuperuser || actor.role === "super_admin";
+}
+
+function assertValidRole(role: string): asserts role is Role {
+  if (!isRole(role)) throw new Error("Invalid role.");
+}
+
+function assertCanAssignRole(actor: SessionUser, role: Role): void {
+  if (role === "super_admin" && !actorCanManageSuperAdmin(actor)) {
+    throw new Error("Only a super admin can assign the super admin role.");
+  }
+}
+
+function assertCanManageTargetUser(
+  actor: SessionUser,
+  target: { role: string; isSuperuser: boolean },
+): void {
+  if (
+    (target.role === "super_admin" || target.isSuperuser) &&
+    !actorCanManageSuperAdmin(actor)
+  ) {
+    throw new Error("Only a super admin can manage a super admin account.");
+  }
+}
+
+function generateTempPassword(): string {
+  const alphabet =
+    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
+  let out = "";
+  for (let i = 0; i < 18; i++) {
+    out += alphabet[randomInt(0, alphabet.length)];
+  }
+  return out;
+}
 
 export async function createUser(
   actor: SessionUser,
   input: CreateUserInput,
-): Promise<AppUserRow> {
+): Promise<AppUserCreateResult> {
   requirePermission(actor, "user.create");
+  assertValidRole(input.role);
+  assertCanAssignRole(actor, input.role);
   const email = input.email.trim().toLowerCase();
   if (!email) throw new Error("Email is required.");
   if (!input.fullName.trim()) throw new Error("Full name is required.");
-  const password = input.password?.trim() ? input.password : TEMP_PASSWORD;
+  const generatedPassword = input.password?.trim()
+    ? null
+    : generateTempPassword();
+  const password = generatedPassword ?? input.password?.trim() ?? "";
   if (password.length < 8) {
     throw new Error("Password must be at least 8 characters.");
   }
@@ -120,7 +162,7 @@ export async function createUser(
   });
   const row = await getUserById(id);
   if (!row) throw new Error("Created user vanished after insert.");
-  return row;
+  return generatedPassword ? { ...row, tempPassword: generatedPassword } : row;
 }
 
 export async function updateUserRole(
@@ -129,6 +171,8 @@ export async function updateUserRole(
   role: Role,
 ): Promise<void> {
   requirePermission(actor, "user.update");
+  assertValidRole(role);
+  assertCanAssignRole(actor, role);
   const db = getDb();
   const [before] = await db
     .select()
@@ -136,6 +180,7 @@ export async function updateUserRole(
     .where(eq(schema.users.id, userId))
     .limit(1);
   if (!before) throw new Error("User not found.");
+  assertCanManageTargetUser(actor, before);
   if (before.role === role) return;
   await db
     .update(schema.users)
@@ -166,6 +211,7 @@ export async function setUserActive(
     .where(eq(schema.users.id, userId))
     .limit(1);
   if (!before) throw new Error("User not found.");
+  assertCanManageTargetUser(actor, before);
   if (before.isActive === isActive) return;
   await db
     .update(schema.users)
@@ -183,16 +229,6 @@ export async function setUserActive(
   });
 }
 
-function generateTempPassword(): string {
-  const alphabet =
-    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  let out = "";
-  for (let i = 0; i < 14; i++) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return out;
-}
-
 export async function resetUserPassword(
   actor: SessionUser,
   userId: string,
@@ -205,6 +241,7 @@ export async function resetUserPassword(
     .where(eq(schema.users.id, userId))
     .limit(1);
   if (!before) throw new Error("User not found.");
+  assertCanManageTargetUser(actor, before);
   const tempPassword = generateTempPassword();
   const hash = await bcrypt.hash(tempPassword, 10);
   await db
@@ -230,6 +267,13 @@ export async function setUserEntityAccess(
 ): Promise<void> {
   requirePermission(actor, "user.assign_access");
   const db = getDb();
+  const [target] = await db
+    .select()
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .limit(1);
+  if (!target) throw new Error("User not found.");
+  assertCanManageTargetUser(actor, target);
   await db.transaction(async (tx) => {
     await tx
       .delete(schema.userEntityAccess)

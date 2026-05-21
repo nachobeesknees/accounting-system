@@ -1,14 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { serializeCsv } from "@/lib/csv";
+import { hasPermission } from "@/lib/permissions";
 import { getSessionUser } from "@/lib/session";
 import { listAuditLog, logAuditEvent } from "@/lib/audit";
 
 export async function GET(req: NextRequest): Promise<Response> {
   const user = await getSessionUser();
   if (!user) return new NextResponse("Unauthorized", { status: 401 });
-  // Audit-log access is super_admin only (same gate as /settings/audit-log).
-  if (user.role !== "super_admin" && !user.isSuperuser) {
+  if (!hasPermission(user, "audit.export_csv")) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 

@@ -4,6 +4,12 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 
+import { getSessionUser } from "@/lib/session";
+import {
+  PermissionError,
+  requirePermission,
+  type Action,
+} from "@/lib/permissions";
 import {
   buildOcrPrompt,
   cleanExtraction,
@@ -22,6 +28,19 @@ function getClient(): Anthropic {
     throw new Error("ANTHROPIC_API_KEY is not set.");
   }
   return new Anthropic({ apiKey: key });
+}
+
+function permissionForFormType(formType: OcrFormType): Action {
+  switch (formType) {
+    case "invoice":
+      return "invoice.create";
+    case "bill":
+      return "bill.create";
+    case "journal_entry":
+      return "journal_entry.create";
+    case "contact":
+      return "settings.write";
+  }
 }
 
 function isImageMime(mime: string): mime is "image/jpeg" | "image/png" | "image/gif" | "image/webp" {
@@ -119,6 +138,19 @@ export async function extractDocumentAction(formData: FormData): Promise<OcrResu
   }
   if (!(file instanceof File)) {
     return { ok: false, error: "Missing file." };
+  }
+  const user = await getSessionUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+  try {
+    requirePermission(user, permissionForFormType(formType));
+  } catch (err) {
+    if (err instanceof PermissionError) {
+      return {
+        ok: false,
+        error: "You don't have permission to extract this document type.",
+      };
+    }
+    throw err;
   }
   return extractDocument(formType, file);
 }

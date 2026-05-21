@@ -13,6 +13,10 @@ import bcrypt from "bcryptjs";
 import { and, eq, gte, count } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { authConfig } from "./auth.config";
+import {
+  canUseLegacyDemoPassword,
+  isKnownDemoCredential,
+} from "@/lib/auth-safety";
 
 const LOGIN_FAILED_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_FAILED_LIMIT = 5;
@@ -54,6 +58,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const password =
           typeof credentials?.password === "string" ? credentials.password : "";
         if (!email || !password) return null;
+        if (isKnownDemoCredential(email, password) && !canUseLegacyDemoPassword()) {
+          return null;
+        }
 
         const db = getDb();
 
@@ -91,6 +98,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // users can still log in until reseeded.
         let ok = false;
         if (stored.startsWith("$demo$")) {
+          if (!canUseLegacyDemoPassword()) return null;
           ok = password === stored.slice("$demo$".length);
         } else if (stored.startsWith("$2")) {
           ok = await bcrypt.compare(password, stored);

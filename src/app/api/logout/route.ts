@@ -23,4 +23,9 @@ async function handle(request: Request) {
 }
 
 export const POST = handle;
-export const GET = handle;
+export function GET() {
+  return NextResponse.json(
+    { error: "method not allowed" },
+    { status: 405, headers: { Allow: "POST" } },
+  );
+}

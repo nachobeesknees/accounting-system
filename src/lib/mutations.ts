@@ -854,9 +854,10 @@ export async function deleteAttachment(user: SessionUser, id: string) {
 // --------- Lookups + custom fields ---------
 
 export async function createLookupTable(
-  _user: SessionUser,
+  user: SessionUser,
   input: { key: string; label: string; description?: string | null },
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [created] = await db
     .insert(schema.lookupTables)
@@ -870,7 +871,8 @@ export async function createLookupTable(
   return created;
 }
 
-export async function deleteLookupTable(_user: SessionUser, key: string) {
+export async function deleteLookupTable(user: SessionUser, key: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.transaction(async (tx) => {
     await tx.delete(schema.lookupValues).where(eq(schema.lookupValues.tableKey, key));
@@ -879,9 +881,10 @@ export async function deleteLookupTable(_user: SessionUser, key: string) {
 }
 
 export async function createLookupValue(
-  _user: SessionUser,
+  user: SessionUser,
   input: { tableKey: string; code: string; label: string; sortOrder?: number },
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("lv");
   const [created] = await db
@@ -900,10 +903,11 @@ export async function createLookupValue(
 }
 
 export async function updateLookupValue(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: { label?: string; sortOrder?: number; isActive?: boolean },
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db
     .update(schema.lookupValues)
@@ -916,13 +920,14 @@ export async function updateLookupValue(
     .where(eq(schema.lookupValues.id, id));
 }
 
-export async function deleteLookupValue(_user: SessionUser, id: string) {
+export async function deleteLookupValue(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.lookupValues).where(eq(schema.lookupValues.id, id));
 }
 
 export async function createCustomFieldDefinition(
-  _user: SessionUser,
+  user: SessionUser,
   input: {
     recordType: "entity" | "contact" | "asset" | "bank_account";
     fieldKey: string;
@@ -934,6 +939,7 @@ export async function createCustomFieldDefinition(
     helpText?: string | null;
   },
 ) {
+  requirePermission(user, "settings.write");
   if (input.fieldType === "select" && (!input.options || input.options.length === 0)) {
     throw new Error("Select-type custom fields require at least one option.");
   }
@@ -958,7 +964,7 @@ export async function createCustomFieldDefinition(
 }
 
 export async function updateCustomFieldDefinition(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: {
     label?: string;
@@ -969,6 +975,7 @@ export async function updateCustomFieldDefinition(
     options?: string[] | null;
   },
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db
     .update(schema.customFieldDefinitions)
@@ -984,7 +991,8 @@ export async function updateCustomFieldDefinition(
     .where(eq(schema.customFieldDefinitions.id, id));
 }
 
-export async function deleteCustomFieldDefinition(_user: SessionUser, id: string) {
+export async function deleteCustomFieldDefinition(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.transaction(async (tx) => {
     await tx
@@ -1001,7 +1009,7 @@ export async function deleteCustomFieldDefinition(_user: SessionUser, id: string
  * type-appropriate column on `custom_field_values` and nulls the rest.
  */
 export async function setCustomFieldValue(
-  _user: SessionUser,
+  user: SessionUser,
   input: {
     definitionId: string;
     recordId: string;
@@ -1011,6 +1019,7 @@ export async function setCustomFieldValue(
     valueBoolean?: boolean | null;
   },
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [existing] = await db
     .select({ id: schema.customFieldValues.id })
@@ -1060,7 +1069,8 @@ export type CreateCurrencyInput = {
   isBase?: boolean;
 };
 
-export async function createCurrency(_user: SessionUser, input: CreateCurrencyInput) {
+export async function createCurrency(user: SessionUser, input: CreateCurrencyInput) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   return await db.transaction(async (tx) => {
     if (input.isBase) {
@@ -1081,7 +1091,8 @@ export async function createCurrency(_user: SessionUser, input: CreateCurrencyIn
   });
 }
 
-export async function setBaseCurrency(_user: SessionUser, code: string) {
+export async function setBaseCurrency(user: SessionUser, code: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.transaction(async (tx) => {
     await tx.update(schema.currencies).set({ isBase: false });
@@ -1095,10 +1106,11 @@ export async function setBaseCurrency(_user: SessionUser, code: string) {
 }
 
 export async function setCurrencyActive(
-  _user: SessionUser,
+  user: SessionUser,
   code: string,
   isActive: boolean,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db
     .update(schema.currencies)
@@ -1106,7 +1118,8 @@ export async function setCurrencyActive(
     .where(eq(schema.currencies.code, code.toUpperCase()));
 }
 
-export async function deleteCurrency(_user: SessionUser, code: string) {
+export async function deleteCurrency(user: SessionUser, code: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.currencies).where(eq(schema.currencies.code, code.toUpperCase()));
 }
@@ -1119,7 +1132,8 @@ export type CreateFxRateInput = {
   notes?: string | null;
 };
 
-export async function createFxRate(_user: SessionUser, input: CreateFxRateInput) {
+export async function createFxRate(user: SessionUser, input: CreateFxRateInput) {
+  requirePermission(user, "settings.write");
   if (!Number.isFinite(input.ratePerBase) || input.ratePerBase <= 0) {
     throw new Error("Rate must be > 0.");
   }
@@ -1139,7 +1153,8 @@ export async function createFxRate(_user: SessionUser, input: CreateFxRateInput)
   return created;
 }
 
-export async function deleteFxRate(_user: SessionUser, id: string) {
+export async function deleteFxRate(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.fxRates).where(eq(schema.fxRates.id, id));
 }
@@ -1163,7 +1178,8 @@ export type CreateEntityInput = {
   ownershipPercent?: number | null;
 };
 
-export async function createEntity(_user: SessionUser, input: CreateEntityInput) {
+export async function createEntity(user: SessionUser, input: CreateEntityInput) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [existing] = await db
     .select({ id: schema.entities.id })
@@ -1204,10 +1220,11 @@ export type UpdateEntityInput = Partial<Omit<CreateEntityInput, "code">> & {
 };
 
 export async function updateEntity(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateEntityInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   // Code change must remain unique
   if (input.code) {
@@ -1249,7 +1266,8 @@ export async function updateEntity(
   return updated;
 }
 
-export async function deleteEntity(_user: SessionUser, id: string) {
+export async function deleteEntity(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.entities).where(eq(schema.entities.id, id));
 }
@@ -1277,7 +1295,8 @@ export type CreateAssetInput = {
   notes?: string | null;
 };
 
-export async function createAsset(_user: SessionUser, input: CreateAssetInput) {
+export async function createAsset(user: SessionUser, input: CreateAssetInput) {
+  requirePermission(user, "settings.write");
   // Enforce ownership-chain invariant: must link to entity OR client.
   if (!input.entityId && !input.clientId) {
     throw new Error("Asset must belong to an entity or directly to a client.");
@@ -1305,10 +1324,11 @@ export async function createAsset(_user: SessionUser, input: CreateAssetInput) {
 export type UpdateAssetInput = Partial<CreateAssetInput>;
 
 export async function updateAsset(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateAssetInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [updated] = await db
     .update(schema.assets)
@@ -1330,7 +1350,8 @@ export async function updateAsset(
   return updated;
 }
 
-export async function deleteAsset(_user: SessionUser, id: string) {
+export async function deleteAsset(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.transaction(async (tx) => {
     await tx
@@ -1353,6 +1374,7 @@ export async function createAssetSnapshot(
   user: SessionUser,
   input: CreateAssetSnapshotInput,
 ) {
+  requirePermission(user, "settings.write");
   if (input.value < 0) throw new Error("Snapshot value must be non-negative.");
   const db = getDb();
   const id = uid("av");
@@ -1392,9 +1414,10 @@ export type CreateFeeScheduleInput = {
 };
 
 export async function createFeeSchedule(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreateFeeScheduleInput,
 ) {
+  requirePermission(user, "settings.write");
   if (input.annualFee < 0) throw new Error("Annual fee must be ≥ 0.");
   if (input.includedHours < 0) throw new Error("Included hours must be ≥ 0.");
   const db = getDb();
@@ -1420,10 +1443,11 @@ export type UpdateFeeScheduleInput = Partial<CreateFeeScheduleInput> & {
 };
 
 export async function updateFeeSchedule(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateFeeScheduleInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [updated] = await db
     .update(schema.feeSchedules)
@@ -1449,7 +1473,8 @@ export async function updateFeeSchedule(
   return updated;
 }
 
-export async function deleteFeeSchedule(_user: SessionUser, id: string) {
+export async function deleteFeeSchedule(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.feeSchedules).where(eq(schema.feeSchedules.id, id));
 }
@@ -1466,9 +1491,10 @@ export type CreateEntityFeeInput = {
 };
 
 export async function createEntityFee(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreateEntityFeeInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("ef");
   const [created] = await db
@@ -1491,10 +1517,11 @@ export async function createEntityFee(
 export type UpdateEntityFeeInput = Partial<CreateEntityFeeInput>;
 
 export async function updateEntityFee(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateEntityFeeInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [updated] = await db
     .update(schema.entityFees)
@@ -1519,7 +1546,8 @@ export async function updateEntityFee(
   return updated;
 }
 
-export async function deleteEntityFee(_user: SessionUser, id: string) {
+export async function deleteEntityFee(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.entityFees).where(eq(schema.entityFees.id, id));
 }
@@ -1537,9 +1565,10 @@ export type CreateEmployeeRateInput = {
 };
 
 export async function createEmployeeRate(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreateEmployeeRateInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("er");
   const [created] = await db
@@ -1558,7 +1587,8 @@ export async function createEmployeeRate(
   return created;
 }
 
-export async function deleteEmployeeRate(_user: SessionUser, id: string) {
+export async function deleteEmployeeRate(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.employeeRates).where(eq(schema.employeeRates.id, id));
 }
@@ -1579,9 +1609,12 @@ export type CreateTimeEntryInput = {
 };
 
 export async function createTimeEntry(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreateTimeEntryInput,
 ) {
+  if (input.userId !== user.userId) {
+    requirePermission(user, "settings.write");
+  }
   if (input.durationHours <= 0) throw new Error("Duration must be > 0.");
   if (!input.description.trim()) throw new Error("Description is required.");
   const db = getDb();
@@ -1608,11 +1641,23 @@ export async function createTimeEntry(
 export type UpdateTimeEntryInput = Partial<CreateTimeEntryInput>;
 
 export async function updateTimeEntry(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateTimeEntryInput,
 ) {
   const db = getDb();
+  const [existing] = await db
+    .select({ userId: schema.timeEntries.userId })
+    .from(schema.timeEntries)
+    .where(eq(schema.timeEntries.id, id))
+    .limit(1);
+  if (!existing) throw new Error("Time entry not found.");
+  if (
+    existing.userId !== user.userId ||
+    (input.userId !== undefined && input.userId !== user.userId)
+  ) {
+    requirePermission(user, "settings.write");
+  }
   const [updated] = await db
     .update(schema.timeEntries)
     .set({
@@ -1639,8 +1684,17 @@ export async function updateTimeEntry(
   return updated;
 }
 
-export async function deleteTimeEntry(_user: SessionUser, id: string) {
+export async function deleteTimeEntry(user: SessionUser, id: string) {
   const db = getDb();
+  const [existing] = await db
+    .select({ userId: schema.timeEntries.userId })
+    .from(schema.timeEntries)
+    .where(eq(schema.timeEntries.id, id))
+    .limit(1);
+  if (!existing) return;
+  if (existing.userId !== user.userId) {
+    requirePermission(user, "settings.write");
+  }
   await db.delete(schema.timeEntries).where(eq(schema.timeEntries.id, id));
 }
 
@@ -1666,6 +1720,7 @@ export type CreateContactInput = {
 };
 
 export async function createContact(user: SessionUser, input: CreateContactInput) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [existing] = await db
     .select({ id: schema.contacts.id })
@@ -1709,10 +1764,11 @@ export async function createContact(user: SessionUser, input: CreateContactInput
 export type UpdateContactInput = Partial<CreateContactInput> & { isActive?: boolean };
 
 export async function updateContact(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateContactInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   if (input.code) {
     const [collision] = await db
@@ -1752,7 +1808,8 @@ export async function updateContact(
   return updated;
 }
 
-export async function deleteContact(_user: SessionUser, id: string) {
+export async function deleteContact(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.transaction(async (tx) => {
     await tx.delete(schema.contactLinks).where(eq(schema.contactLinks.contactId, id));
@@ -1769,9 +1826,10 @@ export type CreateContactLinkInput = {
 };
 
 export async function createContactLink(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreateContactLinkInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("cl");
   const [created] = await db
@@ -1788,7 +1846,8 @@ export async function createContactLink(
   return created;
 }
 
-export async function deleteContactLink(_user: SessionUser, id: string) {
+export async function deleteContactLink(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.contactLinks).where(eq(schema.contactLinks.id, id));
 }
@@ -1804,7 +1863,8 @@ export type CreateOfficeInput = {
   regionId?: string | null;
 };
 
-export async function createOffice(_user: SessionUser, input: CreateOfficeInput) {
+export async function createOffice(user: SessionUser, input: CreateOfficeInput) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [existing] = await db
     .select({ id: schema.offices.id })
@@ -1832,10 +1892,11 @@ export async function createOffice(_user: SessionUser, input: CreateOfficeInput)
 export type UpdateOfficeInput = Partial<CreateOfficeInput> & { isActive?: boolean };
 
 export async function updateOffice(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateOfficeInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [updated] = await db
     .update(schema.offices)
@@ -1854,7 +1915,8 @@ export async function updateOffice(
   return updated;
 }
 
-export async function deleteOffice(_user: SessionUser, id: string) {
+export async function deleteOffice(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.offices).where(eq(schema.offices.id, id));
 }
@@ -1872,9 +1934,10 @@ export type CreatePriceListInput = {
 };
 
 export async function createPriceList(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreatePriceListInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("pl");
   return await db.transaction(async (tx) => {
@@ -1908,10 +1971,11 @@ export type UpdatePriceListInput = Partial<CreatePriceListInput> & {
 };
 
 export async function updatePriceList(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdatePriceListInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   return await db.transaction(async (tx) => {
     if (input.isCurrent) {
@@ -1953,7 +2017,8 @@ export async function updatePriceList(
   });
 }
 
-export async function deletePriceList(_user: SessionUser, id: string) {
+export async function deletePriceList(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.transaction(async (tx) => {
     await tx
@@ -1970,13 +2035,14 @@ export async function deletePriceList(_user: SessionUser, id: string) {
  * same transaction.
  */
 export async function clonePriceList(
-  _user: SessionUser,
+  user: SessionUser,
   sourceId: string,
   options: { name: string; effectiveDate: string; setCurrent?: boolean } = {
     name: "(cloned)",
     effectiveDate: new Date().toISOString().slice(0, 10),
   },
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   return await db.transaction(async (tx) => {
     const [source] = await tx
@@ -2040,9 +2106,10 @@ export type CreatePriceListEntryInput = {
 };
 
 export async function createPriceListEntry(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreatePriceListEntryInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("pe");
   const [created] = await db
@@ -2062,7 +2129,8 @@ export async function createPriceListEntry(
   return created;
 }
 
-export async function deletePriceListEntry(_user: SessionUser, id: string) {
+export async function deletePriceListEntry(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.priceListEntries).where(eq(schema.priceListEntries.id, id));
 }
@@ -2070,7 +2138,7 @@ export async function deletePriceListEntry(_user: SessionUser, id: string) {
 // --------- Customers / Vendors ---------
 
 export async function createCustomer(
-  _user: SessionUser,
+  user: SessionUser,
   input: {
     code: string;
     name: string;
@@ -2081,6 +2149,7 @@ export async function createCustomer(
     regionId?: string | null;
   },
 ) {
+  requirePermission(user, "invoice.create");
   const db = getDb();
   const [existing] = await db
     .select({ id: schema.customers.id })
@@ -2131,6 +2200,7 @@ export async function createVendor(
     approvalStatus?: "pending" | "approved";
   },
 ) {
+  requirePermission(user, "bill.create");
   const db = getDb();
   const [existing] = await db
     .select({ id: schema.vendors.id })
@@ -2239,6 +2309,7 @@ export async function approveVendor(
   vendorId: string,
   notes: string | null,
 ): Promise<void> {
+  requirePermission(user, "vendor.approve");
   const db = getDb();
   const [vendor] = await db
     .select()
@@ -2275,6 +2346,7 @@ export async function rejectVendor(
   vendorId: string,
   notes: string | null,
 ): Promise<void> {
+  requirePermission(user, "vendor.approve");
   const db = getDb();
   const [vendor] = await db
     .select()
@@ -2302,7 +2374,7 @@ export async function rejectVendor(
 }
 
 export async function updateVendorInvoiceNumberRule(
-  _user: SessionUser,
+  user: SessionUser,
   vendorId: string,
   rule: {
     invoiceNumberPrefix?: string | null;
@@ -2310,6 +2382,7 @@ export async function updateVendorInvoiceNumberRule(
     invoiceNumberLastUsed?: string | null;
   },
 ) {
+  requirePermission(user, "bill.update");
   const db = getDb();
   await db
     .update(schema.vendors)
@@ -2325,10 +2398,11 @@ export async function updateVendorInvoiceNumberRule(
 // --------- Customer assignment ---------
 
 export async function setCustomerAssignedUser(
-  _user: SessionUser,
+  user: SessionUser,
   customerId: string,
   assignedUserId: string | null,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db
     .update(schema.customers)
@@ -2349,9 +2423,10 @@ export async function setCustomerAssignedUser(
 }
 
 export async function addCustomerAssignment(
-  _user: SessionUser,
+  user: SessionUser,
   input: { customerId: string; userId: string; isPrimary?: boolean; canApprove?: boolean; role?: string | null },
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   // Unique (customerId, userId) — bail if it already exists.
   const existing = await db
@@ -2400,9 +2475,10 @@ export async function addCustomerAssignment(
 }
 
 export async function removeCustomerAssignment(
-  _user: SessionUser,
+  user: SessionUser,
   assignmentId: string,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [row] = await db
     .select()
@@ -3723,9 +3799,10 @@ export type CreateBankAccountInput = {
 };
 
 export async function createBankAccount(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreateBankAccountInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("ba");
   const [created] = await db
@@ -3757,10 +3834,11 @@ export type UpdateBankAccountInput = Partial<CreateBankAccountInput> & {
 };
 
 export async function updateBankAccount(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateBankAccountInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const [updated] = await db
     .update(schema.bankAccounts)
@@ -3793,7 +3871,8 @@ export async function updateBankAccount(
   return updated;
 }
 
-export async function deleteBankAccount(_user: SessionUser, id: string) {
+export async function deleteBankAccount(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.transaction(async (tx) => {
     await tx
@@ -3814,7 +3893,8 @@ export type CreateSignerInput = {
   notes?: string | null;
 };
 
-export async function createSigner(_user: SessionUser, input: CreateSignerInput) {
+export async function createSigner(user: SessionUser, input: CreateSignerInput) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("bs");
   const [created] = await db
@@ -3834,7 +3914,8 @@ export async function createSigner(_user: SessionUser, input: CreateSignerInput)
   return created;
 }
 
-export async function deleteSigner(_user: SessionUser, id: string) {
+export async function deleteSigner(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.bankAccountSigners).where(eq(schema.bankAccountSigners.id, id));
 }
@@ -3842,10 +3923,11 @@ export async function deleteSigner(_user: SessionUser, id: string) {
 // --------- Reconciliation ---------
 
 export async function reconcileTransaction(
-  _user: SessionUser,
+  user: SessionUser,
   txId: string,
   journalEntryId: string | null,
 ) {
+  requirePermission(user, "bank.reconcile");
   const db = getDb();
   const [tx] = await db
     .select()
@@ -3882,10 +3964,11 @@ export type UpdateEntityFeeBillingInput = {
 };
 
 export async function updateEntityFeeBilling(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateEntityFeeBillingInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (input.frequency != null) patch.frequency = input.frequency;
@@ -3920,9 +4003,10 @@ export type CreateRecurringPaymentInput = {
 };
 
 export async function createRecurringPayment(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreateRecurringPaymentInput,
 ) {
+  requirePermission(user, "settings.write");
   if (input.amount <= 0) throw new Error("Amount must be > 0.");
   if (!input.name.trim()) throw new Error("Name is required.");
   if (!input.expenseAccountId) throw new Error("Expense account is required.");
@@ -3951,10 +4035,11 @@ export type UpdateRecurringPaymentInput = Partial<CreateRecurringPaymentInput> &
 };
 
 export async function updateRecurringPayment(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   input: UpdateRecurringPaymentInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const patch: Record<string, unknown> = { updatedAt: new Date() };
   if (input.name != null) patch.name = input.name;
@@ -3973,7 +4058,8 @@ export async function updateRecurringPayment(
     .where(eq(schema.recurringPayments.id, id));
 }
 
-export async function deleteRecurringPayment(_user: SessionUser, id: string) {
+export async function deleteRecurringPayment(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db.delete(schema.recurringPayments).where(eq(schema.recurringPayments.id, id));
 }
@@ -4016,9 +4102,10 @@ export async function addInvoiceNote(
 export type CreateRegionGroupInput = { name: string; notes?: string | null };
 
 export async function createRegionGroup(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreateRegionGroupInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("rg");
   await db.insert(schema.regionGroups).values({
@@ -4030,10 +4117,11 @@ export async function createRegionGroup(
 }
 
 export async function updateRegionGroup(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   patch: Partial<CreateRegionGroupInput>,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.name !== undefined) set.name = patch.name;
@@ -4041,7 +4129,8 @@ export async function updateRegionGroup(
   await db.update(schema.regionGroups).set(set).where(eq(schema.regionGroups.id, id));
 }
 
-export async function deleteRegionGroup(_user: SessionUser, id: string) {
+export async function deleteRegionGroup(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   // Detach any regions referencing this group, then delete.
   await db
@@ -4057,7 +4146,8 @@ export type CreateRegionInput = {
   notes?: string | null;
 };
 
-export async function createRegion(_user: SessionUser, input: CreateRegionInput) {
+export async function createRegion(user: SessionUser, input: CreateRegionInput) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("rgn");
   await db.insert(schema.regions).values({
@@ -4070,10 +4160,11 @@ export async function createRegion(_user: SessionUser, input: CreateRegionInput)
 }
 
 export async function updateRegion(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   patch: Partial<CreateRegionInput>,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.name !== undefined) set.name = patch.name;
@@ -4082,7 +4173,8 @@ export async function updateRegion(
   await db.update(schema.regions).set(set).where(eq(schema.regions.id, id));
 }
 
-export async function deleteRegion(_user: SessionUser, id: string) {
+export async function deleteRegion(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   // Detach offices, entities, and customers first so we don't leave dangling
   // region_id references behind.
@@ -4102,10 +4194,11 @@ export async function deleteRegion(_user: SessionUser, id: string) {
 }
 
 export async function setOfficeRegion(
-  _user: SessionUser,
+  user: SessionUser,
   officeId: string,
   regionId: string | null,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db
     .update(schema.offices)
@@ -4114,10 +4207,11 @@ export async function setOfficeRegion(
 }
 
 export async function setEntityRegion(
-  _user: SessionUser,
+  user: SessionUser,
   entityId: string,
   regionId: string | null,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db
     .update(schema.entities)
@@ -4126,10 +4220,11 @@ export async function setEntityRegion(
 }
 
 export async function setCustomerRegion(
-  _user: SessionUser,
+  user: SessionUser,
   customerId: string,
   regionId: string | null,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db
     .update(schema.customers)
@@ -4146,9 +4241,10 @@ export type CreateDimensionInput = {
 };
 
 export async function createDimension(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreateDimensionInput,
 ) {
+  requirePermission(user, "settings.write");
   if (!/^[a-z][a-z0-9_]*$/.test(input.key)) {
     throw new Error("Key must be lowercase, start with a letter, and only contain letters/digits/underscore.");
   }
@@ -4164,10 +4260,11 @@ export async function createDimension(
 }
 
 export async function updateDimension(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   patch: Partial<Pick<CreateDimensionInput, "label" | "description"> & { isActive: boolean }>,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.label !== undefined) set.label = patch.label;
@@ -4176,7 +4273,8 @@ export async function updateDimension(
   await db.update(schema.dimensions).set(set).where(eq(schema.dimensions.id, id));
 }
 
-export async function deleteDimension(_user: SessionUser, id: string) {
+export async function deleteDimension(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   // Just soft-delete by marking inactive — line.dimensions JSONB references
   // are by key, so the schema integrity is preserved either way. The user
@@ -4195,9 +4293,10 @@ export type CreateDimensionValueInput = {
 };
 
 export async function createDimensionValue(
-  _user: SessionUser,
+  user: SessionUser,
   input: CreateDimensionValueInput,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const id = uid("dv");
   await db.insert(schema.dimensionValues).values({
@@ -4211,10 +4310,11 @@ export async function createDimensionValue(
 }
 
 export async function updateDimensionValue(
-  _user: SessionUser,
+  user: SessionUser,
   id: string,
   patch: Partial<Pick<CreateDimensionValueInput, "code" | "label" | "parentId"> & { isActive: boolean }>,
 ) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   const set: Record<string, unknown> = { updatedAt: new Date() };
   if (patch.code !== undefined) set.code = patch.code;
@@ -4224,7 +4324,8 @@ export async function updateDimensionValue(
   await db.update(schema.dimensionValues).set(set).where(eq(schema.dimensionValues.id, id));
 }
 
-export async function deleteDimensionValue(_user: SessionUser, id: string) {
+export async function deleteDimensionValue(user: SessionUser, id: string) {
+  requirePermission(user, "settings.write");
   const db = getDb();
   await db
     .update(schema.dimensionValues)
@@ -4235,10 +4336,11 @@ export async function deleteDimensionValue(_user: SessionUser, id: string) {
 // --------- Periods ---------
 
 export async function setPeriodStatus(
-  _user: SessionUser,
+  user: SessionUser,
   periodId: string,
   status: "open" | "closed",
 ) {
+  requirePermission(user, status === "closed" ? "period.close" : "period.reopen");
   const db = getDb();
   const [updated] = await db
     .update(schema.fiscalPeriods)
@@ -4329,9 +4431,10 @@ export async function duplicateJournalEntry(
  * with the due date offset by the original payment term gap.
  */
 export async function duplicateInvoice(
-  _user: SessionUser,
+  user: SessionUser,
   sourceId: string,
 ): Promise<{ id: string; invoiceNumber: string }> {
+  requirePermission(user, "invoice.create");
   const db = getDb();
   const [src] = await db
     .select()
@@ -4537,9 +4640,10 @@ export function computeBillingPeriod(
  * for. Returns the new invoice's id + invoiceNumber for redirecting.
  */
 export async function generateNextRecurringInvoice(
-  _user: SessionUser,
+  user: SessionUser,
   templateId: string,
 ): Promise<{ id: string; invoiceNumber: string }> {
+  requirePermission(user, "invoice.create");
   const db = getDb();
   const [tpl] = await db
     .select()
@@ -4687,9 +4791,10 @@ export async function generateDueRecurringInvoices(
  * bill number itself is auto-generated.
  */
 export async function duplicateBill(
-  _user: SessionUser,
+  user: SessionUser,
   sourceId: string,
 ): Promise<{ id: string; billNumber: string }> {
+  requirePermission(user, "bill.create");
   const db = getDb();
   const [src] = await db
     .select()

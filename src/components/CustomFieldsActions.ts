@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { getSessionUser } from "@/lib/session";
 import { getCustomFieldDefinitionById } from "@/lib/data";
 import { setCustomFieldValue } from "@/lib/mutations";
+import { redirectPathWithParams, safeRedirectPath } from "@/lib/auth-safety";
 
 function isRedirect(err: unknown): boolean {
   return (
@@ -30,7 +31,9 @@ export async function saveCustomFieldsAction(formData: FormData) {
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
-  const redirectPath = String(formData.get("redirectPath") ?? "/");
+  const redirectPath = safeRedirectPath(
+    String(formData.get("redirectPath") ?? "/"),
+  );
 
   for (const defId of ids) {
     const def = await getCustomFieldDefinitionById(defId);
@@ -68,8 +71,10 @@ export async function saveCustomFieldsAction(formData: FormData) {
       }
     } catch (err) {
       if (isRedirect(err)) throw err;
+      const msg = err instanceof Error ? err.message : "Custom field save failed.";
+      redirect(redirectPathWithParams(redirectPath, { error: msg }));
     }
   }
   revalidatePath(redirectPath);
-  redirect(`${redirectPath}?saved=1`);
+  redirect(redirectPathWithParams(redirectPath, { saved: "1" }));
 }

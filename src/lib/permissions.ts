@@ -132,11 +132,13 @@ const ADMIN_ACTIONS: Action[] = [
   "bill.void",
   "bank.reconcile",
   "journal_entry.bypass_control",
+];
+
+const SUPER_ONLY: Action[] = [
+  "period.unlock",
   "read.audit_log",
   "audit.export_csv",
 ];
-
-const SUPER_ONLY: Action[] = ["period.unlock"];
 
 const ROLE_MATRIX: Record<Role, ReadonlyArray<Action>> = {
   super_admin: [

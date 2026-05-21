@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
@@ -13,6 +14,10 @@ import {
 } from "@/lib/permissions";
 import { listUsers, listUserEntityAccess } from "@/lib/user-mutations";
 import { getEntities } from "@/lib/data";
+import {
+  decodePasswordFlash,
+  USER_PASSWORD_FLASH_COOKIE,
+} from "@/lib/password-flash";
 import {
   createUserAction,
   resetPasswordAction,
@@ -50,8 +55,10 @@ export default async function UsersPage({
   const params = await searchParams;
   const users = await listUsers();
   const entities = await getEntities();
-  const resetTuple = params.reset ? params.reset.split(":") : null;
-  const resetPassword = resetTuple?.[1] ?? null;
+  const cookieStore = await cookies();
+  const passwordFlash = decodePasswordFlash(
+    cookieStore.get(USER_PASSWORD_FLASH_COOKIE)?.value,
+  );
   const accessUserId = params.access ?? null;
   const accessRows = accessUserId
     ? await listUserEntityAccess(accessUserId)
@@ -66,6 +73,10 @@ export default async function UsersPage({
   const canDeactivate = hasPermission(me, "user.deactivate");
   const canReset = hasPermission(me, "user.reset_password");
   const canAssign = hasPermission(me, "user.assign_access");
+  const canManageSuperAdmin = me.isSuperuser || me.role === "super_admin";
+  const assignableRoles = canManageSuperAdmin
+    ? ALL_ROLES
+    : ALL_ROLES.filter((r) => r !== "super_admin");
 
   return (
     <>
@@ -86,7 +97,7 @@ export default async function UsersPage({
             {decodeURIComponent(params.error)}
           </div>
         )}
-        {params.created && (
+        {params.created && passwordFlash?.kind === "created" && (
           <div
             className="px-3 py-2 rounded text-[12.5px]"
             style={{
@@ -94,14 +105,29 @@ export default async function UsersPage({
               color: "var(--p-active-fg)",
             }}
           >
-            User invited. They can sign in with the default password{" "}
-            <code style={{ fontFamily: "var(--font-mono)", fontWeight: 600 }}>
-              ChangeMe123!
-            </code>{" "}
-            until you reset it.
+            <div style={{ fontWeight: 600 }}>
+              User invited{passwordFlash.email ? `: ${passwordFlash.email}` : ""}.
+            </div>
+            <div style={{ marginTop: 4 }}>
+              Share this temporary password with the user. It is shown only
+              briefly and will not be retrievable after it expires.
+            </div>
+            <code
+              style={{
+                display: "inline-block",
+                marginTop: 6,
+                padding: "4px 8px",
+                background: "var(--paper)",
+                borderRadius: 4,
+                fontFamily: "var(--font-mono)",
+                fontWeight: 600,
+              }}
+            >
+              {passwordFlash.tempPassword}
+            </code>
           </div>
         )}
-        {resetPassword && (
+        {params.reset && passwordFlash?.kind === "reset" && (
           <div
             className="px-3 py-2 rounded text-[12.5px]"
             style={{
@@ -125,7 +151,7 @@ export default async function UsersPage({
                 fontWeight: 600,
               }}
             >
-              {resetPassword}
+              {passwordFlash.tempPassword}
             </code>
           </div>
         )}
@@ -212,7 +238,7 @@ export default async function UsersPage({
                     fontSize: 13,
                   }}
                 >
-                  {ALL_ROLES.map((r) => (
+                  {assignableRoles.map((r) => (
                     <option key={r} value={r}>
                       {roleLabel(r)}
                     </option>
@@ -240,10 +266,8 @@ export default async function UsersPage({
               className="px-3.5 pb-3 text-[11.5px]"
               style={{ color: "var(--ink-4)" }}
             >
-              Invited users get the default password{" "}
-              <code style={{ fontFamily: "var(--font-mono)" }}>ChangeMe123!</code> —
-              tell them to reset it on first login, or generate a one-off temp
-              password via the &ldquo;Reset password&rdquo; action below.
+              Invited users receive a generated temporary password shown once
+              after creation. Tell them to reset it on first login.
             </div>
           </Card>
         )}
@@ -262,12 +286,17 @@ export default async function UsersPage({
               </TR>
             </THead>
             <TBody>
-              {users.map((u) => (
-                <TR key={u.id}>
-                  <TD>{u.fullName}</TD>
-                  <TD mono>{u.email}</TD>
-                  <TD>
-                    {canUpdate ? (
+              {users.map((u) => {
+                const targetIsSuperAdmin =
+                  u.role === "super_admin" || u.isSuperuser;
+                const canManageThisUser =
+                  canManageSuperAdmin || !targetIsSuperAdmin;
+                return (
+                  <TR key={u.id}>
+                    <TD>{u.fullName}</TD>
+                    <TD mono>{u.email}</TD>
+                    <TD>
+                      {canUpdate && canManageThisUser ? (
                       <form
                         action={updateRoleAction}
                         style={{
@@ -288,7 +317,7 @@ export default async function UsersPage({
                             fontSize: 12,
                           }}
                         >
-                          {ALL_ROLES.map((r) => (
+                          {assignableRoles.map((r) => (
                             <option key={r} value={r}>
                               {roleLabel(r)}
                             </option>
@@ -309,28 +338,28 @@ export default async function UsersPage({
                           Save
                         </button>
                       </form>
-                    ) : (
-                      <span>{roleLabel(u.role)}</span>
-                    )}
-                  </TD>
-                  <TD>
-                    {u.isActive ? (
-                      <Pill variant="active">Active</Pill>
-                    ) : (
-                      <Pill variant="neutral">Inactive</Pill>
-                    )}
-                  </TD>
-                  <TD num>
-                    {u.entityAccessCount === 0 ? (
-                      <span style={{ color: "var(--ink-4)" }}>All</span>
-                    ) : (
-                      u.entityAccessCount
-                    )}
-                  </TD>
-                  <TD>{formatDateTime(u.lastLoginAt)}</TD>
-                  <TD>
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                      {canDeactivate && (
+                      ) : (
+                        <span>{roleLabel(u.role)}</span>
+                      )}
+                    </TD>
+                    <TD>
+                      {u.isActive ? (
+                        <Pill variant="active">Active</Pill>
+                      ) : (
+                        <Pill variant="neutral">Inactive</Pill>
+                      )}
+                    </TD>
+                    <TD num>
+                      {u.entityAccessCount === 0 ? (
+                        <span style={{ color: "var(--ink-4)" }}>All</span>
+                      ) : (
+                        u.entityAccessCount
+                      )}
+                    </TD>
+                    <TD>{formatDateTime(u.lastLoginAt)}</TD>
+                    <TD>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {canDeactivate && canManageThisUser && (
                         <form
                           action={toggleActiveAction}
                           style={{ display: "inline" }}
@@ -356,8 +385,8 @@ export default async function UsersPage({
                             {u.isActive ? "Deactivate" : "Activate"}
                           </button>
                         </form>
-                      )}
-                      {canReset && (
+                        )}
+                        {canReset && canManageThisUser && (
                         <form
                           action={resetPasswordAction}
                           style={{ display: "inline" }}
@@ -378,8 +407,8 @@ export default async function UsersPage({
                             Reset password
                           </button>
                         </form>
-                      )}
-                      {canAssign && (
+                        )}
+                        {canAssign && canManageThisUser && (
                         <a
                           href={`/settings/users?access=${u.id}`}
                           style={{
@@ -395,11 +424,12 @@ export default async function UsersPage({
                         >
                           Entity access
                         </a>
-                      )}
-                    </div>
-                  </TD>
-                </TR>
-              ))}
+                        )}
+                      </div>
+                    </TD>
+                  </TR>
+                );
+              })}
             </TBody>
           </Table>
         </Card>
@@ -541,7 +571,8 @@ export default async function UsersPage({
                 <strong>{roleLabel(r)}:</strong>{" "}
                 {r === "super_admin" &&
                   "Unrestricted, including period unlock."}
-                {r === "admin" && "Everything except period unlock."}
+                {r === "admin" &&
+                  "Admin operations except period unlock and audit log."}
                 {r === "manager" && "Approvals + reports, no settings."}
                 {r === "accountant" && "Create/edit JEs, invoices, bills."}
                 {r === "viewer" && "Read-only across workspace."}

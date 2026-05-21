@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { findBillByVendorInvoiceNumber } from "@/lib/data";
+import { hasPermission } from "@/lib/permissions";
 import { getSessionUser } from "@/lib/session";
 
 /**
@@ -15,6 +16,12 @@ export async function GET(request: Request) {
   const user = await getSessionUser();
   if (!user) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (
+    !hasPermission(user, "bill.create") &&
+    !hasPermission(user, "bill.update")
+  ) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const url = new URL(request.url);

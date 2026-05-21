@@ -1,19 +1,13 @@
-/**
- * Demo login page. While the workspace is pre-production we keep one-click
- * buttons per role so reviewers can switch personas without typing
- * credentials. Each button submits the underlying email+password to the
- * same `login` server action the production form uses, so the Auth.js
- * session + audit log behave identically.
- */
 import { redirect } from "next/navigation";
 import { AuthError } from "next-auth";
 import { signIn } from "@/auth";
 import { getSessionUser } from "@/lib/session";
 import { logAuditEventFromHeaders } from "@/lib/audit";
+import { isDemoLoginEnabled, safeRedirectPath } from "@/lib/auth-safety";
 
 type DemoAccount = {
   email: string;
-  password: string;
+  passwordEnv: string;
   role: string;
   label: string;
   desc: string;
@@ -25,7 +19,7 @@ type DemoAccount = {
 const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     email: "admin@thistlewood.com",
-    password: "Admin123!",
+    passwordEnv: "DEMO_ADMIN_PASSWORD",
     role: "Super admin",
     label: "Demo Admin",
     desc: "Full access — every entity, every report, every approval",
@@ -34,7 +28,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     email: "accountant@thistlewood.com",
-    password: "Demo123!",
+    passwordEnv: "DEMO_ACCOUNTANT_PASSWORD",
     role: "Accountant",
     label: "Demo Accountant",
     desc: "Create and edit JEs, invoices, bills",
@@ -43,7 +37,7 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     email: "viewer@thistlewood.com",
-    password: "Demo123!",
+    passwordEnv: "DEMO_VIEWER_PASSWORD",
     role: "Viewer",
     label: "Demo Viewer",
     desc: "Read-only across the workspace",
@@ -62,7 +56,7 @@ async function login(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
   const password = String(formData.get("password") ?? "");
   const redirectTo = String(formData.get("redirectTo") ?? "/");
-  const safeRedirect = redirectTo.startsWith("/") ? redirectTo : "/";
+  const safeRedirect = safeRedirectPath(redirectTo);
 
   if (!email || !password) {
     redirect(
@@ -112,13 +106,18 @@ export default async function LoginPage({
   const existing = await getSessionUser();
   const params = await searchParams;
   if (existing) {
-    redirect(
-      params.redirectTo?.startsWith("/") ? params.redirectTo : "/",
-    );
+    redirect(safeRedirectPath(params.redirectTo));
   }
 
   const errored = params.error;
-  const redirectTo = params.redirectTo ?? "/";
+  const redirectTo = safeRedirectPath(params.redirectTo);
+  const demoAccounts = isDemoLoginEnabled()
+    ? DEMO_ACCOUNTS.map((account) => ({
+        ...account,
+        password: process.env[account.passwordEnv] ?? "",
+      })).filter((account) => account.password.length > 0)
+    : [];
+  const showDemoAccounts = demoAccounts.length > 0;
 
   return (
     <div
@@ -187,9 +186,9 @@ export default async function LoginPage({
             margin: "0 0 20px",
           }}
         >
-          No password required — pick a role to enter the workspace with the
-          matching permissions. The real email/password form returns when we
-          go to production.
+          {showDemoAccounts
+            ? "Pick a demo role or use a specific email and password."
+            : "Use your assigned email and password."}
         </p>
 
         {errored && (
@@ -204,82 +203,85 @@ export default async function LoginPage({
             }}
           >
             {errored === "missing"
-              ? "Demo account is misconfigured — please contact the admin."
-              : "Could not sign in with that demo account."}
+              ? "Email and password are required."
+              : "Could not sign in with those credentials."}
           </div>
         )}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {DEMO_ACCOUNTS.map((d) => (
-            <form key={d.email} action={login}>
-              <input type="hidden" name="email" value={d.email} />
-              <input type="hidden" name="password" value={d.password} />
-              <input type="hidden" name="redirectTo" value={redirectTo} />
-              <button
-                type="submit"
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 14,
-                  background: "var(--paper)",
-                  border: "1px solid var(--line-2)",
-                  borderRadius: 8,
-                  padding: "12px 14px",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  color: "inherit",
-                }}
-              >
-                <span
+        {showDemoAccounts && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {demoAccounts.map((d) => (
+              <form key={d.email} action={login}>
+                <input type="hidden" name="email" value={d.email} />
+                <input type="hidden" name="password" value={d.password} />
+                <input type="hidden" name="redirectTo" value={redirectTo} />
+                <button
+                  type="submit"
                   style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 8,
-                    display: "inline-flex",
+                    width: "100%",
+                    display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 600,
-                    fontSize: 14,
-                    background: `var(${d.paletteVar})`,
-                    color: "var(--ink)",
-                    flexShrink: 0,
+                    gap: 14,
+                    background: "var(--paper)",
+                    border: "1px solid var(--line-2)",
+                    borderRadius: 8,
+                    padding: "12px 14px",
+                    cursor: "pointer",
+                    textAlign: "left",
+                    color: "inherit",
                   }}
                 >
-                  {d.initial}
-                </span>
-                <span style={{ display: "flex", flexDirection: "column" }}>
-                  <span style={{ fontSize: 13, fontWeight: 600 }}>
-                    <span
-                      style={{
-                        display: "inline-block",
-                        fontSize: 10.5,
-                        color: "var(--ink-3)",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.04em",
-                        marginRight: 8,
-                      }}
-                    >
-                      {d.role}
-                    </span>
-                    {d.label}
-                  </span>
                   <span
                     style={{
-                      fontSize: 12,
-                      color: "var(--ink-3)",
-                      marginTop: 2,
+                      width: 36,
+                      height: 36,
+                      borderRadius: 8,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontWeight: 600,
+                      fontSize: 14,
+                      background: `var(${d.paletteVar})`,
+                      color: "var(--ink)",
+                      flexShrink: 0,
                     }}
                   >
-                    {d.desc}
+                    {d.initial}
                   </span>
-                </span>
-              </button>
-            </form>
-          ))}
-        </div>
+                  <span style={{ display: "flex", flexDirection: "column" }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          fontSize: 10.5,
+                          color: "var(--ink-3)",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.04em",
+                          marginRight: 8,
+                        }}
+                      >
+                        {d.role}
+                      </span>
+                      {d.label}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        color: "var(--ink-3)",
+                        marginTop: 2,
+                      }}
+                    >
+                      {d.desc}
+                    </span>
+                  </span>
+                </button>
+              </form>
+            ))}
+          </div>
+        )}
 
         <details
+          open={!showDemoAccounts}
           style={{
             marginTop: 18,
             fontSize: 11.5,
@@ -288,7 +290,7 @@ export default async function LoginPage({
           }}
         >
           <summary style={{ cursor: "pointer", color: "var(--ink-2)" }}>
-            Use a specific email + password instead
+            {showDemoAccounts ? "Use a specific email + password instead" : "Email + password"}
           </summary>
           <form
             action={login}

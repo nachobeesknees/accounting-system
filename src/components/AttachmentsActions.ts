@@ -6,6 +6,7 @@ import { put, del } from "@vercel/blob";
 import { getSessionUser } from "@/lib/session";
 import { getAttachmentById } from "@/lib/data";
 import { createAttachment, deleteAttachment } from "@/lib/mutations";
+import { redirectPathWithParams, safeRedirectPath } from "@/lib/auth-safety";
 import {
   requireReadRecord,
   requireWriteAttachmentRecord,
@@ -38,8 +39,7 @@ function isRedirect(err: unknown): boolean {
 }
 
 function backTo(path: string, params: Record<string, string>): string {
-  const qs = new URLSearchParams(params).toString();
-  return `${path}?${qs}`;
+  return redirectPathWithParams(path, params);
 }
 
 export async function uploadAttachmentAction(formData: FormData) {
@@ -48,7 +48,9 @@ export async function uploadAttachmentAction(formData: FormData) {
 
   const recordTypeRaw = String(formData.get("recordType") ?? "");
   const recordId = String(formData.get("recordId") ?? "");
-  const redirectPath = String(formData.get("redirectPath") ?? "/");
+  const redirectPath = safeRedirectPath(
+    String(formData.get("redirectPath") ?? "/"),
+  );
   const documentType = String(formData.get("documentType") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const file = formData.get("file");
@@ -140,7 +142,9 @@ export async function deleteAttachmentAction(formData: FormData) {
   if (!user) redirect("/login");
 
   const id = String(formData.get("id") ?? "");
-  const redirectPath = String(formData.get("redirectPath") ?? "/");
+  const redirectPath = safeRedirectPath(
+    String(formData.get("redirectPath") ?? "/"),
+  );
   if (!id) redirect(redirectPath);
 
   const existing = await getAttachmentById(id);
