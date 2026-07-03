@@ -18,8 +18,10 @@ import {
   getInvoices,
   getInvoicesAwaitingApproval,
   getJournalEntries,
+  getAssets,
   getBusinessKpis,
   getKpis,
+  getLatestSnapshotByAssetAsOf,
   getLatestFxRates,
   getVendors,
 } from "@/lib/data";
@@ -189,6 +191,8 @@ export default async function Page() {
   const [
     kpis,
     bizKpis,
+    auaAssets,
+    auaSnapshots,
     ar,
     ap,
     allEntries,
@@ -207,6 +211,8 @@ export default async function Page() {
   ] = await Promise.all([
     getKpis(),
     getBusinessKpis(new Date().getUTCFullYear()),
+    getAssets(),
+    getLatestSnapshotByAssetAsOf(new Date().toISOString().slice(0, 10)),
     getArAging(today),
     getApAging(today),
     getJournalEntries(),
@@ -283,6 +289,16 @@ export default async function Page() {
     entityPlRows.reduce((s, r) => s + r.netBase, 0) + firmLevelNet + elimNet;
 
   const currentYear = new Date().getUTCFullYear();
+  // AUA/AUM: latest valuation snapshot per asset, FX-converted to base —
+  // same math as the AUA Report page.
+  const totalAua = auaAssets.reduce((sum, a) => {
+    const snap = auaSnapshots.get(a.id);
+    if (!snap) return sum;
+    const raw = parseAmount(snap.value);
+    const ccy = snap.currencyCode || a.currencyCode || baseCode;
+    const converted = ccy === baseCode ? raw : convertToBase(raw, ccy, fxRates);
+    return sum + (converted ?? 0);
+  }, 0);
   // ARR indicator vs the prior billing year's recurring commitments.
   const arrDelta = (() => {
     if (bizKpis.arrPrior === 0) {
@@ -486,18 +502,12 @@ export default async function Page() {
         />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 px-6 my-3.5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 px-6 my-3.5">
         <Tile
-          label={`Total Assets (${baseCode})`}
-          value={formatMoney(kpis.assets, baseCode, { paren: true, compact: true, hideCurrency: true })}
-          sub="All asset accounts"
-          href="/reports?tab=balance"
-        />
-        <Tile
-          label={`Total Liabilities (${baseCode})`}
-          value={formatMoney(kpis.liabilities, baseCode, { paren: true, compact: true, hideCurrency: true })}
-          sub="All liability accounts"
-          href="/reports?tab=balance"
+          label={`AUA / AUM (${baseCode})`}
+          value={formatMoney(totalAua, baseCode, { paren: true, compact: true, hideCurrency: true })}
+          sub="Assets under administration, latest valuations"
+          href="/aua"
         />
         <Tile
           label={`Net Income YTD (${baseCode})`}
