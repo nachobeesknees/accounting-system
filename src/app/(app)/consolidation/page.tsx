@@ -6,52 +6,39 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   convertToBase,
   getBaseCurrency,
-  getCustomers,
-  getEntities,
-  getEntityPlRollup,
+  getFirmPlRollup,
   getLatestFxRates,
+  getOffices,
 } from "@/lib/data";
-import { getSessionUser } from "@/lib/session";
-import { getAllowedEntityIds } from "@/lib/entity-access";
 import { formatAmount } from "@/lib/money";
 
+/**
+ * Consolidation = the FIRM's corporate entities (offices), consolidated to
+ * base currency with intercompany eliminations applied. Client-structure
+ * entities are operational records owned by client relationships — they
+ * deliberately do not report here or anywhere in the financials.
+ */
 export default async function Page() {
-  const user = await getSessionUser();
-  const [rollup, entities, customers, base, fxRates, allowedEntityIds] =
-    await Promise.all([
-      getEntityPlRollup(),
-      getEntities(),
-      getCustomers(),
-      getBaseCurrency(),
-      getLatestFxRates(),
-      getAllowedEntityIds(user),
-    ]);
+  const [rollup, offices, base, fxRates] = await Promise.all([
+    getFirmPlRollup("all"),
+    getOffices(),
+    getBaseCurrency(),
+    getLatestFxRates(),
+  ]);
   const baseCode = base?.code ?? "USD";
   const baseSymbol = base?.symbol ?? "$";
-  const entityById = new Map(entities.map((e) => [e.id, e] as const));
-  const customerById = new Map(customers.map((c) => [c.id, c] as const));
+  const officeById = new Map(offices.map((o) => [o.id, o] as const));
 
-  // user_entity_access — drop rollup rows for entities outside the user's
-  // scope. The "firm" bucket (entityId === null) is always visible.
-  const scopedRollup =
-    allowedEntityIds === null
-      ? rollup
-      : rollup.filter(
-          (r) => r.entityId == null || allowedEntityIds.has(r.entityId),
-        );
-
-  // Convert each row to base currency using the entity's functional ccy.
-  const rows = scopedRollup.map((r) => {
-    const entity = r.entityId ? entityById.get(r.entityId) : undefined;
-    const ccy = entity?.currencyCode ?? baseCode;
+  const rows = rollup.rows.map((r) => {
+    const office = r.officeId ? officeById.get(r.officeId) : undefined;
+    const ccy = office?.currencyCode ?? baseCode;
     const conv = (n: number) =>
       ccy === baseCode ? n : (convertToBase(n, ccy, fxRates) ?? 0);
     return {
-      entityId: r.entityId,
-      label: entity ? `${entity.code} — ${entity.name}` : "Firm-level books",
-      clientName: entity
-        ? (customerById.get(entity.clientId)?.name ?? "—")
-        : "Wyzird",
+      officeId: r.officeId,
+      label: office
+        ? `${office.code} — ${office.name}`
+        : "Firm-level (unattributed)",
       ccy,
       revenueNative: r.revenue,
       expensesNative: r.expenses,
@@ -61,15 +48,19 @@ export default async function Page() {
       netBase: conv(r.netIncome),
     };
   });
-  // Stable ordering — firm first, then by net descending.
   rows.sort((a, b) => {
-    if (a.entityId == null) return -1;
-    if (b.entityId == null) return 1;
-    return b.netBase - a.netBase;
+    if (a.officeId == null) return 1;
+    if (b.officeId == null) return -1;
+    return a.label.localeCompare(b.label);
   });
 
-  const totalRev = rows.reduce((s, r) => s + r.revenueBase, 0);
-  const totalExp = rows.reduce((s, r) => s + r.expensesBase, 0);
+  // Eliminations are booked in base currency at the consolidated level.
+  const elim = rollup.eliminations;
+  const hasElim =
+    elim.revenue !== 0 || elim.expenses !== 0 || elim.netIncome !== 0;
+
+  const totalRev = rows.reduce((s, r) => s + r.revenueBase, 0) + elim.revenue;
+  const totalExp = rows.reduce((s, r) => s + r.expensesBase, 0) + elim.expenses;
   const totalNet = totalRev - totalExp;
   const formatBase = (n: number) =>
     `${baseSymbol}${formatAmount(n, { paren: true, compact: true })}`;
@@ -78,7 +69,7 @@ export default async function Page() {
     <>
       <PageHeader
         title="Consolidation"
-        meta={`Rolls up posted P&L from firm-level books + ${rows.length - rows.filter((r) => r.entityId == null).length} entity-scoped books. Base ${baseCode}.`}
+        meta={`Firm entities consolidated to ${baseCode} · intercompany eliminations applied`}
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 px-6 my-3.5">
@@ -91,13 +82,12 @@ export default async function Page() {
         />
       </div>
 
-      <div className="px-6 pb-8">
-        <Card title="Per-book P&L (current year)">
+      <div className="px-6 pb-8 flex flex-col gap-3.5">
+        <Card title="Per firm entity P&L (posted)">
           <Table>
             <THead>
               <TR hover={false}>
-                <TH>Book</TH>
-                <TH>Client</TH>
+                <TH>Firm entity</TH>
                 <TH>Ccy</TH>
                 <TH num>Revenue (native)</TH>
                 <TH num>Expenses (native)</TH>
@@ -108,20 +98,8 @@ export default async function Page() {
             </THead>
             <TBody>
               {rows.map((r) => (
-                <TR key={r.entityId ?? "firm"}>
-                  <TD>
-                    {r.entityId ? (
-                      <Link
-                        href={`/entities/${r.entityId}/books`}
-                        style={{ color: "var(--ink)", textDecoration: "none" }}
-                      >
-                        {r.label}
-                      </Link>
-                    ) : (
-                      r.label
-                    )}
-                  </TD>
-                  <TD style={{ color: "var(--ink-3)" }}>{r.clientName}</TD>
+                <TR key={r.officeId ?? "firm"}>
+                  <TD>{r.label}</TD>
                   <TD mono>{r.ccy}</TD>
                   <TD num>{formatAmount(r.revenueNative, { paren: true, compact: true })}</TD>
                   <TD num>{formatAmount(r.expensesNative, { paren: true, compact: true })}</TD>
@@ -130,16 +108,33 @@ export default async function Page() {
                   </TD>
                   <TD num neg={r.netBase < 0}>{formatBase(r.netBase)}</TD>
                   <TD>
-                    {r.entityId == null ? (
-                      <Pill variant="formation">Firm</Pill>
+                    {r.officeId == null ? (
+                      <Pill variant="neutral">Unattributed</Pill>
                     ) : (
-                      <Pill variant="active">Entity</Pill>
+                      <Pill variant="formation">Firm entity</Pill>
                     )}
                   </TD>
                 </TR>
               ))}
+              {hasElim && (
+                <TR hover={false}>
+                  <TD style={{ color: "var(--ink-3)" }}>
+                    Intercompany eliminations
+                  </TD>
+                  <TD mono style={{ color: "var(--ink-3)" }}>{baseCode}</TD>
+                  <TD num>{formatAmount(elim.revenue, { paren: true, compact: true })}</TD>
+                  <TD num>{formatAmount(elim.expenses, { paren: true, compact: true })}</TD>
+                  <TD num neg={elim.netIncome < 0}>
+                    {formatAmount(elim.netIncome, { paren: true, compact: true })}
+                  </TD>
+                  <TD num neg={elim.netIncome < 0}>{formatBase(elim.netIncome)}</TD>
+                  <TD>
+                    <Pill variant="pending">Elimination</Pill>
+                  </TD>
+                </TR>
+              )}
               <TR total hover={false}>
-                <TD colSpan={3}>Consolidated ({baseCode})</TD>
+                <TD colSpan={2}>Consolidated ({baseCode})</TD>
                 <TD num>{formatBase(totalRev)}</TD>
                 <TD num>{formatBase(totalExp)}</TD>
                 <TD num>{""}</TD>
@@ -149,6 +144,21 @@ export default async function Page() {
             </TBody>
           </Table>
         </Card>
+
+        <div className="text-[11.5px]" style={{ color: "var(--ink-4)" }}>
+          Client-structure entities (LLCs, trusts, partnerships owned by
+          client relationships) are operational records — they do not report
+          in the firm&apos;s financials. Their activity lives on each
+          entity&apos;s own books page and in{" "}
+          <Link href="/entities" style={{ color: "var(--ink-3)", textDecoration: "underline" }}>
+            Entities
+          </Link>
+          . Full statements:{" "}
+          <Link href="/reports" style={{ color: "var(--ink-3)", textDecoration: "underline" }}>
+            Financial Statements
+          </Link>{" "}
+          at the &quot;All entities (consolidated)&quot; scope.
+        </div>
       </div>
     </>
   );

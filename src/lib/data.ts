@@ -2188,12 +2188,102 @@ export async function getAccountBalance(accountId: string): Promise<number> {
 }
 
 /**
+ * Firm-entity P&L rollup — the FINANCIAL consolidation axis. Groups posted
+ * activity by journal_entries.firm_entity_id (offices = our corporate
+ * entities). Client-structure entities (journal_entries.entity_id) are an
+ * operational tag and deliberately play no part here.
+ *
+ * Per-office rows EXCLUDE intercompany elimination entries (they only
+ * apply at the consolidated level); the eliminations bucket carries them
+ * so consolidated = sum(offices) + unattributed + eliminations.
+ */
+export type FirmPlRow = {
+  officeId: string | null;
+  revenue: number;
+  expenses: number;
+  netIncome: number;
+};
+
+export type FirmPlRollup = {
+  rows: FirmPlRow[];
+  eliminations: { revenue: number; expenses: number; netIncome: number };
+};
+
+export async function getFirmPlRollup(
+  scope: FirmScopeArg = "all",
+): Promise<FirmPlRollup> {
+  const db = getDb();
+  const q = db
+    .select({
+      firmEntityId: schema.journalEntries.firmEntityId,
+      eliminationEntryId: schema.journalEntries.eliminationEntryId,
+      accountType: schema.accounts.accountType,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .innerJoin(
+      schema.accounts,
+      eq(schema.journalLines.accountId, schema.accounts.id),
+    );
+
+  const n = normalizeFirmScope(scope);
+  const conds = [eq(schema.journalEntries.status, "posted")];
+  if (n.kind === "firm-level-null") {
+    conds.push(isNull(schema.journalEntries.firmEntityId));
+  } else if (n.kind === "office") {
+    conds.push(eq(schema.journalEntries.firmEntityId, n.officeId));
+  } else if (n.kind === "region") {
+    if (n.officeIds.length === 0) {
+      return { rows: [], eliminations: { revenue: 0, expenses: 0, netIncome: 0 } };
+    }
+    conds.push(inArray(schema.journalEntries.firmEntityId, n.officeIds));
+  }
+  const rows = await q.where(and(...conds));
+
+  const buckets = new Map<string | null, { revenue: number; expenses: number }>();
+  const elim = { revenue: 0, expenses: 0 };
+  for (const r of rows) {
+    if (r.accountType !== "revenue" && r.accountType !== "expense") continue;
+    const d = parseAmount(r.debit);
+    const c = parseAmount(r.credit);
+    const target = r.eliminationEntryId
+      ? elim
+      : (() => {
+          const b = buckets.get(r.firmEntityId) ?? { revenue: 0, expenses: 0 };
+          buckets.set(r.firmEntityId, b);
+          return b;
+        })();
+    if (r.accountType === "revenue") target.revenue += c - d;
+    else target.expenses += d - c;
+  }
+  return {
+    rows: Array.from(buckets.entries()).map(([officeId, b]) => ({
+      officeId,
+      revenue: b.revenue,
+      expenses: b.expenses,
+      netIncome: b.revenue - b.expenses,
+    })),
+    eliminations: {
+      revenue: elim.revenue,
+      expenses: elim.expenses,
+      netIncome: elim.revenue - elim.expenses,
+    },
+  };
+}
+
+/**
  * Per-entity P&L summary — totals revenue and expenses from posted
  * entity-scoped journal entries. The "firm" bucket holds JE rows whose
  * entityId is null, so the firm-level P&L still rolls up alongside.
  *
- * Returns one row per entity (plus a "firm" pseudo-row) so the
- * consolidation view can render a single table.
+ * NOTE: client-structure entities are NOT a financial reporting axis —
+ * this rollup exists for operational client-activity views only. Firm
+ * financials consolidate by firm entity via getFirmPlRollup().
  */
 export type EntityPlRow = {
   entityId: string | null;

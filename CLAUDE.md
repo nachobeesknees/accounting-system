@@ -20,4 +20,5 @@ If any page fails, fix it before considering the deploy complete.
 - `DATABASE_URL` is provisioned across Production / Preview / Development envs (no `STORAGE_` prefix)
 - All money values render as `USD 1,234.56` in JetBrains Mono with tabular nums; negatives in parens; design tokens in `globals.css`
 - Demo login: `ENABLE_DEMO_LOGIN=true` shows the one-click passwordless picker (admin / accountant / viewer) and lets those three accounts in without a password check. The production demo runs with it ON (owner's call, 2026-07-03). Email+password stays available for everyone else.
+- **Domain rule (owner, 2026-07-03): `entities` are NON-CORPORATE structures (LLCs/trusts/partnerships) owned by client relationships. They must NOT report in the firm's financials.** The financial reporting/consolidation axis is FIRM entities (`offices` table, `journal_entries.firm_entity_id`) with intercompany eliminations. `journal_entries.entity_id` is an operational tag only (client activity, chargebacks, per-entity books pages) — never a Financial Statements segment.
 - After schema changes: `npm run db:push -- --force` then `npm run db:seed`

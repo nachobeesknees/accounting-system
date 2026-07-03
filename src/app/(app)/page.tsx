@@ -13,7 +13,8 @@ import {
   getCustomers,
   getDueRecurringTemplateCount,
   getEntities,
-  getEntityPlRollup,
+  getFirmPlRollup,
+  getOffices,
   getInvoices,
   getInvoicesAwaitingApproval,
   getJournalEntries,
@@ -176,6 +177,7 @@ export default async function Page() {
     vendors,
     entities,
     plRollup,
+    offices,
     base,
     fxRates,
     awaitingApproval,
@@ -191,7 +193,8 @@ export default async function Page() {
     getCustomers(),
     getVendors(),
     getEntities(),
-    getEntityPlRollup(plScope),
+    getFirmPlRollup(plScope),
+    getOffices(),
     getBaseCurrency(),
     getLatestFxRates(),
     user
@@ -228,33 +231,34 @@ export default async function Page() {
     if (status === "closed") return "Closed";
     return "Locked";
   }
-  const entityById = new Map(entities.map((e) => [e.id, e] as const));
   const baseCode = base?.code ?? "USD";
   const baseSymbol = base?.symbol ?? "$";
-  const entityPlRows = plRollup
-    .filter((r) => r.entityId != null)
+  // Financials consolidate by FIRM entity (offices). Client-structure
+  // entities are operational records and don't report here.
+  const officeById = new Map(offices.map((o) => [o.id, o] as const));
+  const entityPlRows = plRollup.rows
+    .filter((r) => r.officeId != null)
     .map((r) => {
-      const ent = entityById.get(r.entityId!);
-      const ccy = ent?.currencyCode ?? baseCode;
+      const office = officeById.get(r.officeId!);
+      const ccy = office?.currencyCode ?? baseCode;
       const conv = (n: number) =>
         ccy === baseCode ? n : (convertToBase(n, ccy, fxRates) ?? 0);
       return {
-        entityId: r.entityId!,
-        entity: ent,
+        officeId: r.officeId!,
+        label: office ? `${office.code} — ${office.name}` : r.officeId!,
         ccy,
         netNative: r.netIncome,
         netBase: conv(r.netIncome),
       };
     })
     .sort((a, b) => b.netBase - a.netBase);
-  // Firm-level (no entityId) row keeps the per-entity P&L card's rows
-  // summing to the KPI tile above it. Without this the dashboard shows
-  // Net Income X but a sub-table whose rows add to <X, which is the
-  // "doesn't add up" complaint.
-  const firmLevelPl = plRollup.find((r) => r.entityId == null);
+  // Unattributed + eliminations keep the card's rows summing to the Net
+  // Income tile above it.
+  const firmLevelPl = plRollup.rows.find((r) => r.officeId == null);
   const firmLevelNet = firmLevelPl?.netIncome ?? 0;
+  const elimNet = plRollup.eliminations.netIncome;
   const totalNetBase =
-    entityPlRows.reduce((s, r) => s + r.netBase, 0) + firmLevelNet;
+    entityPlRows.reduce((s, r) => s + r.netBase, 0) + firmLevelNet + elimNet;
 
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
   const vendorById = new Map(vendors.map((v) => [v.id, v] as const));
@@ -444,7 +448,7 @@ export default async function Page() {
       {(entityPlRows.length > 0 || firmLevelNet !== 0) && (
         <div className="px-6 mb-3.5">
           <Card
-            title="Per-entity P&L (YTD, posted)"
+            title="Per firm entity P&L (YTD, posted)"
             actions={
               <Link
                 href="/consolidation"
@@ -457,7 +461,7 @@ export default async function Page() {
             <Table>
               <THead>
                 <TR hover={false}>
-                  <TH>Entity</TH>
+                  <TH>Firm entity</TH>
                   <TH>Ccy</TH>
                   <TH num>Net (native)</TH>
                   <TH num>Net ({baseCode})</TH>
@@ -465,15 +469,8 @@ export default async function Page() {
               </THead>
               <TBody>
                 {entityPlRows.map((r) => (
-                  <TR key={r.entityId} href={`/entities/${r.entityId}/books`}>
-                    <TD>
-                      <Link
-                        href={`/entities/${r.entityId}/books`}
-                        style={{ color: "var(--ink)", textDecoration: "none" }}
-                      >
-                        {r.entity?.code ?? r.entityId} — {r.entity?.name ?? "—"}
-                      </Link>
-                    </TD>
+                  <TR key={r.officeId}>
+                    <TD>{r.label}</TD>
                     <TD mono>{r.ccy}</TD>
                     <TD num neg={r.netNative < 0}>
                       {formatAmount(r.netNative, { paren: true, compact: true })}
@@ -503,6 +500,20 @@ export default async function Page() {
                     </TD>
                     <TD num neg={firmLevelNet < 0}>
                       {formatAmount(firmLevelNet, { paren: true, compact: true })}
+                    </TD>
+                  </TR>
+                )}
+                {elimNet !== 0 && (
+                  <TR hover={false}>
+                    <TD style={{ color: "var(--ink-3)" }}>
+                      Intercompany eliminations
+                    </TD>
+                    <TD mono style={{ color: "var(--ink-3)" }}>{baseCode}</TD>
+                    <TD num neg={elimNet < 0}>
+                      {formatAmount(elimNet, { paren: true, compact: true })}
+                    </TD>
+                    <TD num neg={elimNet < 0}>
+                      {formatAmount(elimNet, { paren: true, compact: true })}
                     </TD>
                   </TR>
                 )}
