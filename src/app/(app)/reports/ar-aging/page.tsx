@@ -10,11 +10,16 @@ import {
   type SmartSelectOption,
 } from "@/components/ui/SmartSelect";
 import { DrillNumber } from "@/components/DrillNumber";
+import { PrintButton } from "@/components/PrintButton";
+import { CsvDownloadButton } from "@/components/CsvDownloadButton";
+import { GlTieOut, ReconcilingItemsCard } from "@/components/AgingTieOut";
 import {
   getAllCustomerAssignments,
+  getBaseCurrency,
   getCustomers,
   getEntities,
   getInvoices,
+  getSubledgerReconciliation,
   getUsers,
 } from "@/lib/data";
 import { getSessionUser } from "@/lib/session";
@@ -39,6 +44,14 @@ const BUCKET_LABEL: Record<Bucket, string> = {
   d90p: "90+",
 };
 
+const EMPTY_BUCKETS = (): Record<Bucket, number> => ({
+  current: 0,
+  d30: 0,
+  d60: 0,
+  d90: 0,
+  d90p: 0,
+});
+
 function bucketFor(daysOverdue: number): Bucket {
   if (daysOverdue <= 0) return "current";
   if (daysOverdue <= 30) return "d30";
@@ -62,15 +75,20 @@ export default async function Page({
   const employeeFilter = params.employee ?? "";
 
   const today = new Date();
+  const asOf = today.toISOString().slice(0, 10);
   const sessionUser = await getSessionUser();
 
-  const [invoices, customers, entities, allAssignments, users] = await Promise.all([
-    getInvoices(),
-    getCustomers(),
-    getEntities(),
-    getAllCustomerAssignments(),
-    getUsers(),
-  ]);
+  const [invoices, customers, entities, allAssignments, users, base, recon] =
+    await Promise.all([
+      getInvoices(),
+      getCustomers(),
+      getEntities(),
+      getAllCustomerAssignments(),
+      getUsers(),
+      getBaseCurrency(),
+      getSubledgerReconciliation("ar", new Date().toISOString().slice(0, 10)),
+    ]);
+  const baseCode = base?.code ?? "USD";
 
   const customersById = new Map(customers.map((c) => [c.id, c] as const));
   const entitiesById = new Map(entities.map((e) => [e.id, e] as const));
@@ -101,14 +119,19 @@ export default async function Page({
     ? customersByUser.get(effectiveEmployeeId) ?? new Set<string>()
     : null;
 
-  // Aggregate per-client buckets + flat row list of open invoices.
+  // Aggregate per client × CURRENCY so bucket cells never mix currencies.
+  // Each row's amounts are native to its currency; the totals block shows
+  // one native row per currency plus a base-converted grand total using
+  // each document's fxRate snapshot (base = native / fxRate; NULL = base).
   type ClientAgingRow = {
     clientId: string;
     clientName: string;
+    currencyCode: string;
     buckets: Record<Bucket, number>;
     total: number;
+    totalBase: number;
   };
-  const byClient = new Map<string, ClientAgingRow>();
+  const byClientCurrency = new Map<string, ClientAgingRow>();
 
   type FlatRow = {
     id: string;
@@ -121,10 +144,19 @@ export default async function Page({
     daysOverdue: number;
     bucket: Bucket;
     balanceDue: number;
+    balanceDueBase: number;
+    currencyCode: string;
     status: string;
   };
   const flatRows: FlatRow[] = [];
-  let totalReceivable = 0;
+  let totalReceivableBase = 0;
+
+  // Per-currency totals (native) + base-converted totals per bucket.
+  const totalsByCurrency = new Map<
+    string,
+    { buckets: Record<Bucket, number>; total: number }
+  >();
+  const totalsBase: Record<Bucket, number> = EMPTY_BUCKETS();
 
   for (const inv of invoices) {
     const balance = parseAmount(inv.balanceDue);
@@ -139,19 +171,34 @@ export default async function Page({
     const client = customersById.get(inv.customerId);
     const ent = inv.entityId ? entitiesById.get(inv.entityId) : null;
 
+    const fx = inv.fxRate == null ? null : parseAmount(inv.fxRate);
+    const balanceBase = fx != null && fx > 0 ? balance / fx : balance;
+
+    const rowKey = `${inv.customerId}|${inv.currencyCode}`;
     const existing =
-      byClient.get(inv.customerId) ??
+      byClientCurrency.get(rowKey) ??
       ({
         clientId: inv.customerId,
         clientName: client?.name ?? "—",
-        buckets: { current: 0, d30: 0, d60: 0, d90: 0, d90p: 0 },
+        currencyCode: inv.currencyCode,
+        buckets: EMPTY_BUCKETS(),
         total: 0,
+        totalBase: 0,
       } as ClientAgingRow);
     existing.buckets[bucket] += balance;
     existing.total += balance;
-    byClient.set(inv.customerId, existing);
+    existing.totalBase += balanceBase;
+    byClientCurrency.set(rowKey, existing);
 
-    totalReceivable += balance;
+    const curTotals =
+      totalsByCurrency.get(inv.currencyCode) ??
+      ({ buckets: EMPTY_BUCKETS(), total: 0 });
+    curTotals.buckets[bucket] += balance;
+    curTotals.total += balance;
+    totalsByCurrency.set(inv.currencyCode, curTotals);
+
+    totalsBase[bucket] += balanceBase;
+    totalReceivableBase += balanceBase;
 
     flatRows.push({
       id: inv.id,
@@ -164,26 +211,21 @@ export default async function Page({
       daysOverdue,
       bucket,
       balanceDue: balance,
+      balanceDueBase: balanceBase,
+      currencyCode: inv.currencyCode,
       status: inv.status,
     });
   }
 
-  const clientRows = Array.from(byClient.values()).sort((a, b) => {
+  const clientRows = Array.from(byClientCurrency.values()).sort((a, b) => {
     if (b.buckets.d90p !== a.buckets.d90p) return b.buckets.d90p - a.buckets.d90p;
     if (b.buckets.d90 !== a.buckets.d90) return b.buckets.d90 - a.buckets.d90;
-    return b.total - a.total;
+    return b.totalBase - a.totalBase;
   });
 
-  const totals: Record<Bucket, number> = {
-    current: 0,
-    d30: 0,
-    d60: 0,
-    d90: 0,
-    d90p: 0,
-  };
-  for (const r of clientRows) {
-    for (const k of Object.keys(totals) as Bucket[]) totals[k] += r.buckets[k];
-  }
+  const currencyTotalRows = Array.from(totalsByCurrency.entries()).sort(
+    ([a], [b]) => a.localeCompare(b),
+  );
 
   flatRows.sort((a, b) => {
     if (b.daysOverdue !== a.daysOverdue) return b.daysOverdue - a.daysOverdue;
@@ -207,11 +249,13 @@ export default async function Page({
     ? customersByUser.get(sessionUser.userId)?.size ?? 0
     : 0;
 
+  const distinctClients = new Set(clientRows.map((r) => r.clientId)).size;
+
   return (
     <>
       <PageHeader
         title="AR Aging"
-        meta={`As of ${today.toISOString().slice(0, 10)} · ${clientRows.length} clients with open invoices`}
+        meta={`As of ${asOf} · ${distinctClients} clients with open invoices · totals per currency + ${baseCode} equivalent`}
         actions={
           <>
             <ButtonLink
@@ -226,12 +270,14 @@ export default async function Page({
             >
               My clients{sessionUser ? ` (${viewerCustomerCount})` : ""}
             </ButtonLink>
+            <CsvDownloadButton report="ar-aging" />
+            <PrintButton />
           </>
         }
       />
 
       <div
-        className="px-6 py-2 flex gap-2 flex-wrap items-end"
+        className="px-6 py-2 flex gap-2 flex-wrap items-end no-print"
         style={{
           background: "var(--rail)",
           borderBottom: "1px solid var(--line)",
@@ -283,12 +329,19 @@ export default async function Page({
       </div>
 
       <div className="px-6 py-3.5 pb-8 flex flex-col gap-3.5">
-        <Card title="Aging by client">
+        <GlTieOut
+          recon={recon}
+          subledgerLabel="AR subledger (open posted invoices)"
+        />
+        <ReconcilingItemsCard recon={recon} />
+
+        <Card title="Aging by client · one row per client and currency">
           <Table>
             <THead>
               <TR hover={false}>
                 <TH>Client</TH>
                 <TH>Assigned to</TH>
+                <TH>Currency</TH>
                 {BUCKET_HEADERS.map((h) => (
                   <TH key={h.key} num>
                     {h.label}
@@ -300,7 +353,7 @@ export default async function Page({
             <TBody>
               {clientRows.length === 0 && (
                 <TR hover={false}>
-                  <TD colSpan={8} style={{ color: "var(--ink-3)" }}>
+                  <TD colSpan={9} style={{ color: "var(--ink-3)" }}>
                     No open client receivables.
                   </TD>
                 </TR>
@@ -315,7 +368,7 @@ export default async function Page({
                   : "";
                 const clientInvoicesHref = `/invoices?customer=${encodeURIComponent(r.clientId)}`;
                 return (
-                  <TR key={r.clientId} hover={false}>
+                  <TR key={`${r.clientId}|${r.currencyCode}`} hover={false}>
                     <TD>
                       <Link
                         href={clientInvoicesHref}
@@ -330,6 +383,7 @@ export default async function Page({
                         {assignedNames || "—"}
                       </span>
                     </TD>
+                    <TD mono>{r.currencyCode}</TD>
                     {BUCKET_HEADERS.map((h) => {
                       const v = r.buckets[h.key];
                       const href = `/invoices?customer=${encodeURIComponent(r.clientId)}&bucket=${h.key}`;
@@ -359,30 +413,63 @@ export default async function Page({
                         href={clientInvoicesHref}
                         currencyCode={null}
                         compact
+                        title={`≈ ${formatMoney(r.totalBase, baseCode, { compact: true, paren: true })}`}
                       />
                     </TD>
                   </TR>
                 );
               })}
+              {currencyTotalRows.map(([code, t]) => (
+                <TR key={`total-${code}`} total hover={false}>
+                  <TD>Totals ({code})</TD>
+                  <TD>{""}</TD>
+                  <TD mono>{code}</TD>
+                  {BUCKET_HEADERS.map((h) => (
+                    <TD key={h.key} num>
+                      {t.buckets[h.key] === 0 ? (
+                        "—"
+                      ) : (
+                        <DrillNumber
+                          value={t.buckets[h.key]}
+                          href={`/invoices?bucket=${h.key}`}
+                          currencyCode={null}
+                          compact
+                        />
+                      )}
+                    </TD>
+                  ))}
+                  <TD num>
+                    <DrillNumber
+                      value={t.total}
+                      href="/invoices"
+                      currencyCode={null}
+                      compact
+                    />
+                  </TD>
+                </TR>
+              ))}
               <TR total hover={false}>
-                <TD>Totals</TD>
+                <TD>Total ({baseCode} equivalent)</TD>
                 <TD>{""}</TD>
+                <TD mono>{baseCode}</TD>
                 {BUCKET_HEADERS.map((h) => (
                   <TD key={h.key} num>
                     <DrillNumber
-                      value={totals[h.key]}
+                      value={totalsBase[h.key]}
                       href={`/invoices?bucket=${h.key}`}
                       currencyCode={null}
                       compact
+                      title="Converted per invoice with its fxRate snapshot"
                     />
                   </TD>
                 ))}
                 <TD num>
                   <DrillNumber
-                    value={totalReceivable}
+                    value={totalReceivableBase}
                     href="/invoices"
                     currencyCode={null}
                     compact
+                    title="Converted per invoice with its fxRate snapshot"
                   />
                 </TD>
               </TR>
@@ -401,14 +488,15 @@ export default async function Page({
                 <TH>Due</TH>
                 <TH num>Days overdue</TH>
                 <TH>Bucket</TH>
-                <TH num>Balance (USD)</TH>
+                <TH num>Balance (native)</TH>
+                <TH num>≈ {baseCode}</TH>
                 <TH>Status</TH>
               </TR>
             </THead>
             <TBody>
               {flatRows.length === 0 && (
                 <TR hover={false}>
-                  <TD colSpan={9} style={{ color: "var(--ink-3)" }}>
+                  <TD colSpan={10} style={{ color: "var(--ink-3)" }}>
                     No open invoices.
                   </TD>
                 </TR>
@@ -434,7 +522,13 @@ export default async function Page({
                     </TD>
                     <TD>{BUCKET_LABEL[r.bucket]}</TD>
                     <TD num neg={isOverdue}>
-                      {formatMoney(r.balanceDue, "USD", {
+                      {formatMoney(r.balanceDue, r.currencyCode, {
+                        compact: true,
+                        paren: true,
+                      })}
+                    </TD>
+                    <TD num>
+                      {formatMoney(r.balanceDueBase, null, {
                         compact: true,
                         paren: true,
                         hideCurrency: true,

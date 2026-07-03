@@ -21,7 +21,12 @@ export type SelectableBillRow = {
   dueDate: string;
   daysOverdue: number;
   bucket: "current" | "d30" | "d60" | "d90" | "d90p";
+  /** Open balance in the bill's own currency. */
   balanceDue: number;
+  /** Bill currency (NZD/HKD/USD, ...). */
+  currencyCode: string;
+  /** Open balance converted to base via the bill's fxRate snapshot. */
+  balanceDueBase: number;
   status: string;
 };
 
@@ -63,9 +68,11 @@ const STATUS_LABEL: Record<ImpactStatus, string> = {
 export function SelectableBillsTable({
   rows,
   cashOnHand,
+  baseCurrencyCode = "USD",
 }: {
   rows: SelectableBillRow[];
   cashOnHand: number;
+  baseCurrencyCode?: string;
 }) {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -92,11 +99,13 @@ export function SelectableBillsTable({
     setSelected(next);
   }
 
+  // Sum in BASE currency — bills are in mixed currencies (NZD/HKD/USD),
+  // so raw balanceDue amounts must never be added together.
   const selectedTotal = useMemo(
     () =>
       rows
         .filter((r) => selected.has(r.id))
-        .reduce((s, r) => s + r.balanceDue, 0),
+        .reduce((s, r) => s + r.balanceDueBase, 0),
     [rows, selected],
   );
 
@@ -122,7 +131,7 @@ export function SelectableBillsTable({
           {selectMode
             ? selected.size === 0
               ? `${rows.length} open bills — pick to plan a payment run`
-              : `${selected.size} selected · ${formatMoney(selectedTotal, "USD", { compact: true, paren: true })}`
+              : `${selected.size} selected · ≈ ${formatMoney(selectedTotal, baseCurrencyCode, { compact: true, paren: true })}`
             : `${rows.length} open bills`}
         </div>
         <div className="flex gap-2">
@@ -187,14 +196,15 @@ export function SelectableBillsTable({
             <TH>Due</TH>
             <TH num>Days overdue</TH>
             <TH>Bucket</TH>
-            <TH num>Balance (USD)</TH>
+            <TH num>Balance (native)</TH>
+            <TH num>≈ {baseCurrencyCode}</TH>
             <TH>Status</TH>
           </TR>
         </THead>
         <TBody>
           {rows.length === 0 && (
             <TR hover={false}>
-              <TD colSpan={selectMode ? 12 : 11} style={{ color: "var(--ink-3)" }}>
+              <TD colSpan={selectMode ? 13 : 12} style={{ color: "var(--ink-3)" }}>
                 No open bills.
               </TD>
             </TR>
@@ -233,7 +243,13 @@ export function SelectableBillsTable({
                 </TD>
                 <TD>{BUCKET_LABEL[r.bucket]}</TD>
                 <TD num neg={isOverdue}>
-                  {formatMoney(r.balanceDue, "USD", {
+                  {formatMoney(r.balanceDue, r.currencyCode, {
+                    compact: true,
+                    paren: true,
+                  })}
+                </TD>
+                <TD num>
+                  {formatMoney(r.balanceDueBase, baseCurrencyCode, {
                     compact: true,
                     paren: true,
                     hideCurrency: true,
@@ -265,19 +281,19 @@ export function SelectableBillsTable({
           }}
         >
           <Footer
-            label={`${selected.size} bill${selected.size === 1 ? "" : "s"} selected`}
-            value={formatMoney(selectedTotal, "USD", { compact: true, paren: true })}
+            label={`${selected.size} bill${selected.size === 1 ? "" : "s"} selected (${baseCurrencyCode} equiv.)`}
+            value={formatMoney(selectedTotal, baseCurrencyCode, { compact: true, paren: true })}
             tone={STATUS_COLOR[impact]}
           />
           <Footer
             label="Current cash"
-            value={formatMoney(cashOnHand, "USD", { compact: true, paren: true })}
+            value={formatMoney(cashOnHand, baseCurrencyCode, { compact: true, paren: true })}
             tone={STATUS_COLOR[impact]}
             muted
           />
           <Footer
             label="Cash after payment run"
-            value={formatMoney(cashAfter, "USD", { compact: true, paren: true })}
+            value={formatMoney(cashAfter, baseCurrencyCode, { compact: true, paren: true })}
             tone={STATUS_COLOR[impact]}
           />
           <span

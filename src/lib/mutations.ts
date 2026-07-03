@@ -735,15 +735,250 @@ export async function generateIntercompanyElimination(
   // Reference one source IC JE so eliminationEntryId has a meaningful FK.
   const sourceEntryId = rows[0].entryId;
 
+  // Persist the eliminated pair itself (unordered, min|max) in the
+  // reference — the source JE may tag lines to OTHER counterparts too, so
+  // the pair cannot be reliably re-derived from its lines afterwards.
+  // getEliminatedPairKeys parses this.
+  const [pairMin, pairMax] =
+    entityAId < entityBId ? [entityAId, entityBId] : [entityBId, entityAId];
+
   return createJournalEntry(user, {
     entryDate: new Date().toISOString().slice(0, 10),
     description: `Intercompany elimination · ${entityAId} ↔ ${entityBId}`,
+    reference: `ELIM ${pairMin}|${pairMax}`,
     source: "manual",
     firmEntityId: null,
     status: "posted",
     eliminationEntryId: sourceEntryId,
     lines: eliminationLines,
   });
+}
+
+/**
+ * Draft (never post) the missing counterpart of a mismatched intercompany
+ * pair on the deficient entity's books.
+ *
+ * The intercompany report reconciles pair (A, B) when A's net tagged
+ * position toward B plus B's net tagged position toward A is zero in base
+ * currency. When it isn't, this creates a DRAFT JE on `deficientEntityId`
+ * (B) dated today with:
+ *   - an intercompany line on B's best-guess Due-to / Due-from account for
+ *     counterpart A (the account B has historically used with A most
+ *     often; fallback: an account whose name matches both /due (from|to)/i
+ *     and the counterpart), tagged with counterpart A, and
+ *   - a balancing line on a suspense/clearing account (name match;
+ *     fallback: B's most-used expense account, flagged for reclass).
+ *
+ * Amounts are in base currency (no fxRate stored on the draft). The
+ * accountant reviews accounts + amounts before posting.
+ */
+export async function draftIntercompanyCounterpart(
+  user: SessionUser,
+  deficientEntityId: string,
+  counterpartEntityId: string,
+): Promise<JournalEntry> {
+  requirePermission(user, "journal_entry.create");
+  if (deficientEntityId === counterpartEntityId) {
+    throw new Error("Pick two distinct firm entities.");
+  }
+  const db = getDb();
+
+  const offices = await db
+    .select({
+      id: schema.offices.id,
+      code: schema.offices.code,
+      name: schema.offices.name,
+    })
+    .from(schema.offices)
+    .where(inArray(schema.offices.id, [deficientEntityId, counterpartEntityId]));
+  const deficient = offices.find((o) => o.id === deficientEntityId);
+  const counterpart = offices.find((o) => o.id === counterpartEntityId);
+  if (!deficient || !counterpart) {
+    throw new Error("Both sides of the pair must be firm entities.");
+  }
+
+  // Same line universe the reconciliation matrix uses: posted,
+  // non-eliminated, tagged in either direction between the pair.
+  const rows = await db
+    .select({
+      fromEntityId: schema.journalEntries.firmEntityId,
+      accountId: schema.journalLines.accountId,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+      fxRate: schema.journalEntries.fxRate,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        isNull(schema.journalEntries.eliminationEntryId),
+        or(
+          and(
+            eq(schema.journalEntries.firmEntityId, counterpartEntityId),
+            eq(
+              schema.journalLines.intercompanyCounterpartEntityId,
+              deficientEntityId,
+            ),
+          ),
+          and(
+            eq(schema.journalEntries.firmEntityId, deficientEntityId),
+            eq(
+              schema.journalLines.intercompanyCounterpartEntityId,
+              counterpartEntityId,
+            ),
+          ),
+        ),
+      ),
+    );
+  if (rows.length === 0) {
+    throw new Error("No tagged intercompany activity between this pair.");
+  }
+
+  // Net BOTH directions in base currency (base = native / fxRate; NULL
+  // fxRate = already base). A reconciled pair nets to zero; the draft
+  // books the exact offset on the deficient side.
+  let netBase = 0;
+  const accountUse = new Map<string, number>(); // deficient side's historical accounts
+  for (const r of rows) {
+    const fx = r.fxRate == null ? 0 : parseAmount(r.fxRate);
+    const nat = parseAmount(r.debit) - parseAmount(r.credit);
+    netBase += fx > 0 ? nat / fx : nat;
+    if (r.fromEntityId === deficientEntityId) {
+      accountUse.set(r.accountId, (accountUse.get(r.accountId) ?? 0) + 1);
+    }
+  }
+  const needed = Math.round(-netBase * 100) / 100;
+  if (Math.abs(needed) < 0.005) {
+    throw new Error("This pair already reconciles — nothing to draft.");
+  }
+
+  const accounts = await db
+    .select({
+      id: schema.accounts.id,
+      code: schema.accounts.code,
+      name: schema.accounts.name,
+      accountType: schema.accounts.accountType,
+      isActive: schema.accounts.isActive,
+    })
+    .from(schema.accounts)
+    .where(eq(schema.accounts.isActive, true))
+    .orderBy(schema.accounts.code);
+
+  // Intercompany line account: most-used by the deficient entity against
+  // this counterpart, else name match on Due from/to + counterpart.
+  let icAccountId: string | null = null;
+  if (accountUse.size > 0) {
+    icAccountId = Array.from(accountUse.entries()).sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+    )[0][0];
+  } else {
+    const cpNeedles = [counterpart.name.toLowerCase(), counterpart.code.toLowerCase()];
+    const match = accounts.find(
+      (a) =>
+        /due (from|to)/i.test(a.name) &&
+        cpNeedles.some((needle) => a.name.toLowerCase().includes(needle)),
+    );
+    icAccountId = match?.id ?? null;
+  }
+  if (!icAccountId) {
+    throw new Error(
+      `${deficient.code} — ${deficient.name} has no Due-from/Due-to account for ` +
+        `${counterpart.name}. Create an account named "Due from ${counterpart.name}" ` +
+        `(asset) or "Due to ${counterpart.name}" (liability) in the chart of ` +
+        `accounts, then draft again.`,
+    );
+  }
+
+  // Balancing line: a suspense / clearing account by name, else the
+  // deficient entity's most-used expense account (flagged for reclass).
+  let balancingAccountId: string | null =
+    accounts.find((a) => /suspense|clearing/i.test(a.name))?.id ?? null;
+  let balancingIsSuspense = true;
+  if (!balancingAccountId) {
+    balancingIsSuspense = false;
+    const expenseUse = await db
+      .select({
+        accountId: schema.journalLines.accountId,
+        accountType: schema.accounts.accountType,
+      })
+      .from(schema.journalLines)
+      .innerJoin(
+        schema.journalEntries,
+        eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+      )
+      .innerJoin(
+        schema.accounts,
+        eq(schema.journalLines.accountId, schema.accounts.id),
+      )
+      .where(
+        and(
+          eq(schema.journalEntries.status, "posted"),
+          eq(schema.journalEntries.firmEntityId, deficientEntityId),
+          eq(schema.accounts.accountType, "expense"),
+        ),
+      );
+    const counts = new Map<string, number>();
+    for (const r of expenseUse) {
+      counts.set(r.accountId, (counts.get(r.accountId) ?? 0) + 1);
+    }
+    balancingAccountId =
+      Array.from(counts.entries()).sort(
+        (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+      )[0]?.[0] ??
+      accounts.find((a) => a.accountType === "expense")?.id ??
+      null;
+  }
+  if (!balancingAccountId) {
+    throw new Error(
+      "No suspense/clearing (or expense) account found to balance the draft. " +
+        'Create an account named "Suspense" or "Intercompany clearing" and draft again.',
+    );
+  }
+
+  const amount = Math.abs(needed);
+  const icLine: DraftJournalLine = {
+    accountId: icAccountId,
+    description: `Intercompany with ${counterpart.code} — ${counterpart.name} (base currency)`,
+    debit: needed > 0 ? amount : 0,
+    credit: needed > 0 ? 0 : amount,
+    intercompanyCounterpartEntityId: counterpartEntityId,
+  };
+  const balancingLine: DraftJournalLine = {
+    accountId: balancingAccountId,
+    description: balancingIsSuspense
+      ? "Suspense/clearing — confirm account before posting"
+      : "TEMPORARY balancing line — reclass to the correct account before posting",
+    debit: needed > 0 ? 0 : amount,
+    credit: needed > 0 ? amount : 0,
+  };
+
+  const created = await createJournalEntry(user, {
+    entryDate: new Date().toISOString().slice(0, 10),
+    description: "Intercompany counterpart draft — review accounts before posting",
+    reference: `IC-RECON ${counterpart.code} ↔ ${deficient.code}`,
+    source: "manual",
+    firmEntityId: deficientEntityId,
+    status: "draft",
+    lines: [icLine, balancingLine],
+  });
+
+  await logAuditEvent(user, {
+    action: "intercompany.draft_counterpart",
+    resourceType: "journal_entry",
+    resourceId: created.id,
+    resourceName: created.entryNumber,
+    metadata: {
+      deficientEntityId,
+      counterpartEntityId,
+      amountBase: amount,
+      direction: needed > 0 ? "debit" : "credit",
+    },
+  });
+  return created;
 }
 
 // --------- Attachments + activity log ---------

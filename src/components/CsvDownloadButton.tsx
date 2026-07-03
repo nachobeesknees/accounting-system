@@ -13,7 +13,13 @@ export function CsvDownloadButton({
   label = "Export CSV",
   extraParams,
 }: {
-  report: "trial-balance" | "balance-sheet" | "income-statement" | "income-statement-monthly";
+  report:
+    | "trial-balance"
+    | "balance-sheet"
+    | "income-statement"
+    | "income-statement-monthly"
+    | "ar-aging"
+    | "ap-aging";
   label?: string;
   extraParams?: Record<string, string>;
 }) {
