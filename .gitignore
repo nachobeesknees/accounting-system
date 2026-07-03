@@ -44,3 +44,6 @@ drizzle/meta/
 __pycache__/
 .vercel
 .claude/worktrees/
+
+# never track a node_modules symlink
+/node_modules
