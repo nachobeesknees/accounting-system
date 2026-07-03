@@ -42,6 +42,21 @@ export function isDemoLoginEnabled(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
+/**
+ * The three canonical demo accounts (seeded by scripts/seed-security-users.ts).
+ * When demo login is enabled these sign in with one click — no password
+ * check — so the demo picker never depends on env↔DB password sync.
+ */
+const DEMO_LOGIN_EMAILS = new Set([
+  "admin@thistlewood.com",
+  "accountant@thistlewood.com",
+  "viewer@thistlewood.com",
+]);
+
+export function isDemoLoginEmail(email: string): boolean {
+  return DEMO_LOGIN_EMAILS.has(email.trim().toLowerCase());
+}
+
 const KNOWN_DEMO_CREDENTIAL_HASHES = new Set([
   "eeef711e1f6cba830571b2cc45ba4256e25d0c867c29d5f1ad1e74b33468fc22",
   "1f9a79cf419a6ccc3db845b2b22963f5bc2d5748470307dfd44eb556460c8adf",

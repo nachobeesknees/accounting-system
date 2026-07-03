@@ -7,7 +7,6 @@ import { isDemoLoginEnabled, safeRedirectPath } from "@/lib/auth-safety";
 
 type DemoAccount = {
   email: string;
-  passwordEnv: string;
   role: string;
   label: string;
   desc: string;
@@ -16,10 +15,12 @@ type DemoAccount = {
   paletteVar: string;
 };
 
+// One-click demo accounts. While demo login is enabled, auth.ts signs these
+// in without a password check, so the buttons submit only a placeholder —
+// no plaintext passwords in the rendered HTML, no env↔DB password sync.
 const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     email: "admin@thistlewood.com",
-    passwordEnv: "DEMO_ADMIN_PASSWORD",
     role: "Super admin",
     label: "Demo Admin",
     desc: "Full access — every entity, every report, every approval",
@@ -28,7 +29,6 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     email: "accountant@thistlewood.com",
-    passwordEnv: "DEMO_ACCOUNTANT_PASSWORD",
     role: "Accountant",
     label: "Demo Accountant",
     desc: "Create and edit JEs, invoices, bills",
@@ -37,7 +37,6 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
   },
   {
     email: "viewer@thistlewood.com",
-    passwordEnv: "DEMO_VIEWER_PASSWORD",
     role: "Viewer",
     label: "Demo Viewer",
     desc: "Read-only across the workspace",
@@ -45,6 +44,9 @@ const DEMO_ACCOUNTS: DemoAccount[] = [
     paletteVar: "--p-pending-bg",
   },
 ];
+
+/** Placeholder submitted by the demo buttons — auth.ts ignores it. */
+const DEMO_PASSWORD_PLACEHOLDER = "demo";
 
 /**
  * Shared server action. Reads email/password from the submitted form
@@ -111,12 +113,7 @@ export default async function LoginPage({
 
   const errored = params.error;
   const redirectTo = safeRedirectPath(params.redirectTo);
-  const demoAccounts = isDemoLoginEnabled()
-    ? DEMO_ACCOUNTS.map((account) => ({
-        ...account,
-        password: process.env[account.passwordEnv] ?? "",
-      })).filter((account) => account.password.length > 0)
-    : [];
+  const demoAccounts = isDemoLoginEnabled() ? DEMO_ACCOUNTS : [];
   const showDemoAccounts = demoAccounts.length > 0;
 
   return (
@@ -213,7 +210,11 @@ export default async function LoginPage({
             {demoAccounts.map((d) => (
               <form key={d.email} action={login}>
                 <input type="hidden" name="email" value={d.email} />
-                <input type="hidden" name="password" value={d.password} />
+                <input
+                  type="hidden"
+                  name="password"
+                  value={DEMO_PASSWORD_PLACEHOLDER}
+                />
                 <input type="hidden" name="redirectTo" value={redirectTo} />
                 <button
                   type="submit"

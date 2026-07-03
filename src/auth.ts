@@ -15,6 +15,8 @@ import { getDb, schema } from "@/db";
 import { authConfig } from "./auth.config";
 import {
   canUseLegacyDemoPassword,
+  isDemoLoginEnabled,
+  isDemoLoginEmail,
   isKnownDemoCredential,
 } from "@/lib/auth-safety";
 
@@ -97,7 +99,11 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // for un-hashed accounts. Recognise it so pre-migration seeded
         // users can still log in until reseeded.
         let ok = false;
-        if (stored.startsWith("$demo$")) {
+        if (isDemoLoginEnabled() && isDemoLoginEmail(email)) {
+          // One-click demo accounts: the /login picker submits a placeholder
+          // password; skip the hash check entirely while demo login is on.
+          ok = true;
+        } else if (stored.startsWith("$demo$")) {
           if (!canUseLegacyDemoPassword()) return null;
           ok = password === stored.slice("$demo$".length);
         } else if (stored.startsWith("$2")) {

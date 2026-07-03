@@ -19,5 +19,5 @@ If any page fails, fix it before considering the deploy complete.
 - DB is `thistlewood-db` on Neon (Vercel marketplace integration, free tier, iad1 region)
 - `DATABASE_URL` is provisioned across Production / Preview / Development envs (no `STORAGE_` prefix)
 - All money values render as `USD 1,234.56` in JetBrains Mono with tabular nums; negatives in parens; design tokens in `globals.css`
-- Demo login buttons are local/demo only and require `ENABLE_DEMO_LOGIN=true`; production must use assigned credentials.
+- Demo login: `ENABLE_DEMO_LOGIN=true` shows the one-click passwordless picker (admin / accountant / viewer) and lets those three accounts in without a password check. The production demo runs with it ON (owner's call, 2026-07-03). Email+password stays available for everyone else.
 - After schema changes: `npm run db:push -- --force` then `npm run db:seed`

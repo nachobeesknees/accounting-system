@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Set `DATABASE_URL` and `AUTH_SECRET` in `.env.local`, run the database setup below, then open <http://localhost:3000>. To show one-click demo buttons locally, set `ENABLE_DEMO_LOGIN=true`; production should leave it disabled.
+Set `DATABASE_URL` and `AUTH_SECRET` in `.env.local`, run the database setup below, then open <http://localhost:3000>. `ENABLE_DEMO_LOGIN=true` shows the one-click passwordless demo picker (admin / accountant / viewer); the production demo runs with it on.
 
 ## Database
 
@@ -32,7 +32,7 @@ Push to the connected GitHub repo. Vercel auto-detects Next.js. Add the followin
 |---|---|---|
 | `DATABASE_URL` | yes | Neon connection string |
 | `AUTH_SECRET` | yes | 32+ random bytes for Auth.js JWT cookies |
-| `ENABLE_DEMO_LOGIN` | no | Local/demo only; keep false in production |
+| `ENABLE_DEMO_LOGIN` | no | One-click passwordless demo picker; the production demo keeps it true |
 | `ALLOW_LEGACY_DEMO_PASSWORDS` | no | Temporary local migration escape hatch only |
 | `CRON_SECRET` | yes | Bearer token required by `/api/cron/recurring-invoices` in production |
 | `BLOB_READ_WRITE_TOKEN` | if using attachments | Vercel Blob token for private attachment storage |
