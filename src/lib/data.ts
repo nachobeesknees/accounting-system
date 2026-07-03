@@ -85,10 +85,14 @@ import type {
   LookupTable,
   LookupValue,
   Office,
+  PaymentRun,
+  PaymentRunItem,
   PriceList,
   PriceListEntry,
   PriceListItemType,
+  ReconciliationSession,
   SigningAuthority,
+  StatementImport,
   TimeEntry,
   User,
   Vendor,
@@ -618,6 +622,82 @@ function mapBankTransaction(
     isReconciled: r.isReconciled,
     reconciledAt: isoOrNull(r.reconciledAt),
     journalEntryId: r.journalEntryId,
+    source: r.source,
+    statementImportId: r.statementImportId,
+    reconciliationSessionId: r.reconciliationSessionId,
+  };
+}
+
+function mapStatementImport(
+  r: typeof schema.statementImports.$inferSelect,
+): StatementImport {
+  return {
+    id: r.id,
+    bankAccountId: r.bankAccountId,
+    fileName: r.fileName,
+    importedBy: r.importedBy,
+    rowCount: r.rowCount,
+    duplicateCount: r.duplicateCount,
+    notes: r.notes,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+function mapReconciliationSession(
+  r: typeof schema.reconciliationSessions.$inferSelect,
+): ReconciliationSession {
+  const status =
+    r.status === "completed" || r.status === "void" ? r.status : "in_progress";
+  return {
+    id: r.id,
+    bankAccountId: r.bankAccountId,
+    statementDate: r.statementDate,
+    statementEndingBalance: r.statementEndingBalance,
+    status,
+    startedBy: r.startedBy,
+    completedBy: r.completedBy,
+    completedAt: isoOrNull(r.completedAt),
+    notes: r.notes,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+function mapPaymentRun(r: typeof schema.paymentRuns.$inferSelect): PaymentRun {
+  const status =
+    r.status === "pending_release" ||
+    r.status === "released" ||
+    r.status === "void"
+      ? r.status
+      : "draft";
+  return {
+    id: r.id,
+    runNumber: r.runNumber,
+    bankAccountId: r.bankAccountId,
+    status,
+    preparedBy: r.preparedBy,
+    preparedAt: isoOrNull(r.preparedAt),
+    releasedBy: r.releasedBy,
+    releasedAt: isoOrNull(r.releasedAt),
+    total: r.total,
+    itemCount: r.itemCount,
+    notes: r.notes,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+function mapPaymentRunItem(
+  r: typeof schema.paymentRunItems.$inferSelect,
+): PaymentRunItem {
+  const status =
+    r.status === "paid" || r.status === "skipped" ? r.status : "pending";
+  return {
+    id: r.id,
+    paymentRunId: r.paymentRunId,
+    billId: r.billId,
+    amount: r.amount,
+    status,
+    journalEntryId: r.journalEntryId,
+    createdAt: r.createdAt.toISOString(),
   };
 }
 
@@ -2095,6 +2175,77 @@ export async function getBankTransactions(bankAccountId?: string): Promise<BankT
         .from(schema.bankTransactions)
         .orderBy(desc(schema.bankTransactions.transactionDate));
   return rows.map(mapBankTransaction);
+}
+
+export async function getStatementImports(
+  bankAccountId?: string,
+): Promise<StatementImport[]> {
+  const db = getDb();
+  const rows = bankAccountId
+    ? await db
+        .select()
+        .from(schema.statementImports)
+        .where(eq(schema.statementImports.bankAccountId, bankAccountId))
+        .orderBy(desc(schema.statementImports.createdAt))
+    : await db
+        .select()
+        .from(schema.statementImports)
+        .orderBy(desc(schema.statementImports.createdAt));
+  return rows.map(mapStatementImport);
+}
+
+export async function getReconciliationSessions(): Promise<ReconciliationSession[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.reconciliationSessions)
+    .orderBy(desc(schema.reconciliationSessions.createdAt));
+  return rows.map(mapReconciliationSession);
+}
+
+export async function getReconciliationSessionById(
+  id: string,
+): Promise<ReconciliationSession | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.reconciliationSessions)
+    .where(eq(schema.reconciliationSessions.id, id))
+    .limit(1);
+  return row ? mapReconciliationSession(row) : undefined;
+}
+
+export async function getPaymentRuns(): Promise<PaymentRun[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.paymentRuns)
+    .orderBy(desc(schema.paymentRuns.createdAt));
+  return rows.map(mapPaymentRun);
+}
+
+export async function getPaymentRunById(
+  id: string,
+): Promise<PaymentRun | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.paymentRuns)
+    .where(eq(schema.paymentRuns.id, id))
+    .limit(1);
+  return row ? mapPaymentRun(row) : undefined;
+}
+
+export async function getPaymentRunItemsByRunId(
+  paymentRunId: string,
+): Promise<PaymentRunItem[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.paymentRunItems)
+    .where(eq(schema.paymentRunItems.paymentRunId, paymentRunId))
+    .orderBy(asc(schema.paymentRunItems.createdAt), asc(schema.paymentRunItems.id));
+  return rows.map(mapPaymentRunItem);
 }
 
 export async function getUsers(): Promise<User[]> {

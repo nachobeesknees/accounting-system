@@ -11,7 +11,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { formatDate } from "@/lib/format";
 import { formatAmount, formatMoney, parseAmount } from "@/lib/money";
 
-import { runPaymentsAction } from "./actions";
+import { preparePaymentRunAction } from "./actions";
 
 export type PayRunBillRow = {
   id: string;
@@ -234,7 +234,7 @@ export function PayRunForm({
         </div>
       </div>
 
-      <form action={runPaymentsAction}>
+      <form action={preparePaymentRunAction}>
         {/* Hidden inputs carrying selected bill ids. The server action reads
             `formData.getAll("billIds")`. */}
         {Array.from(selected).map((id) => (
@@ -447,11 +447,18 @@ export function PayRunForm({
                     : undefined
                 }
               >
-                Pay {selected.size} bill
+                Prepare payment run · {selected.size} bill
                 {selected.size === 1 ? "" : "s"} ·{" "}
                 {formatAmount(selectedTotal, { paren: true, compact: true })}{" "}
                 {cashCurrency}
               </Button>
+              <span
+                className="text-[11px]"
+                style={{ color: "var(--ink-4)" }}
+              >
+                No money moves yet — a second user releases the run from
+                Payment Runs (dual control).
+              </span>
             </div>
           </div>
         </div>

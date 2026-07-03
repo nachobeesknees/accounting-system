@@ -2,17 +2,10 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { inArray } from "drizzle-orm";
 
-import { getDb, schema } from "@/db";
-import { recordBillPayment } from "@/lib/mutations";
+import { preparePaymentRun } from "@/lib/mutations";
 import { getSessionUser } from "@/lib/session";
-import {
-  PermissionError,
-  requirePermission,
-  type Action,
-} from "@/lib/permissions";
-import { parseAmount } from "@/lib/money";
+import { PermissionError } from "@/lib/permissions";
 
 function isRedirectError(err: unknown): boolean {
   return (
@@ -25,84 +18,54 @@ function isRedirectError(err: unknown): boolean {
 }
 
 /**
- * Pay all selected bills in full at their current balance due.
+ * Dual-control step 1: PREPARE a payment run from the selected bills.
  *
- * Each bill goes through the existing `recordBillPayment` mutation, which
- * writes a JE (Cash credit / AP debit) and updates the bill's status.
- *
- * We pay each bill in its native currency from the chosen bank account.
- * For the MVP we don't FX-convert; if a bill is in a non-USD currency the
- * caller is responsible for picking a matching bank account.
+ * No money moves and no journal entries post here — the run is staged as
+ * pending_release (payment_runs + payment_run_items) and a DIFFERENT user
+ * with payment.release executes it from /payments/runs/[id].
  */
-export async function runPaymentsAction(formData: FormData) {
+export async function preparePaymentRunAction(formData: FormData) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-
-  const action: Action = "bank.create_transaction";
-  try {
-    requirePermission(user, action);
-  } catch (err) {
-    if (err instanceof PermissionError) {
-      redirect(
-        `/bills/pay-run?error=${encodeURIComponent(
-          "You don't have permission to pay bills.",
-        )}`,
-      );
-    }
-    throw err;
-  }
 
   const billIds = formData
     .getAll("billIds")
     .map((v) => String(v).trim())
     .filter(Boolean);
   const paymentDate = String(formData.get("paymentDate") ?? "").trim();
-  const bankAccountIdRaw = String(formData.get("bankAccountId") ?? "").trim();
-  const bankAccountId = bankAccountIdRaw === "" ? null : bankAccountIdRaw;
+  const bankAccountId = String(formData.get("bankAccountId") ?? "").trim();
 
   if (billIds.length === 0) {
     redirect(
       `/bills/pay-run?error=${encodeURIComponent("Pick at least one bill to pay.")}`,
     );
   }
-  if (!paymentDate) {
+  if (!bankAccountId) {
     redirect(
-      `/bills/pay-run?error=${encodeURIComponent("Payment date is required.")}`,
+      `/bills/pay-run?error=${encodeURIComponent("Pick the funding bank account.")}`,
     );
   }
 
-  const db = getDb();
-  const rows = await db
-    .select()
-    .from(schema.bills)
-    .where(inArray(schema.bills.id, billIds));
-
-  let paid = 0;
+  let runId = "";
   try {
-    for (const b of rows) {
-      const balance = parseAmount(b.balanceDue);
-      if (balance <= 0) continue;
-      if (b.status === "draft" || b.status === "void" || b.status === "paid") {
-        continue;
-      }
-      await recordBillPayment(user, {
-        billId: b.id,
-        amount: balance,
-        paymentDate,
-        bankAccountId,
-      });
-      paid += 1;
-    }
+    const run = await preparePaymentRun(user, {
+      billIds,
+      bankAccountId,
+      requestedPaymentDate: paymentDate || null,
+    });
+    runId = run.id;
   } catch (err) {
     if (isRedirectError(err)) throw err;
     const msg =
-      err instanceof Error ? err.message : "Failed to record payments.";
-    redirect(`/bills/pay-run?error=${encodeURIComponent(msg)}&paid=${paid}`);
+      err instanceof PermissionError
+        ? "You don't have permission to prepare payment runs."
+        : err instanceof Error
+          ? err.message
+          : "Failed to prepare the payment run.";
+    redirect(`/bills/pay-run?error=${encodeURIComponent(msg)}`);
   }
 
-  revalidatePath("/bills");
   revalidatePath("/bills/pay-run");
-  revalidatePath("/cash-forecast");
-  revalidatePath("/");
-  redirect(`/bills/pay-run?paid=${paid}`);
+  revalidatePath("/payments/runs");
+  redirect(`/payments/runs/${runId}`);
 }

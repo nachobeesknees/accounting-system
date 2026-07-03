@@ -27,6 +27,7 @@ import {
   createTimeEntry,
   createVendor,
 } from "@/lib/mutations";
+import { parseCsv } from "@/lib/csv";
 import { parseAmount } from "@/lib/money";
 import type { SessionUser } from "@/lib/types";
 
@@ -63,6 +64,182 @@ function isTruthy(v: string | undefined): boolean {
   if (!v) return false;
   const s = v.trim().toLowerCase();
   return s === "true" || s === "1" || s === "yes" || s === "y";
+}
+
+// --------- Bank statement CSV (per-account import at /bank/[id]/import) ---------
+//
+// Bank exports don't share a schema, so this adapter does flexible header
+// matching instead of the fixed-column contract the ADAPTERS above use.
+// Accepted shapes (headers case/spacing-insensitive):
+//   - Date / Description / Amount [/ Reference]
+//   - Date / Description / Debit / Credit [/ Reference]
+// Sign convention matches bank_transactions everywhere in the app:
+// deposits positive, outflows negative (amount = credit − debit).
+
+export type BankStatementRow = {
+  /** Normalized YYYY-MM-DD. */
+  transactionDate: string;
+  description: string;
+  /** Deposits positive, outflows negative. */
+  amount: number;
+  reference: string | null;
+};
+
+export type BankStatementParseResult = {
+  rows: BankStatementRow[];
+  /** Per-row problems ("Row 3: unparseable date …"). Bad rows are skipped. */
+  errors: string[];
+  /** Set when the file is unusable as a whole (missing headers, empty). */
+  headerError: string | null;
+};
+
+/** Normalize a header for matching: lowercase, strip non-alphanumerics. */
+function normHeader(h: string): string {
+  return h.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+const DATE_HEADERS = ["date", "transactiondate", "posteddate", "postingdate", "valuedate", "bookingdate"];
+const DESC_HEADERS = ["description", "memo", "details", "narrative", "transactiondescription", "payee", "name"];
+const AMOUNT_HEADERS = ["amount", "transactionamount", "value"];
+const DEBIT_HEADERS = ["debit", "debitamount", "withdrawal", "withdrawals", "moneyout", "paidout"];
+const CREDIT_HEADERS = ["credit", "creditamount", "deposit", "deposits", "moneyin", "paidin"];
+const REF_HEADERS = ["reference", "ref", "referencenumber", "checknumber", "chequenumber", "transactionid", "fitid"];
+
+function findHeader(headers: string[], candidates: string[]): string | null {
+  for (const c of candidates) {
+    const hit = headers.find((h) => normHeader(h) === c);
+    if (hit !== undefined) return hit;
+  }
+  return null;
+}
+
+/**
+ * Parse a statement money cell. Handles thousands separators, currency
+ * symbols and accounting-style parentheses negatives. Returns null when
+ * the cell has no parseable number.
+ */
+function parseStatementAmount(raw: string | undefined): number | null {
+  if (raw == null) return null;
+  let s = raw.trim();
+  if (s === "") return null;
+  let negative = false;
+  if (/^\(.*\)$/.test(s)) {
+    negative = true;
+    s = s.slice(1, -1);
+  }
+  s = s.replace(/[^0-9.,-]/g, "");
+  const n = parseAmount(s);
+  if (s.replace(/[,.-]/g, "") === "") return null;
+  if (!Number.isFinite(n)) return null;
+  return negative ? -Math.abs(n) : n;
+}
+
+/**
+ * True only for a real calendar date. A round-trip check is required
+ * because `new Date("2026-02-31")` silently rolls over to Mar 3 instead of
+ * failing — and Postgres's `date` column rejects such values, which would
+ * abort the whole import batch with a raw DB error.
+ */
+function isValidCalendarDate(y: string, mm: string, dd: string): boolean {
+  const iso = `${y}-${mm}-${dd}`;
+  const parsed = new Date(`${iso}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return parsed.toISOString().slice(0, 10) === iso;
+}
+
+/** Normalize a statement date cell to YYYY-MM-DD; null when unparseable. */
+function parseStatementDate(raw: string | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim();
+  // ISO already (allow a trailing time part).
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) {
+    if (!isValidCalendarDate(iso[1], iso[2], iso[3])) return null;
+    return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  }
+  // US-style M/D/YYYY or M-D-YYYY (2-digit years land in 20xx).
+  const us = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (us) {
+    const [, m, d, yRaw] = us;
+    const y = yRaw.length === 2 ? `20${yRaw}` : yRaw;
+    const mm = m.padStart(2, "0");
+    const dd = d.padStart(2, "0");
+    if (!isValidCalendarDate(y, mm, dd)) return null;
+    return `${y}-${mm}-${dd}`;
+  }
+  return null;
+}
+
+/**
+ * Parse a raw bank-statement CSV into normalized rows. Unusable rows are
+ * reported in `errors` and skipped; the caller decides whether to abort
+ * or import the good ones.
+ */
+export function parseBankStatementCsv(text: string): BankStatementParseResult {
+  const parsed = parseCsv(text);
+  if (parsed.headers.length === 0 || parsed.rows.length === 0) {
+    return { rows: [], errors: [], headerError: "The CSV has no data rows." };
+  }
+
+  const dateCol = findHeader(parsed.headers, DATE_HEADERS);
+  const descCol = findHeader(parsed.headers, DESC_HEADERS);
+  const amountCol = findHeader(parsed.headers, AMOUNT_HEADERS);
+  const debitCol = findHeader(parsed.headers, DEBIT_HEADERS);
+  const creditCol = findHeader(parsed.headers, CREDIT_HEADERS);
+  const refCol = findHeader(parsed.headers, REF_HEADERS);
+
+  if (!dateCol) {
+    return { rows: [], errors: [], headerError: "No Date column found. Accepted headers: Date, Transaction Date, Posted Date, Value Date." };
+  }
+  if (!descCol) {
+    return { rows: [], errors: [], headerError: "No Description column found. Accepted headers: Description, Memo, Details, Narrative, Payee." };
+  }
+  if (!amountCol && !debitCol && !creditCol) {
+    return { rows: [], errors: [], headerError: "No amount column found. Provide an Amount column, or separate Debit and Credit columns." };
+  }
+
+  const rows: BankStatementRow[] = [];
+  const errors: string[] = [];
+
+  for (let i = 0; i < parsed.rows.length; i++) {
+    const row = parsed.rows[i];
+    const rowNo = i + 2; // 1-based + header row, matches the settings importer
+    const date = parseStatementDate(row[dateCol]);
+    if (!date) {
+      errors.push(`Row ${rowNo}: unparseable date "${row[dateCol] ?? ""}".`);
+      continue;
+    }
+    const description = (row[descCol] ?? "").trim();
+    if (!description) {
+      errors.push(`Row ${rowNo}: description is empty.`);
+      continue;
+    }
+
+    let amount: number | null = null;
+    if (amountCol) amount = parseStatementAmount(row[amountCol]);
+    if (amount == null && (debitCol || creditCol)) {
+      const debit = debitCol ? parseStatementAmount(row[debitCol]) : null;
+      const credit = creditCol ? parseStatementAmount(row[creditCol]) : null;
+      if (debit != null || credit != null) {
+        // Deposits positive, outflows negative. Banks print debit columns
+        // as positive magnitudes, so take absolute values defensively.
+        amount = Math.abs(credit ?? 0) - Math.abs(debit ?? 0);
+      }
+    }
+    if (amount == null) {
+      errors.push(`Row ${rowNo}: no parseable amount.`);
+      continue;
+    }
+    if (amount === 0) {
+      errors.push(`Row ${rowNo}: zero amount — skipped.`);
+      continue;
+    }
+
+    const reference = refCol ? (row[refCol] ?? "").trim() || null : null;
+    rows.push({ transactionDate: date, description, amount, reference });
+  }
+
+  return { rows, errors, headerError: null };
 }
 
 export const ADAPTERS: Record<CsvTypeKey, CsvAdapter> = {

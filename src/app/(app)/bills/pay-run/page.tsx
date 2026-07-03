@@ -32,11 +32,10 @@ const UNGROUPED_REGION_ID = "__none__";
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; paid?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const params = await searchParams;
   const error = params.error ?? "";
-  const paid = params.paid ?? "";
 
   const [
     allBills,
@@ -112,12 +111,16 @@ export default async function Page({
     if (ofc?.regionId) scopedRegionIds.add(ofc.regionId);
   }
 
-  // Filter to payable bills (open balance, approved or partial).
+  // Filter to payable bills (open balance, approved or partial). Only
+  // bills in the funding currency are offered — the run total and the bank
+  // payment file are denominated in the funding account's currency, and
+  // preparePaymentRun rejects mixed-currency runs server-side.
   const payable = allBills.filter((b) => {
     const status = b.status;
     if (status !== "approved" && status !== "partial" && status !== "overdue") {
       return false;
     }
+    if (b.currencyCode !== cashCurrency) return false;
     if (parseAmount(b.balanceDue) <= 0) return false;
     if (scopedRegionIds.size > 0) {
       const r = regionForBill(b);
@@ -188,9 +191,17 @@ export default async function Page({
 
   const totalBills = groups.reduce((s, g) => s + g.bills.length, 0);
 
-  // Default bank account: first active USD account.
+  // Funding candidates: active USD FIRM accounts only. Client/entity-owned
+  // accounts (entityId/clientId set, no GL link) never post to the firm
+  // ledger and must not fund firm bill payments — preparePaymentRun
+  // enforces the same rule server-side.
   const usdBanks = bankAccounts.filter(
-    (b) => b.isActive && b.currencyCode === cashCurrency,
+    (b) =>
+      b.isActive &&
+      b.currencyCode === cashCurrency &&
+      !b.entityId &&
+      !b.clientId &&
+      !!b.accountId,
   );
   const defaultBankAccountId = usdBanks[0]?.id ?? null;
 
@@ -223,18 +234,6 @@ export default async function Page({
           }}
         >
           {scopeBanner}
-        </div>
-      )}
-      {paid && (
-        <div
-          className="px-6 py-1.5 text-[12px]"
-          style={{
-            background: "var(--p-active-bg)",
-            color: "var(--p-active-fg)",
-            borderBottom: "1px solid var(--line)",
-          }}
-        >
-          Paid {paid} bill{paid === "1" ? "" : "s"}.
         </div>
       )}
       {error && (

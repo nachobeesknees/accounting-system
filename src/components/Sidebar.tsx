@@ -52,6 +52,7 @@ const SECTIONS: Section[] = [
     items: [
       { href: "/bank", label: "Bank Accounts" },
       { href: "/reconciliation", label: "Reconciliation" },
+      { href: "/payments/runs", label: "Payment Runs" },
     ],
   },
   {

@@ -12,7 +12,7 @@
 
 import "server-only";
 
-import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumCredits, sumDebits, toDecimalString } from "./money";
@@ -23,6 +23,7 @@ import type {
   SessionUser,
 } from "./types";
 import { getJournalEntryById } from "./data";
+import { computeClearedTotal, findOpeningAnchor } from "./reconciliation";
 import { getEntityScope } from "./entity-scope";
 import { checkPeriodForPost } from "./periods";
 import { logAuditEvent } from "./audit";
@@ -3549,7 +3550,20 @@ export async function recordBillPayment(
   input: RecordBillPaymentInput,
 ) {
   requirePermission(user, "bank.create_transaction");
+  return postBillPayment(user, input);
+}
 
+/**
+ * The actual bill-payment posting (JE + bill status update), shared by
+ * `recordBillPayment` (direct pay, gated on bank.create_transaction) and
+ * `releasePaymentRun` (dual-control release, gated on payment.release —
+ * releasers don't necessarily hold bank.create_transaction). Callers MUST
+ * enforce their own permission before calling.
+ */
+async function postBillPayment(
+  user: SessionUser,
+  input: RecordBillPaymentInput,
+) {
   const db = getDb();
   const [bill] = await db
     .select()
@@ -4277,6 +4291,856 @@ export async function reconcileTransaction(
     })
     .where(eq(schema.bankTransactions.id, txId));
   return { ...tx, isReconciled: newReconciled };
+}
+
+// --------- Bank transactions: manual entry + statement import ---------
+
+export type CreateBankTransactionInput = {
+  bankAccountId: string;
+  transactionDate: string;
+  description: string;
+  /** Signed: deposits positive, outflows negative (matches seed + imports). */
+  amount: number;
+  reference?: string | null;
+};
+
+export async function createBankTransaction(
+  user: SessionUser,
+  input: CreateBankTransactionInput,
+) {
+  requirePermission(user, "bank.create_transaction");
+  if (!input.transactionDate) throw new Error("Transaction date is required.");
+  if (!input.description.trim()) throw new Error("Description is required.");
+  if (!Number.isFinite(input.amount) || input.amount === 0) {
+    throw new Error("Amount must be a non-zero number.");
+  }
+  const db = getDb();
+  const [ba] = await db
+    .select({ id: schema.bankAccounts.id, name: schema.bankAccounts.name })
+    .from(schema.bankAccounts)
+    .where(eq(schema.bankAccounts.id, input.bankAccountId))
+    .limit(1);
+  if (!ba) throw new Error("Bank account not found.");
+
+  const id = uid("bt");
+  const [created] = await db
+    .insert(schema.bankTransactions)
+    .values({
+      id,
+      bankAccountId: input.bankAccountId,
+      transactionDate: input.transactionDate,
+      description: input.description.trim(),
+      amount: toDecimalString(input.amount),
+      reference: input.reference?.trim() || null,
+      isReconciled: false,
+      source: "manual",
+    })
+    .returning();
+
+  await logAuditEvent(user, {
+    action: "bank_transaction.create",
+    resourceType: "bank_transaction",
+    resourceId: id,
+    resourceName: `${ba.name} ${input.transactionDate}`,
+    changes: { after: { amount: toDecimalString(input.amount), source: "manual" } },
+  });
+  return created;
+}
+
+/** Dedupe key for statement rows: date|amount|reference-or-description. */
+function statementDedupeKey(
+  transactionDate: string,
+  amount: string,
+  reference: string | null,
+  description: string,
+): string {
+  const tail = (reference ?? "").trim() || description.trim();
+  return `${transactionDate}|${toDecimalString(parseAmount(amount))}|${tail.toLowerCase()}`;
+}
+
+export type ImportBankStatementInput = {
+  bankAccountId: string;
+  fileName: string;
+  rows: Array<{
+    transactionDate: string;
+    description: string;
+    /** Signed: deposits positive, outflows negative. */
+    amount: number;
+    reference: string | null;
+  }>;
+  notes?: string | null;
+};
+
+/**
+ * Import a parsed bank-statement CSV. Rows that already exist for the
+ * account — same (date, amount, reference-or-description) — are skipped
+ * as duplicates, so re-importing an overlapping statement is safe. One
+ * statement_imports row records provenance + dedupe stats; created
+ * transactions get source='import' and point back at the batch.
+ */
+export async function importBankStatement(
+  user: SessionUser,
+  input: ImportBankStatementInput,
+) {
+  requirePermission(user, "bank.import");
+  if (input.rows.length === 0) throw new Error("Nothing to import.");
+  const db = getDb();
+  const [ba] = await db
+    .select({ id: schema.bankAccounts.id, name: schema.bankAccounts.name })
+    .from(schema.bankAccounts)
+    .where(eq(schema.bankAccounts.id, input.bankAccountId))
+    .limit(1);
+  if (!ba) throw new Error("Bank account not found.");
+
+  const existing = await db
+    .select({
+      transactionDate: schema.bankTransactions.transactionDate,
+      amount: schema.bankTransactions.amount,
+      reference: schema.bankTransactions.reference,
+      description: schema.bankTransactions.description,
+    })
+    .from(schema.bankTransactions)
+    .where(eq(schema.bankTransactions.bankAccountId, input.bankAccountId));
+  // Dedupe with MULTIPLICITY against what's already in the DB: each
+  // existing row absorbs at most one incoming row with the same key, so a
+  // statement that legitimately contains two identical lines (same day,
+  // same amount, no reference) imports both — only true re-import overlap
+  // is skipped.
+  const existingCounts = new Map<string, number>();
+  for (const t of existing) {
+    const key = statementDedupeKey(
+      t.transactionDate,
+      t.amount,
+      t.reference,
+      t.description,
+    );
+    existingCounts.set(key, (existingCounts.get(key) ?? 0) + 1);
+  }
+
+  const importId = uid("si");
+  type NewTx = typeof schema.bankTransactions.$inferInsert;
+  const inserts: NewTx[] = [];
+  let duplicateCount = 0;
+  for (const row of input.rows) {
+    const amountStr = toDecimalString(row.amount);
+    const key = statementDedupeKey(
+      row.transactionDate,
+      amountStr,
+      row.reference,
+      row.description,
+    );
+    const remaining = existingCounts.get(key) ?? 0;
+    if (remaining > 0) {
+      existingCounts.set(key, remaining - 1);
+      duplicateCount += 1;
+      continue;
+    }
+    inserts.push({
+      id: uid("bt"),
+      bankAccountId: input.bankAccountId,
+      transactionDate: row.transactionDate,
+      description: row.description,
+      amount: amountStr,
+      reference: row.reference,
+      isReconciled: false,
+      source: "import",
+      statementImportId: importId,
+    });
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.statementImports).values({
+      id: importId,
+      bankAccountId: input.bankAccountId,
+      fileName: input.fileName,
+      importedBy: user.userId,
+      rowCount: inserts.length,
+      duplicateCount,
+      notes: input.notes ?? null,
+    });
+    if (inserts.length > 0) {
+      await tx.insert(schema.bankTransactions).values(inserts);
+    }
+  });
+
+  await logAuditEvent(user, {
+    action: "bank.import_statement",
+    resourceType: "statement_import",
+    resourceId: importId,
+    resourceName: input.fileName,
+    metadata: {
+      bankAccountId: input.bankAccountId,
+      imported: inserts.length,
+      duplicates: duplicateCount,
+    },
+  });
+  return { importId, imported: inserts.length, duplicates: duplicateCount };
+}
+
+// --------- Reconciliation sessions ---------
+
+export type StartReconciliationSessionInput = {
+  bankAccountId: string;
+  statementDate: string;
+  statementEndingBalance: number;
+  notes?: string | null;
+};
+
+export async function startReconciliationSession(
+  user: SessionUser,
+  input: StartReconciliationSessionInput,
+) {
+  requirePermission(user, "bank.reconcile");
+  if (!input.statementDate) throw new Error("Statement date is required.");
+  if (!Number.isFinite(input.statementEndingBalance)) {
+    throw new Error("Statement ending balance is required.");
+  }
+  const db = getDb();
+  const [ba] = await db
+    .select({
+      id: schema.bankAccounts.id,
+      name: schema.bankAccounts.name,
+      accountId: schema.bankAccounts.accountId,
+    })
+    .from(schema.bankAccounts)
+    .where(eq(schema.bankAccounts.id, input.bankAccountId))
+    .limit(1);
+  if (!ba) throw new Error("Bank account not found.");
+  // Client/entity-owned accounts have no GL link and never post to the
+  // firm ledger — there's nothing to reconcile against.
+  if (!ba.accountId) {
+    throw new Error(
+      "Only GL-linked firm bank accounts can be reconciled. This account has no GL link.",
+    );
+  }
+  const [open] = await db
+    .select({ id: schema.reconciliationSessions.id })
+    .from(schema.reconciliationSessions)
+    .where(
+      and(
+        eq(schema.reconciliationSessions.bankAccountId, input.bankAccountId),
+        eq(schema.reconciliationSessions.status, "in_progress"),
+      ),
+    )
+    .limit(1);
+  if (open) {
+    throw new Error(
+      "An in-progress reconciliation already exists for this account. Complete or void it first.",
+    );
+  }
+
+  const id = uid("rs");
+  const [created] = await db
+    .insert(schema.reconciliationSessions)
+    .values({
+      id,
+      bankAccountId: input.bankAccountId,
+      statementDate: input.statementDate,
+      statementEndingBalance: toDecimalString(input.statementEndingBalance),
+      status: "in_progress",
+      startedBy: user.userId,
+      notes: input.notes ?? null,
+    })
+    .returning();
+
+  await logAuditEvent(user, {
+    action: "reconciliation.start",
+    resourceType: "reconciliation_session",
+    resourceId: id,
+    resourceName: `${ba.name} @ ${input.statementDate}`,
+    metadata: {
+      statementEndingBalance: toDecimalString(input.statementEndingBalance),
+    },
+  });
+  return created;
+}
+
+async function getOpenSession(sessionId: string) {
+  const db = getDb();
+  const [session] = await db
+    .select()
+    .from(schema.reconciliationSessions)
+    .where(eq(schema.reconciliationSessions.id, sessionId))
+    .limit(1);
+  if (!session) throw new Error("Reconciliation session not found.");
+  if (session.status !== "in_progress") {
+    throw new Error(`Session is ${session.status} — only in-progress sessions can change.`);
+  }
+  return session;
+}
+
+/**
+ * Clear (or unclear) one bank transaction inside a session. Clearing sets
+ * is_reconciled + reconciled_at + reconciliation_session_id; unclearing
+ * nulls them (and any journal match stamped inside this session).
+ */
+export async function setReconciliationCleared(
+  user: SessionUser,
+  input: { sessionId: string; transactionId: string; cleared: boolean },
+) {
+  requirePermission(user, "bank.reconcile");
+  const db = getDb();
+  const session = await getOpenSession(input.sessionId);
+  const [tx] = await db
+    .select()
+    .from(schema.bankTransactions)
+    .where(eq(schema.bankTransactions.id, input.transactionId))
+    .limit(1);
+  if (!tx) throw new Error("Transaction not found.");
+  if (tx.bankAccountId !== session.bankAccountId) {
+    throw new Error("Transaction belongs to a different bank account.");
+  }
+
+  if (input.cleared) {
+    if (tx.isReconciled) return tx; // idempotent
+    if (tx.transactionDate > session.statementDate) {
+      throw new Error(
+        `Transaction is dated after the statement date (${session.statementDate}).`,
+      );
+    }
+    await db
+      .update(schema.bankTransactions)
+      .set({
+        isReconciled: true,
+        reconciledAt: new Date(),
+        reconciliationSessionId: session.id,
+      })
+      .where(eq(schema.bankTransactions.id, tx.id));
+  } else {
+    if (tx.reconciliationSessionId !== session.id) {
+      throw new Error("Transaction was not cleared in this session.");
+    }
+    await db
+      .update(schema.bankTransactions)
+      .set({
+        isReconciled: false,
+        reconciledAt: null,
+        reconciliationSessionId: null,
+        journalEntryId: null,
+      })
+      .where(eq(schema.bankTransactions.id, tx.id));
+  }
+  return { ...tx, isReconciled: input.cleared };
+}
+
+/**
+ * Accept an auto-match suggestion: stamp the journal entry onto the bank
+ * transaction and clear it into the session in one step.
+ */
+export async function acceptReconciliationMatch(
+  user: SessionUser,
+  input: { sessionId: string; transactionId: string; journalEntryId: string },
+) {
+  requirePermission(user, "bank.reconcile");
+  const db = getDb();
+  const session = await getOpenSession(input.sessionId);
+  const [tx] = await db
+    .select()
+    .from(schema.bankTransactions)
+    .where(eq(schema.bankTransactions.id, input.transactionId))
+    .limit(1);
+  if (!tx) throw new Error("Transaction not found.");
+  if (tx.bankAccountId !== session.bankAccountId) {
+    throw new Error("Transaction belongs to a different bank account.");
+  }
+  if (tx.isReconciled) throw new Error("Transaction is already cleared.");
+  const [je] = await db
+    .select({
+      id: schema.journalEntries.id,
+      status: schema.journalEntries.status,
+      entryNumber: schema.journalEntries.entryNumber,
+    })
+    .from(schema.journalEntries)
+    .where(eq(schema.journalEntries.id, input.journalEntryId))
+    .limit(1);
+  if (!je) throw new Error("Journal entry not found.");
+  if (je.status !== "posted") throw new Error("Only posted journal entries can be matched.");
+
+  // One journal entry explains at most one bank transaction — reject if
+  // some other transaction already carries this match (e.g. a stale page
+  // or a second tab accepted the same suggestion first).
+  const [alreadyMatched] = await db
+    .select({ id: schema.bankTransactions.id })
+    .from(schema.bankTransactions)
+    .where(
+      and(
+        eq(schema.bankTransactions.journalEntryId, je.id),
+        ne(schema.bankTransactions.id, tx.id),
+      ),
+    )
+    .limit(1);
+  if (alreadyMatched) {
+    throw new Error(
+      `${je.entryNumber} is already matched to another bank transaction.`,
+    );
+  }
+
+  // Recompute the match server-side rather than trusting the form: the
+  // entry must have a line on this account's GL link whose signed amount
+  // (debit positive — cash is debit-normal) equals the bank amount.
+  const [ba] = await db
+    .select({ accountId: schema.bankAccounts.accountId })
+    .from(schema.bankAccounts)
+    .where(eq(schema.bankAccounts.id, session.bankAccountId))
+    .limit(1);
+  if (!ba?.accountId) {
+    throw new Error("This bank account has no GL link — nothing to match against.");
+  }
+  const lines = await db
+    .select({
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+    })
+    .from(schema.journalLines)
+    .where(
+      and(
+        eq(schema.journalLines.journalEntryId, je.id),
+        eq(schema.journalLines.accountId, ba.accountId),
+      ),
+    );
+  const txAmount = parseAmount(tx.amount);
+  const hasMatchingLine = lines.some((l) => {
+    const debit = parseAmount(l.debit);
+    const signed = debit > 0 ? debit : -parseAmount(l.credit);
+    return Math.abs(signed - txAmount) < 0.005;
+  });
+  if (!hasMatchingLine) {
+    throw new Error(
+      `${je.entryNumber} has no line on this account's GL link for ${txAmount.toFixed(2)} — it cannot be matched to this transaction.`,
+    );
+  }
+
+  await db
+    .update(schema.bankTransactions)
+    .set({
+      journalEntryId: je.id,
+      isReconciled: true,
+      reconciledAt: new Date(),
+      reconciliationSessionId: session.id,
+    })
+    .where(eq(schema.bankTransactions.id, tx.id));
+
+  await logAuditEvent(user, {
+    action: "reconciliation.match",
+    resourceType: "bank_transaction",
+    resourceId: tx.id,
+    resourceName: tx.description,
+    metadata: { sessionId: session.id, journalEntryId: je.id, entryNumber: je.entryNumber },
+  });
+  return { transactionId: tx.id, journalEntryId: je.id };
+}
+
+/** Complete a session — allowed only when
+ *  statement ending − opening anchor − cleared is exactly 0.00.
+ *  (Anchor + counting rules live in src/lib/reconciliation.ts, shared with
+ *  the session page so screen and server always agree.) */
+export async function completeReconciliationSession(
+  user: SessionUser,
+  sessionId: string,
+) {
+  requirePermission(user, "bank.reconcile");
+  const db = getDb();
+  const session = await getOpenSession(sessionId);
+  const allSessions = await db
+    .select({
+      id: schema.reconciliationSessions.id,
+      bankAccountId: schema.reconciliationSessions.bankAccountId,
+      statementDate: schema.reconciliationSessions.statementDate,
+      statementEndingBalance: schema.reconciliationSessions.statementEndingBalance,
+      status: schema.reconciliationSessions.status,
+    })
+    .from(schema.reconciliationSessions)
+    .where(eq(schema.reconciliationSessions.bankAccountId, session.bankAccountId));
+  const anchor = findOpeningAnchor(session, allSessions);
+  const txs = await db
+    .select({
+      transactionDate: schema.bankTransactions.transactionDate,
+      amount: schema.bankTransactions.amount,
+      isReconciled: schema.bankTransactions.isReconciled,
+      reconciliationSessionId: schema.bankTransactions.reconciliationSessionId,
+    })
+    .from(schema.bankTransactions)
+    .where(
+      and(
+        eq(schema.bankTransactions.bankAccountId, session.bankAccountId),
+        eq(schema.bankTransactions.isReconciled, true),
+        lte(schema.bankTransactions.transactionDate, session.statementDate),
+      ),
+    );
+  const cleared = computeClearedTotal(txs, session, anchor.anchorDate);
+  const difference =
+    parseAmount(session.statementEndingBalance) - anchor.openingBalance - cleared;
+  if (Math.abs(difference) >= 0.005) {
+    throw new Error(
+      `Cannot complete: difference is ${difference.toFixed(2)} — it must be exactly 0.00. Clear or add the missing transactions first.`,
+    );
+  }
+  const now = new Date();
+  const [updated] = await db
+    .update(schema.reconciliationSessions)
+    .set({ status: "completed", completedBy: user.userId, completedAt: now })
+    .where(eq(schema.reconciliationSessions.id, sessionId))
+    .returning();
+
+  await logAuditEvent(user, {
+    action: "reconciliation.complete",
+    resourceType: "reconciliation_session",
+    resourceId: sessionId,
+    resourceName: `${session.bankAccountId} @ ${session.statementDate}`,
+    metadata: {
+      statementEndingBalance: session.statementEndingBalance,
+      openingBalance: toDecimalString(anchor.openingBalance),
+      clearedTotal: toDecimalString(cleared),
+    },
+  });
+  return updated;
+}
+
+/** Void a session and return every transaction it cleared to unreconciled. */
+export async function voidReconciliationSession(
+  user: SessionUser,
+  sessionId: string,
+) {
+  requirePermission(user, "bank.reconcile");
+  const db = getDb();
+  const [session] = await db
+    .select()
+    .from(schema.reconciliationSessions)
+    .where(eq(schema.reconciliationSessions.id, sessionId))
+    .limit(1);
+  if (!session) throw new Error("Reconciliation session not found.");
+  if (session.status === "void") return session;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(schema.bankTransactions)
+      .set({
+        isReconciled: false,
+        reconciledAt: null,
+        reconciliationSessionId: null,
+        journalEntryId: null,
+      })
+      .where(eq(schema.bankTransactions.reconciliationSessionId, sessionId));
+    await tx
+      .update(schema.reconciliationSessions)
+      .set({ status: "void" })
+      .where(eq(schema.reconciliationSessions.id, sessionId));
+  });
+
+  await logAuditEvent(user, {
+    action: "reconciliation.void",
+    resourceType: "reconciliation_session",
+    resourceId: sessionId,
+    resourceName: `${session.bankAccountId} @ ${session.statementDate}`,
+    changes: { before: { status: session.status }, after: { status: "void" } },
+  });
+  return { ...session, status: "void" };
+}
+
+// --------- Dual-control payment runs ---------
+
+export async function nextPaymentRunNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  const db = getDb();
+  const [row] = await db
+    .select({ runNumber: schema.paymentRuns.runNumber })
+    .from(schema.paymentRuns)
+    .orderBy(desc(schema.paymentRuns.runNumber))
+    .limit(1);
+  const n = parseTrailingInt(row?.runNumber) + 1;
+  return `PR-${year}-${pad(n, 3)}`;
+}
+
+export type PreparePaymentRunInput = {
+  billIds: string[];
+  bankAccountId: string;
+  /** Preparer's intended payment date — recorded in notes for the releaser.
+   *  The actual JE date is the release date (money moves at release). */
+  requestedPaymentDate?: string | null;
+  notes?: string | null;
+};
+
+/**
+ * Stage a payment run: snapshot the selected bills' balances into
+ * payment_run_items and park the batch as pending_release. NO money moves
+ * and NO journal entries post here — that happens in `releasePaymentRun`,
+ * which a DIFFERENT user must execute (dual control).
+ */
+export async function preparePaymentRun(
+  user: SessionUser,
+  input: PreparePaymentRunInput,
+) {
+  requirePermission(user, "bank.create_transaction");
+  const db = getDb();
+  if (input.billIds.length === 0) {
+    throw new Error("Pick at least one bill to pay.");
+  }
+  const [ba] = await db
+    .select({
+      id: schema.bankAccounts.id,
+      name: schema.bankAccounts.name,
+      accountId: schema.bankAccounts.accountId,
+      entityId: schema.bankAccounts.entityId,
+      clientId: schema.bankAccounts.clientId,
+      currencyCode: schema.bankAccounts.currencyCode,
+    })
+    .from(schema.bankAccounts)
+    .where(eq(schema.bankAccounts.id, input.bankAccountId))
+    .limit(1);
+  if (!ba) throw new Error("Funding bank account not found.");
+  // Same invariant reconciliation enforces: client/entity-owned accounts
+  // never post to the firm ledger, so they can't fund firm bill payments.
+  if (ba.entityId || ba.clientId || !ba.accountId) {
+    throw new Error(
+      "Payment runs must be funded from a GL-linked firm bank account — client/entity accounts never post to the firm ledger.",
+    );
+  }
+
+  const bills = await db
+    .select()
+    .from(schema.bills)
+    .where(inArray(schema.bills.id, input.billIds));
+  const payable = bills.filter(
+    (b) =>
+      parseAmount(b.balanceDue) > 0 &&
+      b.status !== "draft" &&
+      b.status !== "void" &&
+      b.status !== "paid",
+  );
+  if (payable.length === 0) {
+    throw new Error("None of the selected bills are payable.");
+  }
+  // The run total and the bank payment file are denominated in the funding
+  // account's currency — a native-currency bill amount must not be stamped
+  // with a different currency code.
+  const offCurrency = payable.filter((b) => b.currencyCode !== ba.currencyCode);
+  if (offCurrency.length > 0) {
+    throw new Error(
+      `Currency mismatch: ${offCurrency
+        .map((b) => `${b.billNumber} (${b.currencyCode})`)
+        .join(", ")} cannot be paid from a ${ba.currencyCode} account.`,
+    );
+  }
+
+  const total = payable.reduce((s, b) => s + parseAmount(b.balanceDue), 0);
+  const runNumber = await nextPaymentRunNumber();
+  const id = uid("pr");
+  const now = new Date();
+  const noteParts: string[] = [];
+  if (input.requestedPaymentDate) {
+    noteParts.push(`Requested payment date: ${input.requestedPaymentDate}`);
+  }
+  if (input.notes) noteParts.push(input.notes);
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.paymentRuns).values({
+      id,
+      runNumber,
+      bankAccountId: input.bankAccountId,
+      status: "pending_release",
+      preparedBy: user.userId,
+      preparedAt: now,
+      total: toDecimalString(total),
+      itemCount: payable.length,
+      notes: noteParts.length > 0 ? noteParts.join("\n") : null,
+    });
+    await tx.insert(schema.paymentRunItems).values(
+      payable.map((b, i) => ({
+        id: `${id}-i${i + 1}`,
+        paymentRunId: id,
+        billId: b.id,
+        amount: b.balanceDue,
+        status: "pending",
+      })),
+    );
+  });
+
+  await logAuditEvent(user, {
+    action: "payment_run.prepare",
+    resourceType: "payment_run",
+    resourceId: id,
+    resourceName: runNumber,
+    metadata: {
+      bankAccountId: input.bankAccountId,
+      itemCount: payable.length,
+      total: toDecimalString(total),
+    },
+  });
+  return { id, runNumber, itemCount: payable.length, total };
+}
+
+/**
+ * Dual-control release: a user with payment.release — who is NOT the
+ * preparer — executes every pending item through the same bill-payment
+ * posting logic direct payments use. Items whose bill has since been
+ * paid/voided are marked skipped rather than failing the whole run.
+ */
+export async function releasePaymentRun(user: SessionUser, runId: string) {
+  requirePermission(user, "payment.release");
+  const db = getDb();
+  const [run] = await db
+    .select()
+    .from(schema.paymentRuns)
+    .where(eq(schema.paymentRuns.id, runId))
+    .limit(1);
+  if (!run) throw new Error("Payment run not found.");
+  if (run.status !== "pending_release") {
+    throw new Error(`Only pending-release runs can be released (this run is ${run.status}).`);
+  }
+  if (run.preparedBy && run.preparedBy === user.userId) {
+    throw new Error(
+      "Dual control: the user who prepared a payment run cannot release it. A second authorized user must release.",
+    );
+  }
+
+  const items = await db
+    .select()
+    .from(schema.paymentRunItems)
+    .where(eq(schema.paymentRunItems.paymentRunId, runId))
+    .orderBy(asc(schema.paymentRunItems.id));
+
+  // Stamp the releaser BEFORE money moves: if the loop below fails partway
+  // (items 1..k posted), the run still records who released. The status
+  // stays pending_release until every item lands, and voidPaymentRun
+  // refuses to void a run with posted items, so a partial release can be
+  // retried but never disguised as an untouched batch.
+  const now = new Date();
+  await db
+    .update(schema.paymentRuns)
+    .set({ releasedBy: user.userId, releasedAt: now })
+    .where(eq(schema.paymentRuns.id, runId));
+
+  // Money moves now — the JE date is the release date.
+  const paymentDate = new Date().toISOString().slice(0, 10);
+  let paid = 0;
+  let skipped = 0;
+  let paidTotal = 0;
+  for (const item of items) {
+    if (item.status !== "pending") {
+      if (item.status === "paid") paidTotal += parseAmount(item.amount);
+      continue;
+    }
+    const [bill] = await db
+      .select()
+      .from(schema.bills)
+      .where(eq(schema.bills.id, item.billId))
+      .limit(1);
+    const balance = bill ? parseAmount(bill.balanceDue) : 0;
+    const amount = Math.min(parseAmount(item.amount), balance);
+    const payableStatus =
+      bill && bill.status !== "draft" && bill.status !== "void" && bill.status !== "paid";
+    if (!bill || !payableStatus || amount <= 0) {
+      await db
+        .update(schema.paymentRunItems)
+        .set({ status: "skipped" })
+        .where(eq(schema.paymentRunItems.id, item.id));
+      skipped += 1;
+      continue;
+    }
+    const result = await postBillPayment(user, {
+      billId: bill.id,
+      amount,
+      paymentDate,
+      bankAccountId: run.bankAccountId,
+      reference: `${run.runNumber} ${bill.billNumber}`,
+    });
+    // Write the ACTUALLY POSTED amount back to the item — it can be lower
+    // than the staged snapshot if the bill was partially paid between
+    // prepare and release. The payment file and run detail must show what
+    // posted, not the stale snapshot.
+    await db
+      .update(schema.paymentRunItems)
+      .set({
+        status: "paid",
+        journalEntryId: result.journalEntryId,
+        amount: toDecimalString(amount),
+      })
+      .where(eq(schema.paymentRunItems.id, item.id));
+    paid += 1;
+    paidTotal += amount;
+  }
+
+  await db
+    .update(schema.paymentRuns)
+    .set({
+      status: "released",
+      releasedBy: user.userId,
+      releasedAt: now,
+      // Run total = what actually posted (skipped items contribute 0).
+      total: toDecimalString(paidTotal),
+    })
+    .where(eq(schema.paymentRuns.id, runId));
+
+  await logAuditEvent(user, {
+    action: "payment_run.release",
+    resourceType: "payment_run",
+    resourceId: runId,
+    resourceName: run.runNumber,
+    changes: { before: { status: "pending_release" }, after: { status: "released" } },
+    metadata: { paid, skipped, paymentDate },
+  });
+  return { runId, runNumber: run.runNumber, paid, skipped };
+}
+
+/** Void a prepared run before release. Nothing was posted, so this just
+ *  cancels the staging rows. The preparer may cancel their own run; anyone
+ *  else needs payment.release. */
+export async function voidPaymentRun(user: SessionUser, runId: string) {
+  const db = getDb();
+  const [run] = await db
+    .select()
+    .from(schema.paymentRuns)
+    .where(eq(schema.paymentRuns.id, runId))
+    .limit(1);
+  if (!run) throw new Error("Payment run not found.");
+  if (run.preparedBy === user.userId) {
+    requirePermission(user, "bank.create_transaction");
+  } else {
+    requirePermission(user, "payment.release");
+  }
+  if (run.status !== "pending_release") {
+    throw new Error(`Only pending-release runs can be voided (this run is ${run.status}).`);
+  }
+  // A partially-released run (release failed mid-loop) still carries posted
+  // journal entries — voiding it would bury money that already moved.
+  const items = await db
+    .select({
+      status: schema.paymentRunItems.status,
+      journalEntryId: schema.paymentRunItems.journalEntryId,
+    })
+    .from(schema.paymentRunItems)
+    .where(eq(schema.paymentRunItems.paymentRunId, runId));
+  const posted = items.filter((i) => i.status === "paid" || i.journalEntryId != null);
+  if (posted.length > 0) {
+    throw new Error(
+      `Cannot void: ${posted.length} payment${posted.length === 1 ? " has" : "s have"} already posted from this run. Finish releasing it instead.`,
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(schema.paymentRunItems)
+      .set({ status: "skipped" })
+      .where(
+        and(
+          eq(schema.paymentRunItems.paymentRunId, runId),
+          eq(schema.paymentRunItems.status, "pending"),
+        ),
+      );
+    await tx
+      .update(schema.paymentRuns)
+      .set({ status: "void" })
+      .where(eq(schema.paymentRuns.id, runId));
+  });
+
+  await logAuditEvent(user, {
+    action: "payment_run.void",
+    resourceType: "payment_run",
+    resourceId: runId,
+    resourceName: run.runNumber,
+    changes: { before: { status: run.status }, after: { status: "void" } },
+  });
+  return { ...run, status: "void" };
 }
 
 // --------- Entity fee billing schedule + recurring payments + invoice expected pay date ---------

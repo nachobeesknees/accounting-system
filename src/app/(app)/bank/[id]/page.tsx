@@ -14,6 +14,7 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAccounts,
   getBankAccountById,
+  getBankTransactions,
   getCustomers,
   getEntities,
   getSignersByBankAccountId,
@@ -24,6 +25,7 @@ import type { SigningAuthority } from "@/lib/types";
 import { CustomFields } from "@/components/CustomFields";
 import { Attachments } from "@/components/Attachments";
 import {
+  addBankTransactionAction,
   addSignerAction,
   deleteBankAccountAction,
   deleteSignerAction,
@@ -49,12 +51,15 @@ export default async function Page({
   const bank = await getBankAccountById(id);
   if (!bank) notFound();
 
-  const [signers, glAccounts, entities, customers] = await Promise.all([
-    getSignersByBankAccountId(bank.id),
-    getAccounts(),
-    getEntities(),
-    getCustomers(),
-  ]);
+  const [signers, glAccounts, entities, customers, transactions] =
+    await Promise.all([
+      getSignersByBankAccountId(bank.id),
+      getAccounts(),
+      getEntities(),
+      getCustomers(),
+      getBankTransactions(bank.id),
+    ]);
+  const recentTransactions = transactions.slice(0, 15);
   const cashAccounts = glAccounts.filter(
     (a) => a.accountType === "asset" && a.code.startsWith("1"),
   );
@@ -86,6 +91,9 @@ export default async function Page({
           <>
             <ButtonLink href="/bank" variant="secondary">
               ← All accounts
+            </ButtonLink>
+            <ButtonLink href={`/bank/${bank.id}/import`} variant="secondary">
+              Import statement
             </ButtonLink>
             <Pill variant={statusVariant(bank.isActive ? "active" : "inactive")}>
               {statusLabel(bank.isActive ? "active" : "inactive")}
@@ -354,6 +362,125 @@ export default async function Page({
             </div>
           </Card>
         </div>
+
+        <form action={addBankTransactionAction}>
+          <input type="hidden" name="bankAccountId" value={bank.id} />
+          <Card
+            title="Add transaction"
+            actions={
+              <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                Recorded with source “manual”
+              </span>
+            }
+          >
+            <div className="p-3.5 flex flex-col gap-3">
+              <Row>
+                <Field
+                  label="Date"
+                  name="transactionDate"
+                  type="date"
+                  required
+                  defaultValue={today}
+                />
+                <SelectField label="Type" name="direction" defaultValue="deposit">
+                  <option value="deposit">Deposit (money in)</option>
+                  <option value="withdrawal">Withdrawal (money out)</option>
+                </SelectField>
+              </Row>
+              <Row>
+                <Field
+                  label="Description"
+                  name="description"
+                  required
+                  placeholder="Wire — Frogsworth & Partners"
+                />
+                <MoneyInput label="Amount" name="amount" required />
+              </Row>
+              <Row>
+                <Field
+                  label="Reference"
+                  name="reference"
+                  mono
+                  placeholder="WIRE-99812 / ACH-50220"
+                />
+                <div />
+              </Row>
+              <div className="flex justify-end">
+                <Button variant="primary" type="submit">
+                  Add transaction
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </form>
+
+        <Card
+          title="Recent transactions"
+          actions={
+            <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+              {transactions.length} total · showing {recentTransactions.length}
+            </span>
+          }
+        >
+          {recentTransactions.length === 0 ? (
+            <Empty
+              title="No bank transactions"
+              body="Add one manually above or import a statement CSV."
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Date</TH>
+                  <TH>Description</TH>
+                  <TH>Reference</TH>
+                  <TH>Source</TH>
+                  <TH>Status</TH>
+                  <TH num>Amount ({bank.currencyCode})</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {recentTransactions.map((t) => {
+                  const amount = parseAmount(t.amount);
+                  return (
+                    <TR key={t.id}>
+                      <TD>{formatDate(t.transactionDate)}</TD>
+                      <TD>{t.description}</TD>
+                      <TD mono style={{ color: "var(--ink-3)" }}>
+                        {t.reference ?? "—"}
+                      </TD>
+                      <TD>
+                        <Pill
+                          variant={
+                            t.source === "manual"
+                              ? "pending"
+                              : t.source === "import"
+                                ? "formation"
+                                : "neutral"
+                          }
+                        >
+                          {statusLabel(t.source ?? "system")}
+                        </Pill>
+                      </TD>
+                      <TD>
+                        <Pill variant={t.isReconciled ? "active" : "neutral"}>
+                          {t.isReconciled ? "Reconciled" : "Open"}
+                        </Pill>
+                      </TD>
+                      <TD num neg={amount < 0}>
+                        {/* Bank rows must match the statement to the penny. */}
+                        {formatMoney(amount, bank.currencyCode, {
+                          paren: true,
+                          hideCurrency: true,
+                        })}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          )}
+        </Card>
 
         <Card
           title="Signing authority"

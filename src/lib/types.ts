@@ -769,6 +769,70 @@ export type BankTransaction = {
   isReconciled: boolean;
   reconciledAt: string | null;
   journalEntryId: string | null;
+  /** 'system' = payment posting; 'import' = statement CSV; 'manual' = keyed by hand.
+   *  Optional so seed fixtures (which predate the column) still typecheck. */
+  source?: string;
+  /** Set on imported rows — points at the statement_imports batch. */
+  statementImportId?: string | null;
+  /** Set when cleared inside a reconciliation session. */
+  reconciliationSessionId?: string | null;
+};
+
+/** One bank-statement CSV import batch (provenance + dedupe stats). */
+export type StatementImport = {
+  id: string;
+  bankAccountId: string;
+  fileName: string;
+  importedBy: string | null;
+  rowCount: number;
+  duplicateCount: number;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type ReconciliationSessionStatus = "in_progress" | "completed" | "void";
+
+export type ReconciliationSession = {
+  id: string;
+  bankAccountId: string;
+  statementDate: string;
+  statementEndingBalance: string;
+  status: ReconciliationSessionStatus;
+  startedBy: string | null;
+  completedBy: string | null;
+  completedAt: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type PaymentRunStatus = "draft" | "pending_release" | "released" | "void";
+
+/** A prepared batch of bill payments awaiting dual-control release. */
+export type PaymentRun = {
+  id: string;
+  runNumber: string;
+  bankAccountId: string;
+  status: PaymentRunStatus;
+  preparedBy: string | null;
+  preparedAt: string | null;
+  releasedBy: string | null;
+  releasedAt: string | null;
+  total: string;
+  itemCount: number;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type PaymentRunItemStatus = "pending" | "paid" | "skipped";
+
+export type PaymentRunItem = {
+  id: string;
+  paymentRunId: string;
+  billId: string;
+  amount: string;
+  status: PaymentRunItemStatus;
+  journalEntryId: string | null;
+  createdAt: string;
 };
 
 export type User = {

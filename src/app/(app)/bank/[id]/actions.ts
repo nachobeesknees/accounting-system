@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getSessionUser } from "@/lib/session";
 import {
+  createBankTransaction,
   createSigner,
   deleteBankAccount,
   deleteSigner,
@@ -120,6 +121,47 @@ export async function addSignerAction(formData: FormData) {
     redirect(`/bank/${bankAccountId}?error=${encodeURIComponent(msg)}`);
   }
   revalidatePath(`/bank/${bankAccountId}`);
+  redirect(`/bank/${bankAccountId}?saved=1`);
+}
+
+/** Manual bank transaction entry — source='manual'. */
+export async function addBankTransactionAction(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  const bankAccountId = String(formData.get("bankAccountId") ?? "");
+  if (!bankAccountId) redirect("/bank");
+
+  const transactionDate = String(formData.get("transactionDate") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  const direction = String(formData.get("direction") ?? "deposit");
+  const amountRaw = String(formData.get("amount") ?? "").trim();
+  const reference = String(formData.get("reference") ?? "").trim();
+
+  const magnitude = Math.abs(parseAmount(amountRaw));
+  if (!(magnitude > 0)) {
+    redirect(
+      `/bank/${bankAccountId}?error=${encodeURIComponent("Amount must be greater than zero.")}`,
+    );
+  }
+  // Sign convention everywhere in bank_transactions: deposits positive,
+  // withdrawals negative.
+  const amount = direction === "withdrawal" ? -magnitude : magnitude;
+
+  try {
+    await createBankTransaction(user, {
+      bankAccountId,
+      transactionDate,
+      description,
+      amount,
+      reference: reference || null,
+    });
+  } catch (err) {
+    if (isRedirect(err)) throw err;
+    const msg = err instanceof Error ? err.message : "Could not add the transaction.";
+    redirect(`/bank/${bankAccountId}?error=${encodeURIComponent(msg)}`);
+  }
+  revalidatePath(`/bank/${bankAccountId}`);
+  revalidatePath("/reconciliation");
   redirect(`/bank/${bankAccountId}?saved=1`);
 }
 
