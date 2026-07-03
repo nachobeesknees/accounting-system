@@ -58,6 +58,9 @@ export type Action =
   | "journal_entry.post"
   | "journal_entry.void"
   | "journal_entry.bypass_control"
+  // Maker-checker: approving a submitted JE. Mutations additionally
+  // enforce approver !== submitter regardless of role.
+  | "journal_entry.approve"
   // Invoices / bills
   | "invoice.create"
   | "invoice.update"
@@ -73,6 +76,25 @@ export type Action =
   // Banking
   | "bank.reconcile"
   | "bank.create_transaction"
+  | "bank.import"
+  // Dual-control payments: releasing a prepared payment run. Mutations
+  // additionally enforce releaser !== preparer regardless of role.
+  | "payment.release"
+  // Distributions to beneficiaries (dual approval in mutations)
+  | "distribution.create"
+  | "distribution.approve"
+  // KYC / AML due diligence updates + review logging
+  | "kyc.write"
+  // Compliance calendar (entity filings)
+  | "filing.write"
+  // Month-end close checklist task completion
+  | "close.task"
+  // Year-end close / retained-earnings rollover
+  | "close.year_end"
+  // Period-end FX revaluation runs
+  | "fx.revalue"
+  // Tax code administration (VAT/GST rates)
+  | "tax.manage_codes"
   // Periods
   | "period.close"
   | "period.lock"
@@ -107,6 +129,10 @@ const WRITE_BOOKS: Action[] = [
   "bill.create",
   "bill.update",
   "bank.create_transaction",
+  "bank.import",
+  "distribution.create",
+  "filing.write",
+  "close.task",
   "report.export_csv",
 ];
 
@@ -114,6 +140,10 @@ const APPROVALS: Action[] = [
   "invoice.approve",
   "bill.approve",
   "vendor.approve",
+  "journal_entry.approve",
+  "payment.release",
+  "distribution.approve",
+  "kyc.write",
 ];
 
 const ADMIN_ACTIONS: Action[] = [
@@ -132,6 +162,9 @@ const ADMIN_ACTIONS: Action[] = [
   "bill.void",
   "bank.reconcile",
   "journal_entry.bypass_control",
+  "close.year_end",
+  "fx.revalue",
+  "tax.manage_codes",
 ];
 
 const SUPER_ONLY: Action[] = [

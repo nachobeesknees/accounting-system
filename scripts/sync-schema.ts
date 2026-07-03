@@ -262,6 +262,90 @@ const COLUMNS: ColumnSpec[] = [
   { table: "invoices",        column: "fx_rate", type: "numeric(18,8)" },
   { table: "bills",           column: "fx_rate", type: "numeric(18,8)" },
   { table: "journal_entries", column: "fx_rate", type: "numeric(18,8)" },
+
+  // ---- Bank transaction provenance ----
+  // 'system' = created by invoice/bill payment posting; 'import' = bank
+  // statement CSV import; 'manual' = keyed by hand on /bank/[id].
+  { table: "bank_transactions", column: "source", type: "text", notNull: true, default: "'system'" },
+  { table: "bank_transactions", column: "statement_import_id", type: "text" },
+  // Set when the transaction is cleared inside a reconciliation session.
+  { table: "bank_transactions", column: "reconciliation_session_id", type: "text" },
+
+  // ---- JE maker-checker approval ----
+  // Status machine grows: draft → pending_approval → approved → posted.
+  // Existing draft→posted direct flow stays for roles with journal_entry.approve
+  // (self-posting still requires a second approver when required_approval=true).
+  { table: "journal_entries", column: "submitted_at", type: "timestamp with time zone" },
+  { table: "journal_entries", column: "submitted_by", type: "text" },
+  { table: "journal_entries", column: "approved_at", type: "timestamp with time zone" },
+  { table: "journal_entries", column: "approved_by", type: "text" },
+  { table: "journal_entries", column: "approval_rejection_reason", type: "text" },
+  // ---- Auto-reversing accruals ----
+  // When true, posting generates a mirrored entry dated day 1 of the next
+  // open period; reversal_entry_id links to it.
+  { table: "journal_entries", column: "auto_reverse", type: "boolean", notNull: true, default: "false" },
+  { table: "journal_entries", column: "reversal_entry_id", type: "text" },
+  // Year-end closing entries are excluded from income-statement queries
+  // (they zero P&L into retained earnings) but included in balance sheets.
+  { table: "journal_entries", column: "is_closing_entry", type: "boolean", notNull: true, default: "false" },
+
+  // ---- KYC / AML due diligence (customers + client entities) ----
+  // kyc_status: not_started | in_progress | verified  (overdue is derived
+  // from kyc_next_review_date < today). risk_rating: low | medium | high.
+  { table: "customers", column: "kyc_status", type: "text", notNull: true, default: "'not_started'" },
+  { table: "customers", column: "risk_rating", type: "text" },
+  { table: "customers", column: "pep_flag", type: "boolean", notNull: true, default: "false" },
+  { table: "customers", column: "sanctions_checked_at", type: "timestamp with time zone" },
+  { table: "customers", column: "kyc_next_review_date", type: "date" },
+  { table: "customers", column: "kyc_notes", type: "text" },
+  { table: "entities", column: "kyc_status", type: "text", notNull: true, default: "'not_started'" },
+  { table: "entities", column: "risk_rating", type: "text" },
+  { table: "entities", column: "pep_flag", type: "boolean", notNull: true, default: "false" },
+  { table: "entities", column: "sanctions_checked_at", type: "timestamp with time zone" },
+  { table: "entities", column: "kyc_next_review_date", type: "date" },
+  { table: "entities", column: "kyc_notes", type: "text" },
+
+  // ---- VAT / GST tax codes on document lines ----
+  // Per-line tax coding (standard/reduced/zero_rated/exempt). Line tax
+  // amounts roll up to the header tax_amount. Invoice-level tax_rate
+  // snapshot stays for legacy single-rate invoices.
+  { table: "invoice_lines", column: "tax_code_id", type: "text" },
+  { table: "invoice_lines", column: "tax_amount", type: "numeric(15,2)", notNull: true, default: "0" },
+  { table: "bill_lines", column: "tax_code_id", type: "text" },
+  { table: "bill_lines", column: "tax_amount", type: "numeric(15,2)", notNull: true, default: "0" },
+
+  // ---- Credit memos / vendor credits / write-offs ----
+  // invoices.kind: 'invoice' | 'credit_memo'; bills.kind: 'bill' | 'vendor_credit'.
+  // Credit memos store NEGATIVE subtotal/total/balance_due so every existing
+  // AR/AP sum stays correct without kind-awareness.
+  { table: "invoices", column: "kind", type: "text", notNull: true, default: "'invoice'" },
+  { table: "invoices", column: "written_off_at", type: "timestamp with time zone" },
+  { table: "invoices", column: "written_off_by", type: "text" },
+  { table: "invoices", column: "writeoff_reason", type: "text" },
+  { table: "invoices", column: "writeoff_journal_entry_id", type: "text" },
+  { table: "bills", column: "kind", type: "text", notNull: true, default: "'bill'" },
+
+  // ---- Funds on account / retainers ----
+  // A payment can exceed its allocations; the remainder stays as unapplied_amount
+  // (client money held as a liability until applied to an invoice).
+  { table: "payments", column: "unapplied_amount", type: "numeric(15,2)", notNull: true, default: "0" },
+  { table: "payments", column: "firm_entity_id", type: "text" },
+  { table: "payments", column: "currency_code", type: "text", notNull: true, default: "'USD'" },
+  // 'standard' | 'retainer' — retainers land wholly unapplied on receipt.
+  { table: "payments", column: "kind", type: "text", notNull: true, default: "'standard'" },
+
+  // ---- Deferred revenue (opt-in) ----
+  // Line-level flag: defer this line's revenue over [deferral_start,
+  // deferral_end] via a revenue_recognition_schedule created at posting.
+  { table: "invoice_lines", column: "defer_revenue", type: "boolean", notNull: true, default: "false" },
+  { table: "invoice_lines", column: "deferral_start", type: "date" },
+  { table: "invoice_lines", column: "deferral_end", type: "date" },
+  // Fee-level default: invoices generated from this fee defer over the
+  // fee's coverage window.
+  { table: "entity_fees", column: "defer_revenue", type: "boolean", notNull: true, default: "false" },
+
+  // ---- Beneficiary register (distributions) ----
+  { table: "contacts", column: "is_beneficiary", type: "boolean", notNull: true, default: "false" },
 ];
 
 const TABLES = [
@@ -639,6 +723,344 @@ const TABLES = [
     CREATE INDEX IF NOT EXISTS audit_log_user_id_idx ON audit_log (user_id);
     CREATE INDEX IF NOT EXISTS audit_log_action_idx ON audit_log (action);
     CREATE INDEX IF NOT EXISTS audit_log_resource_idx ON audit_log (resource_type, resource_id)`,
+  },
+  {
+    // One row per bank-statement CSV import — provenance + dedupe stats.
+    name: "statement_imports",
+    ddl: `CREATE TABLE IF NOT EXISTS statement_imports (
+      id text PRIMARY KEY,
+      bank_account_id text NOT NULL,
+      file_name text NOT NULL,
+      imported_by text,
+      row_count integer DEFAULT 0 NOT NULL,
+      duplicate_count integer DEFAULT 0 NOT NULL,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // A month-end bank reconciliation working session. Transactions cleared
+    // during the session point back via bank_transactions.reconciliation_session_id.
+    // status: in_progress | completed | void
+    name: "reconciliation_sessions",
+    ddl: `CREATE TABLE IF NOT EXISTS reconciliation_sessions (
+      id text PRIMARY KEY,
+      bank_account_id text NOT NULL,
+      statement_date date NOT NULL,
+      statement_ending_balance numeric(15,2) NOT NULL,
+      status text DEFAULT 'in_progress' NOT NULL,
+      started_by text,
+      completed_by text,
+      completed_at timestamp with time zone,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Year-end close: one row per (fiscal_year, firm_entity). Points at the
+    // closing JE that moves net income into retained earnings.
+    // status: closed | reopened
+    name: "year_end_closes",
+    ddl: `CREATE TABLE IF NOT EXISTS year_end_closes (
+      id text PRIMARY KEY,
+      fiscal_year integer NOT NULL,
+      firm_entity_id text,
+      journal_entry_id text,
+      retained_earnings_account_id text NOT NULL,
+      net_income numeric(15,2) NOT NULL,
+      status text DEFAULT 'closed' NOT NULL,
+      closed_by text,
+      closed_at timestamp with time zone DEFAULT now() NOT NULL,
+      reopened_by text,
+      reopened_at timestamp with time zone,
+      notes text,
+      CONSTRAINT year_end_closes_key UNIQUE (fiscal_year, firm_entity_id)
+    )`,
+  },
+  {
+    // Compliance calendar: statutory filings / renewals per client entity.
+    // kind: annual_return | license_renewal | agent_renewal | fatca | crs |
+    //       tax_return | economic_substance | other
+    // recurrence: none | monthly | quarterly | annual | biennial
+    // status: pending | in_progress | filed | waived  (overdue derived)
+    name: "entity_filings",
+    ddl: `CREATE TABLE IF NOT EXISTS entity_filings (
+      id text PRIMARY KEY,
+      entity_id text NOT NULL,
+      kind text NOT NULL,
+      title text NOT NULL,
+      jurisdiction text,
+      due_date date NOT NULL,
+      recurrence text DEFAULT 'none' NOT NULL,
+      status text DEFAULT 'pending' NOT NULL,
+      completed_at timestamp with time zone,
+      completed_by text,
+      owner_user_id text,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS entity_filings_due_idx ON entity_filings (due_date);
+    CREATE INDEX IF NOT EXISTS entity_filings_entity_idx ON entity_filings (entity_id)`,
+  },
+  {
+    // Periodic KYC/AML review log. subject_type: customer | entity.
+    // outcome: cleared | escalated | refreshed
+    name: "kyc_reviews",
+    ddl: `CREATE TABLE IF NOT EXISTS kyc_reviews (
+      id text PRIMARY KEY,
+      subject_type text NOT NULL,
+      subject_id text NOT NULL,
+      review_date date NOT NULL,
+      outcome text NOT NULL,
+      risk_rating_after text,
+      reviewer_user_id text,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // VAT/GST tax codes. kind: standard | reduced | zero_rated | exempt |
+    // out_of_scope. Zero-rated sales are taxable at 0% (input VAT
+    // recoverable, included on returns); exempt sales are outside the VAT
+    // net (reported separately, input VAT generally not recoverable).
+    name: "tax_codes",
+    ddl: `CREATE TABLE IF NOT EXISTS tax_codes (
+      id text PRIMARY KEY,
+      code text UNIQUE NOT NULL,
+      name text NOT NULL,
+      rate numeric(6,5) DEFAULT 0 NOT NULL,
+      kind text DEFAULT 'standard' NOT NULL,
+      country text,
+      is_active boolean DEFAULT true NOT NULL,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Application of an AR credit memo against an open invoice.
+    name: "credit_applications",
+    ddl: `CREATE TABLE IF NOT EXISTS credit_applications (
+      id text PRIMARY KEY,
+      credit_invoice_id text NOT NULL,
+      target_invoice_id text NOT NULL,
+      amount numeric(15,2) NOT NULL,
+      applied_by text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Application of a vendor credit against an open bill.
+    name: "bill_credit_applications",
+    ddl: `CREATE TABLE IF NOT EXISTS bill_credit_applications (
+      id text PRIMARY KEY,
+      credit_bill_id text NOT NULL,
+      target_bill_id text NOT NULL,
+      amount numeric(15,2) NOT NULL,
+      applied_by text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Dual-control payment release. Prepared by one user (draft →
+    // pending_release), released by a DIFFERENT user with payment.release.
+    // status: draft | pending_release | released | void
+    name: "payment_runs",
+    ddl: `CREATE TABLE IF NOT EXISTS payment_runs (
+      id text PRIMARY KEY,
+      run_number text UNIQUE NOT NULL,
+      bank_account_id text NOT NULL,
+      status text DEFAULT 'draft' NOT NULL,
+      prepared_by text,
+      prepared_at timestamp with time zone,
+      released_by text,
+      released_at timestamp with time zone,
+      total numeric(15,2) DEFAULT 0 NOT NULL,
+      item_count integer DEFAULT 0 NOT NULL,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // One bill payment inside a payment run. status: pending | paid | skipped
+    name: "payment_run_items",
+    ddl: `CREATE TABLE IF NOT EXISTS payment_run_items (
+      id text PRIMARY KEY,
+      payment_run_id text NOT NULL,
+      bill_id text NOT NULL,
+      amount numeric(15,2) NOT NULL,
+      status text DEFAULT 'pending' NOT NULL,
+      journal_entry_id text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Opt-in deferred revenue: one schedule per deferred invoice line.
+    // Posting credits deferral_account; monthly recognition moves
+    // straight-line slices to revenue_account. status: active | complete | cancelled
+    name: "revenue_recognition_schedules",
+    ddl: `CREATE TABLE IF NOT EXISTS revenue_recognition_schedules (
+      id text PRIMARY KEY,
+      invoice_id text NOT NULL,
+      invoice_line_id text NOT NULL,
+      deferral_account_id text NOT NULL,
+      revenue_account_id text NOT NULL,
+      start_date date NOT NULL,
+      end_date date NOT NULL,
+      total numeric(15,2) NOT NULL,
+      recognized_amount numeric(15,2) DEFAULT 0 NOT NULL,
+      status text DEFAULT 'active' NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // One recognized month per schedule; points at the recognition JE.
+    name: "revenue_recognition_entries",
+    ddl: `CREATE TABLE IF NOT EXISTS revenue_recognition_entries (
+      id text PRIMARY KEY,
+      schedule_id text NOT NULL,
+      period_date date NOT NULL,
+      amount numeric(15,2) NOT NULL,
+      journal_entry_id text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Period-end FX revaluation run: books unrealized gain/loss on open
+    // foreign-currency balances, auto-reversed next period.
+    name: "fx_revaluations",
+    ddl: `CREATE TABLE IF NOT EXISTS fx_revaluations (
+      id text PRIMARY KEY,
+      revaluation_date date NOT NULL,
+      firm_entity_id text,
+      journal_entry_id text,
+      reversal_entry_id text,
+      details jsonb,
+      created_by text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Distribution to a beneficiary from a client entity. Dual approval
+    // mirrors the bill workflow. journal_entry_id is set ONLY when the
+    // funding account is a GL-linked firm account — client-account
+    // distributions are operational records that never touch the firm ledger.
+    // status: requested | first_approved | approved | paid | rejected | void
+    name: "distributions",
+    ddl: `CREATE TABLE IF NOT EXISTS distributions (
+      id text PRIMARY KEY,
+      distribution_number text UNIQUE NOT NULL,
+      entity_id text NOT NULL,
+      beneficiary_contact_id text NOT NULL,
+      amount numeric(15,2) NOT NULL,
+      currency_code text DEFAULT 'USD' NOT NULL,
+      bank_account_id text,
+      status text DEFAULT 'requested' NOT NULL,
+      requested_by text,
+      requested_at timestamp with time zone DEFAULT now() NOT NULL,
+      first_approved_by text,
+      first_approved_at timestamp with time zone,
+      second_approved_by text,
+      second_approved_at timestamp with time zone,
+      rejected_by text,
+      rejected_at timestamp with time zone,
+      rejection_reason text,
+      paid_at timestamp with time zone,
+      journal_entry_id text,
+      resolution_reference text,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Month-end close checklist. Standard tasks are seeded per accounting
+    // period on first view; sign-off requires period.close.
+    // status: open | done | na
+    name: "period_close_tasks",
+    ddl: `CREATE TABLE IF NOT EXISTS period_close_tasks (
+      id text PRIMARY KEY,
+      accounting_period_id text NOT NULL,
+      task_key text NOT NULL,
+      label text NOT NULL,
+      sort_order integer DEFAULT 0 NOT NULL,
+      status text DEFAULT 'open' NOT NULL,
+      completed_by text,
+      completed_at timestamp with time zone,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT period_close_tasks_key UNIQUE (accounting_period_id, task_key)
+    )`,
+  },
+  {
+    // Item-level prepaid amortization / fixed-asset depreciation schedule.
+    // kind: prepaid | fixed_asset. Straight-line over `months` from
+    // start_date; monthly JEs debit target (expense) and credit source
+    // (prepaid asset / accumulated depreciation).
+    name: "amortization_schedules",
+    ddl: `CREATE TABLE IF NOT EXISTS amortization_schedules (
+      id text PRIMARY KEY,
+      kind text NOT NULL,
+      name text NOT NULL,
+      source_account_id text NOT NULL,
+      target_account_id text NOT NULL,
+      firm_entity_id text,
+      total_cost numeric(15,2) NOT NULL,
+      residual_value numeric(15,2) DEFAULT 0 NOT NULL,
+      start_date date NOT NULL,
+      months integer NOT NULL,
+      method text DEFAULT 'straight_line' NOT NULL,
+      generated_through date,
+      is_active boolean DEFAULT true NOT NULL,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // One generated amortization/depreciation month per schedule.
+    name: "amortization_entries",
+    ddl: `CREATE TABLE IF NOT EXISTS amortization_entries (
+      id text PRIMARY KEY,
+      schedule_id text NOT NULL,
+      period_date date NOT NULL,
+      amount numeric(15,2) NOT NULL,
+      journal_entry_id text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Saved list-view filters per user per route.
+    name: "saved_views",
+    ddl: `CREATE TABLE IF NOT EXISTS saved_views (
+      id text PRIMARY KEY,
+      user_id text NOT NULL,
+      route text NOT NULL,
+      name text NOT NULL,
+      params jsonb NOT NULL,
+      is_default boolean DEFAULT false NOT NULL,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
+  },
+  {
+    // Collections workbench: notes, calls, reminders, promises-to-pay.
+    // kind: note | call | email | promise | reminder
+    // status: open | kept | broken | done
+    name: "collection_activities",
+    ddl: `CREATE TABLE IF NOT EXISTS collection_activities (
+      id text PRIMARY KEY,
+      customer_id text NOT NULL,
+      activity_date date NOT NULL,
+      kind text NOT NULL,
+      amount numeric(15,2),
+      promise_date date,
+      status text DEFAULT 'open' NOT NULL,
+      owner_user_id text,
+      notes text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL
+    )`,
   },
 ];
 

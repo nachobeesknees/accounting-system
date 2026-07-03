@@ -268,6 +268,27 @@ export const journalEntries = pgTable("journal_entries", {
    * base currency / no conversion needed. Base amount = native / fx_rate.
    */
   fxRate: numeric("fx_rate", { precision: 18, scale: 8 }),
+  /**
+   * Maker-checker approval. Status machine grows to:
+   *   draft → pending_approval → approved → posted.
+   * The submitter can't be the approver (enforced in mutations).
+   */
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  submittedBy: text("submitted_by"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  approvedBy: text("approved_by"),
+  approvalRejectionReason: text("approval_rejection_reason"),
+  /**
+   * Auto-reversing accrual: posting also creates a mirrored entry dated
+   * day 1 of the next open period; reversalEntryId links to it.
+   */
+  autoReverse: boolean("auto_reverse").notNull().default(false),
+  reversalEntryId: text("reversal_entry_id"),
+  /**
+   * Year-end closing entries zero P&L into retained earnings. Excluded
+   * from income-statement queries, included in balance sheets.
+   */
+  isClosingEntry: boolean("is_closing_entry").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -539,6 +560,8 @@ export const contacts = pgTable("contacts", {
   isVendor: boolean("is_vendor").notNull().default(false),
   isEmployee: boolean("is_employee").notNull().default(false),
   isIntermediary: boolean("is_intermediary").notNull().default(false),
+  /** Beneficiary register: eligible recipients of entity distributions. */
+  isBeneficiary: boolean("is_beneficiary").notNull().default(false),
   customerId: text("customer_id"),
   vendorId: text("vendor_id"),
   userId: text("user_id"),
@@ -590,6 +613,15 @@ export const customers = pgTable("customers", {
   /** Hard override: when true, every invoice for this client gets
    *  tax_amount=0 regardless of rate. */
   taxExempt: boolean("tax_exempt").notNull().default(false),
+  /** KYC/AML: not_started | in_progress | verified (overdue derived from
+   *  kycNextReviewDate < today). */
+  kycStatus: text("kyc_status").notNull().default("not_started"),
+  /** low | medium | high */
+  riskRating: text("risk_rating"),
+  pepFlag: boolean("pep_flag").notNull().default(false),
+  sanctionsCheckedAt: timestamp("sanctions_checked_at", { withTimezone: true }),
+  kycNextReviewDate: date("kyc_next_review_date"),
+  kycNotes: text("kyc_notes"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -615,6 +647,13 @@ export const entities = pgTable("entities", {
   /** Client's beneficial ownership of this entity as a percent (0–100).
    *  NULL = unspecified (treat as 100% for rollups). Decimal so 33.33 works. */
   ownershipPercent: numeric("ownership_percent", { precision: 5, scale: 2 }),
+  /** KYC/AML — same vocabulary as customers.kycStatus / riskRating. */
+  kycStatus: text("kyc_status").notNull().default("not_started"),
+  riskRating: text("risk_rating"),
+  pepFlag: boolean("pep_flag").notNull().default(false),
+  sanctionsCheckedAt: timestamp("sanctions_checked_at", { withTimezone: true }),
+  kycNextReviewDate: date("kyc_next_review_date"),
+  kycNotes: text("kyc_notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -698,6 +737,9 @@ export const entityFees = pgTable("entity_fees", {
   lastBilledDate: date("last_billed_date"),
   /** Amount per billing period. NULL → derived from annualFee / frequency. */
   perPeriodAmount: numeric("per_period_amount", { precision: 15, scale: 2 }),
+  /** Opt-in: invoices generated from this fee defer revenue over the
+   *  fee's coverage window (startDate..endDate). */
+  deferRevenue: boolean("defer_revenue").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -823,6 +865,13 @@ export const assetValueSnapshots = pgTable("asset_value_snapshots", {
 export const invoices = pgTable("invoices", {
   id: text("id").primaryKey(),
   invoiceNumber: text("invoice_number").notNull().unique(),
+  /**
+   * 'invoice' | 'credit_memo'. Credit memos store NEGATIVE
+   * subtotal/total/balanceDue so every AR sum stays correct without
+   * kind-awareness; their posting JE reverses the invoice JE
+   * (Dr revenue / Cr AR). Applied to open invoices via credit_applications.
+   */
+  kind: text("kind").notNull().default("invoice"),
   customerId: text("customer_id").notNull(),
   entityId: text("entity_id"),
   clientId: text("client_id"),
@@ -887,6 +936,11 @@ export const invoices = pgTable("invoices", {
    * NULL when the invoice is in base currency / no conversion needed.
    */
   fxRate: numeric("fx_rate", { precision: 18, scale: 8 }),
+  /** Bad-debt write-off: status → 'written_off', JE Dr bad debt / Cr AR. */
+  writtenOffAt: timestamp("written_off_at", { withTimezone: true }),
+  writtenOffBy: text("written_off_by"),
+  writeoffReason: text("writeoff_reason"),
+  writeoffJournalEntryId: text("writeoff_journal_entry_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -900,6 +954,15 @@ export const invoiceLines = pgTable("invoice_lines", {
   unitPrice: numeric("unit_price", { precision: 15, scale: 2 }).notNull(),
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
   accountId: text("account_id").notNull(),
+  /** Per-line VAT/GST coding. Soft FK → tax_codes.id. NULL = legacy
+   *  invoice-level rate applies. */
+  taxCodeId: text("tax_code_id"),
+  taxAmount: numeric("tax_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  /** Opt-in deferred revenue: defer this line over
+   *  [deferralStart, deferralEnd] via a recognition schedule at posting. */
+  deferRevenue: boolean("defer_revenue").notNull().default(false),
+  deferralStart: date("deferral_start"),
+  deferralEnd: date("deferral_end"),
   dimensions: jsonb("dimensions").notNull().default(sql`'{}'::jsonb`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -943,6 +1006,9 @@ export const vendors = pgTable("vendors", {
 export const bills = pgTable("bills", {
   id: text("id").primaryKey(),
   billNumber: text("bill_number").notNull(),
+  /** 'bill' | 'vendor_credit'. Vendor credits store NEGATIVE totals
+   *  (mirror of invoices.kind) and apply via bill_credit_applications. */
+  kind: text("kind").notNull().default("bill"),
   vendorId: text("vendor_id").notNull(),
   /**
    * The vendor's own invoice number from their bill to us (e.g. "INV-2026-0042").
@@ -1004,6 +1070,9 @@ export const billLines = pgTable("bill_lines", {
   unitPrice: numeric("unit_price", { precision: 15, scale: 2 }).notNull(),
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
   accountId: text("account_id").notNull(),
+  /** Per-line input-VAT coding. Soft FK → tax_codes.id. */
+  taxCodeId: text("tax_code_id"),
+  taxAmount: numeric("tax_amount", { precision: 15, scale: 2 }).notNull().default("0"),
   /** Optional per-line client allocation. */
   clientId: text("client_id"),
   /** Optional per-line entity allocation. */
@@ -1079,6 +1148,12 @@ export const bankTransactions = pgTable("bank_transactions", {
   isReconciled: boolean("is_reconciled").notNull().default(false),
   reconciledAt: timestamp("reconciled_at", { withTimezone: true }),
   journalEntryId: text("journal_entry_id"),
+  /** 'system' = payment posting; 'import' = statement CSV; 'manual' = keyed by hand. */
+  source: text("source").notNull().default("system"),
+  /** Set on imported rows — points at the statement_imports batch. */
+  statementImportId: text("statement_import_id"),
+  /** Set when cleared inside a reconciliation session. */
+  reconciliationSessionId: text("reconciliation_session_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -1094,6 +1169,15 @@ export const payments = pgTable("payments", {
   vendorId: text("vendor_id"),
   bankAccountId: text("bank_account_id"),
   journalEntryId: text("journal_entry_id"),
+  /**
+   * Funds on account: the portion not yet applied to an invoice. Held as
+   * a client-deposit liability until applied via payment_allocations.
+   */
+  unappliedAmount: numeric("unapplied_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  firmEntityId: text("firm_entity_id"),
+  currencyCode: text("currency_code").notNull().default("USD"),
+  /** 'standard' | 'retainer' — retainers land wholly unapplied on receipt. */
+  kind: text("kind").notNull().default("standard"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -1120,6 +1204,355 @@ export const invoiceNotes = pgTable("invoice_notes", {
   authorName: text("author_name").notNull(),
   /** Optional FK back to the user record for traceability. */
   authorUserId: text("author_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Banking: statement import + reconciliation sessions ----------
+
+/** One row per bank-statement CSV import — provenance + dedupe stats. */
+export const statementImports = pgTable("statement_imports", {
+  id: text("id").primaryKey(),
+  bankAccountId: text("bank_account_id").notNull(),
+  fileName: text("file_name").notNull(),
+  importedBy: text("imported_by"),
+  rowCount: integer("row_count").notNull().default(0),
+  duplicateCount: integer("duplicate_count").notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
+ * A month-end bank reconciliation working session. Cleared transactions
+ * point back via bank_transactions.reconciliation_session_id. Completing
+ * a session requires book balance − outstanding = statement ending balance.
+ * status: in_progress | completed | void
+ */
+export const reconciliationSessions = pgTable("reconciliation_sessions", {
+  id: text("id").primaryKey(),
+  bankAccountId: text("bank_account_id").notNull(),
+  statementDate: date("statement_date").notNull(),
+  statementEndingBalance: numeric("statement_ending_balance", { precision: 15, scale: 2 }).notNull(),
+  status: text("status").notNull().default("in_progress"),
+  startedBy: text("started_by"),
+  completedBy: text("completed_by"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Dual-control payment release ----------
+
+/**
+ * A prepared batch of bill payments. Prepared by one user (draft →
+ * pending_release); a DIFFERENT user with payment.release executes it.
+ * status: draft | pending_release | released | void
+ */
+export const paymentRuns = pgTable("payment_runs", {
+  id: text("id").primaryKey(),
+  runNumber: text("run_number").notNull().unique(),
+  bankAccountId: text("bank_account_id").notNull(),
+  status: text("status").notNull().default("draft"),
+  preparedBy: text("prepared_by"),
+  preparedAt: timestamp("prepared_at", { withTimezone: true }),
+  releasedBy: text("released_by"),
+  releasedAt: timestamp("released_at", { withTimezone: true }),
+  total: numeric("total", { precision: 15, scale: 2 }).notNull().default("0"),
+  itemCount: integer("item_count").notNull().default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** One bill payment inside a payment run. status: pending | paid | skipped */
+export const paymentRunItems = pgTable("payment_run_items", {
+  id: text("id").primaryKey(),
+  paymentRunId: text("payment_run_id").notNull(),
+  billId: text("bill_id").notNull(),
+  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+  status: text("status").notNull().default("pending"),
+  journalEntryId: text("journal_entry_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Year-end close ----------
+
+/**
+ * One close per (fiscal_year, firm_entity). Points at the closing JE that
+ * moves net income into retained earnings. status: closed | reopened
+ */
+export const yearEndCloses = pgTable("year_end_closes", {
+  id: text("id").primaryKey(),
+  fiscalYear: integer("fiscal_year").notNull(),
+  firmEntityId: text("firm_entity_id"),
+  journalEntryId: text("journal_entry_id"),
+  retainedEarningsAccountId: text("retained_earnings_account_id").notNull(),
+  netIncome: numeric("net_income", { precision: 15, scale: 2 }).notNull(),
+  status: text("status").notNull().default("closed"),
+  closedBy: text("closed_by"),
+  closedAt: timestamp("closed_at", { withTimezone: true }).defaultNow().notNull(),
+  reopenedBy: text("reopened_by"),
+  reopenedAt: timestamp("reopened_at", { withTimezone: true }),
+  notes: text("notes"),
+});
+
+// ---------- Compliance calendar ----------
+
+/**
+ * Statutory filings / renewals per client entity.
+ * kind: annual_return | license_renewal | agent_renewal | fatca | crs |
+ *       tax_return | economic_substance | other
+ * recurrence: none | monthly | quarterly | annual | biennial
+ * status: pending | in_progress | filed | waived (overdue derived)
+ */
+export const entityFilings = pgTable("entity_filings", {
+  id: text("id").primaryKey(),
+  entityId: text("entity_id").notNull(),
+  kind: text("kind").notNull(),
+  title: text("title").notNull(),
+  jurisdiction: text("jurisdiction"),
+  dueDate: date("due_date").notNull(),
+  recurrence: text("recurrence").notNull().default("none"),
+  status: text("status").notNull().default("pending"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  completedBy: text("completed_by"),
+  ownerUserId: text("owner_user_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- KYC / AML reviews ----------
+
+/**
+ * Periodic due-diligence review log. subject_type: customer | entity.
+ * outcome: cleared | escalated | refreshed
+ */
+export const kycReviews = pgTable("kyc_reviews", {
+  id: text("id").primaryKey(),
+  subjectType: text("subject_type").notNull(),
+  subjectId: text("subject_id").notNull(),
+  reviewDate: date("review_date").notNull(),
+  outcome: text("outcome").notNull(),
+  riskRatingAfter: text("risk_rating_after"),
+  reviewerUserId: text("reviewer_user_id"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- VAT / GST tax codes ----------
+
+/**
+ * kind: standard | reduced | zero_rated | exempt | out_of_scope.
+ * Zero-rated sales are taxable at 0% (on the VAT return, input VAT
+ * recoverable); exempt sales sit outside the VAT net and report
+ * separately. rate is decimal (0.15 = 15%).
+ */
+export const taxCodes = pgTable("tax_codes", {
+  id: text("id").primaryKey(),
+  code: text("code").notNull().unique(),
+  name: text("name").notNull(),
+  rate: numeric("rate", { precision: 6, scale: 5 }).notNull().default("0"),
+  kind: text("kind").notNull().default("standard"),
+  country: text("country"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Credit memo applications ----------
+
+/** Application of an AR credit memo against an open invoice. */
+export const creditApplications = pgTable("credit_applications", {
+  id: text("id").primaryKey(),
+  creditInvoiceId: text("credit_invoice_id").notNull(),
+  targetInvoiceId: text("target_invoice_id").notNull(),
+  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+  appliedBy: text("applied_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** Application of a vendor credit against an open bill. */
+export const billCreditApplications = pgTable("bill_credit_applications", {
+  id: text("id").primaryKey(),
+  creditBillId: text("credit_bill_id").notNull(),
+  targetBillId: text("target_bill_id").notNull(),
+  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+  appliedBy: text("applied_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Deferred revenue (opt-in) ----------
+
+/**
+ * One schedule per deferred invoice line. Posting credits
+ * deferralAccount; monthly recognition moves straight-line slices to
+ * revenueAccount. status: active | complete | cancelled
+ */
+export const revenueRecognitionSchedules = pgTable("revenue_recognition_schedules", {
+  id: text("id").primaryKey(),
+  invoiceId: text("invoice_id").notNull(),
+  invoiceLineId: text("invoice_line_id").notNull(),
+  deferralAccountId: text("deferral_account_id").notNull(),
+  revenueAccountId: text("revenue_account_id").notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  total: numeric("total", { precision: 15, scale: 2 }).notNull(),
+  recognizedAmount: numeric("recognized_amount", { precision: 15, scale: 2 }).notNull().default("0"),
+  status: text("status").notNull().default("active"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** One recognized month per schedule; points at the recognition JE. */
+export const revenueRecognitionEntries = pgTable("revenue_recognition_entries", {
+  id: text("id").primaryKey(),
+  scheduleId: text("schedule_id").notNull(),
+  periodDate: date("period_date").notNull(),
+  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+  journalEntryId: text("journal_entry_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- FX revaluation ----------
+
+/**
+ * Period-end revaluation of open foreign-currency balances: books
+ * unrealized gain/loss, auto-reversed next period. details holds the
+ * per-currency computation snapshot.
+ */
+export const fxRevaluations = pgTable("fx_revaluations", {
+  id: text("id").primaryKey(),
+  revaluationDate: date("revaluation_date").notNull(),
+  firmEntityId: text("firm_entity_id"),
+  journalEntryId: text("journal_entry_id"),
+  reversalEntryId: text("reversal_entry_id"),
+  details: jsonb("details"),
+  createdBy: text("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Distributions ----------
+
+/**
+ * Distribution to a beneficiary from a client entity. Dual approval
+ * mirrors the bill workflow. journalEntryId is set ONLY when the funding
+ * account is a GL-linked firm account — client-account distributions are
+ * operational records that never touch the firm ledger.
+ * status: requested | first_approved | approved | paid | rejected | void
+ */
+export const distributions = pgTable("distributions", {
+  id: text("id").primaryKey(),
+  distributionNumber: text("distribution_number").notNull().unique(),
+  entityId: text("entity_id").notNull(),
+  beneficiaryContactId: text("beneficiary_contact_id").notNull(),
+  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+  currencyCode: text("currency_code").notNull().default("USD"),
+  bankAccountId: text("bank_account_id"),
+  status: text("status").notNull().default("requested"),
+  requestedBy: text("requested_by"),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+  firstApprovedBy: text("first_approved_by"),
+  firstApprovedAt: timestamp("first_approved_at", { withTimezone: true }),
+  secondApprovedBy: text("second_approved_by"),
+  secondApprovedAt: timestamp("second_approved_at", { withTimezone: true }),
+  rejectedBy: text("rejected_by"),
+  rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+  rejectionReason: text("rejection_reason"),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  journalEntryId: text("journal_entry_id"),
+  resolutionReference: text("resolution_reference"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Month-end close checklist ----------
+
+/**
+ * Standard tasks seeded per accounting period on first view; completion
+ * requires close.task, sign-off (period close) requires period.close.
+ * status: open | done | na
+ */
+export const periodCloseTasks = pgTable("period_close_tasks", {
+  id: text("id").primaryKey(),
+  accountingPeriodId: text("accounting_period_id").notNull(),
+  taskKey: text("task_key").notNull(),
+  label: text("label").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+  status: text("status").notNull().default("open"),
+  completedBy: text("completed_by"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Amortization / depreciation schedules ----------
+
+/**
+ * Item-level prepaid amortization / fixed-asset depreciation.
+ * kind: prepaid | fixed_asset. Straight-line over `months` from
+ * startDate; monthly JEs debit target (expense) and credit source
+ * (prepaid asset / accumulated depreciation).
+ */
+export const amortizationSchedules = pgTable("amortization_schedules", {
+  id: text("id").primaryKey(),
+  kind: text("kind").notNull(),
+  name: text("name").notNull(),
+  sourceAccountId: text("source_account_id").notNull(),
+  targetAccountId: text("target_account_id").notNull(),
+  firmEntityId: text("firm_entity_id"),
+  totalCost: numeric("total_cost", { precision: 15, scale: 2 }).notNull(),
+  residualValue: numeric("residual_value", { precision: 15, scale: 2 }).notNull().default("0"),
+  startDate: date("start_date").notNull(),
+  months: integer("months").notNull(),
+  method: text("method").notNull().default("straight_line"),
+  generatedThrough: date("generated_through"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** One generated amortization/depreciation month per schedule. */
+export const amortizationEntries = pgTable("amortization_entries", {
+  id: text("id").primaryKey(),
+  scheduleId: text("schedule_id").notNull(),
+  periodDate: date("period_date").notNull(),
+  amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
+  journalEntryId: text("journal_entry_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Saved list views ----------
+
+/** Saved list-view filters per user per route. params = URL search params. */
+export const savedViews = pgTable("saved_views", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  route: text("route").notNull(),
+  name: text("name").notNull(),
+  params: jsonb("params").notNull(),
+  isDefault: boolean("is_default").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+// ---------- Collections workbench ----------
+
+/**
+ * Collections activity per client: notes, calls, reminders,
+ * promises-to-pay. kind: note | call | email | promise | reminder.
+ * status: open | kept | broken | done
+ */
+export const collectionActivities = pgTable("collection_activities", {
+  id: text("id").primaryKey(),
+  customerId: text("customer_id").notNull(),
+  activityDate: date("activity_date").notNull(),
+  kind: text("kind").notNull(),
+  amount: numeric("amount", { precision: 15, scale: 2 }),
+  promiseDate: date("promise_date"),
+  status: text("status").notNull().default("open"),
+  ownerUserId: text("owner_user_id"),
+  notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -1172,3 +1605,24 @@ export type AccountingPeriod = typeof accountingPeriods.$inferSelect;
 export type UserEntityAccess = typeof userEntityAccess.$inferSelect;
 export type UserClientAccess = typeof userClientAccess.$inferSelect;
 export type AuditLog = typeof auditLog.$inferSelect;
+export type StatementImport = typeof statementImports.$inferSelect;
+export type ReconciliationSession = typeof reconciliationSessions.$inferSelect;
+export type PaymentRun = typeof paymentRuns.$inferSelect;
+export type PaymentRunItem = typeof paymentRunItems.$inferSelect;
+export type YearEndClose = typeof yearEndCloses.$inferSelect;
+export type EntityFiling = typeof entityFilings.$inferSelect;
+export type KycReview = typeof kycReviews.$inferSelect;
+export type TaxCode = typeof taxCodes.$inferSelect;
+export type CreditApplication = typeof creditApplications.$inferSelect;
+export type BillCreditApplication = typeof billCreditApplications.$inferSelect;
+export type RevenueRecognitionSchedule = typeof revenueRecognitionSchedules.$inferSelect;
+export type RevenueRecognitionEntry = typeof revenueRecognitionEntries.$inferSelect;
+export type FxRevaluation = typeof fxRevaluations.$inferSelect;
+export type Distribution = typeof distributions.$inferSelect;
+export type PeriodCloseTask = typeof periodCloseTasks.$inferSelect;
+export type AmortizationSchedule = typeof amortizationSchedules.$inferSelect;
+export type AmortizationEntry = typeof amortizationEntries.$inferSelect;
+export type SavedView = typeof savedViews.$inferSelect;
+export type CollectionActivity = typeof collectionActivities.$inferSelect;
+export type Payment = typeof payments.$inferSelect;
+export type PaymentAllocation = typeof paymentAllocations.$inferSelect;
