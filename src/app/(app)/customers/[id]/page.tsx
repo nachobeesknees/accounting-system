@@ -15,6 +15,7 @@ import {
   getCustomerById,
   getEntitiesByClientId,
   getInvoices,
+  getKycReviewsForSubject,
   getPendingChargebacksForClient,
   getRegionGroups,
   getRegions,
@@ -22,6 +23,9 @@ import {
   getUsers,
   getVendors,
 } from "@/lib/data";
+import { getSessionUser } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
+import { KycCard } from "@/components/compliance/KycCard";
 import type { Bill, Customer } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
@@ -117,6 +121,7 @@ export default async function Page({
 }) {
   const { id } = await params;
   const sp = await searchParams;
+  const sessionUser = await getSessionUser();
   const customer = await getCustomerById(id);
   if (!customer) notFound();
 
@@ -133,6 +138,7 @@ export default async function Page({
     vendors,
     regions,
     regionGroups,
+    kycReviews,
   ] = await Promise.all([
     getInvoices(),
     getEntitiesByClientId(customer.id),
@@ -144,7 +150,10 @@ export default async function Page({
     getVendors(),
     getRegions(),
     getRegionGroups(),
+    getKycReviewsForSubject("customer", id),
   ]);
+  const canWriteKyc = hasPermission(sessionUser, "kyc.write");
+  const kycUserNameById = new Map(users.map((u) => [u.id, u.fullName] as const));
   const regionGroupById = new Map(regionGroups.map((g) => [g.id, g] as const));
   const regionsByGroup = new Map<string | null, typeof regions>();
   for (const r of regions) {
@@ -379,6 +388,25 @@ export default async function Page({
             />
           </KVGrid>
         </Card>
+      </div>
+
+      <div className="px-6 mb-3.5">
+        <KycCard
+          subjectType="customer"
+          subjectId={customer.id}
+          profile={{
+            kycStatus: customer.kycStatus ?? "not_started",
+            riskRating: customer.riskRating ?? null,
+            pepFlag: !!customer.pepFlag,
+            sanctionsCheckedAt: customer.sanctionsCheckedAt ?? null,
+            kycNextReviewDate: customer.kycNextReviewDate ?? null,
+            kycNotes: customer.kycNotes ?? null,
+          }}
+          reviews={kycReviews}
+          userNameById={kycUserNameById}
+          canWrite={canWriteKyc}
+          returnTo={`/customers/${customer.id}`}
+        />
       </div>
 
       <div className="px-6 mb-3.5">

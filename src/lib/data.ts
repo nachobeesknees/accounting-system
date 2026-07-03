@@ -68,13 +68,19 @@ import type {
   CustomFieldType,
   CustomFieldValue,
   Customer,
+  Distribution,
+  DistributionStatus,
   EmployeeRate,
   Entity,
   EntityFee,
   EntityFeeStatus,
+  EntityFiling,
   EntityKind,
   EntityStatus,
   FeeSchedule,
+  FilingKind,
+  FilingRecurrence,
+  FilingStatus,
   FiscalPeriod,
   FxRate,
   Invoice,
@@ -82,12 +88,17 @@ import type {
   JournalEntry,
   JournalEntryStatus,
   JournalLine,
+  KycReview,
+  KycReviewOutcome,
+  KycStatus,
+  KycSubjectType,
   LookupTable,
   LookupValue,
   Office,
   PriceList,
   PriceListEntry,
   PriceListItemType,
+  RiskRating,
   SigningAuthority,
   TimeEntry,
   User,
@@ -153,7 +164,23 @@ function mapEntity(r: typeof schema.entities.$inferSelect): Entity {
     regionId: (r as { regionId?: string | null }).regionId ?? null,
     ownershipPercent:
       (r as { ownershipPercent?: string | null }).ownershipPercent ?? null,
+    kycStatus: narrowKycStatus(r.kycStatus),
+    riskRating: narrowRiskRating(r.riskRating),
+    pepFlag: r.pepFlag,
+    sanctionsCheckedAt: isoOrNull(r.sanctionsCheckedAt),
+    kycNextReviewDate: r.kycNextReviewDate,
+    kycNotes: r.kycNotes,
   };
+}
+
+/** Narrow the text kyc_status column; unknown values behave as not_started. */
+function narrowKycStatus(s: string | null | undefined): KycStatus {
+  return s === "in_progress" || s === "verified" ? s : "not_started";
+}
+
+/** Narrow the text risk_rating column; unknown values behave as unrated. */
+function narrowRiskRating(s: string | null | undefined): RiskRating | null {
+  return s === "low" || s === "medium" || s === "high" ? s : null;
 }
 
 function mapCurrency(r: typeof schema.currencies.$inferSelect): Currency {
@@ -495,6 +522,7 @@ function mapContact(r: typeof schema.contacts.$inferSelect): Contact {
     isVendor: r.isVendor,
     isEmployee: r.isEmployee,
     isIntermediary: r.isIntermediary,
+    isBeneficiary: r.isBeneficiary,
     customerId: r.customerId,
     vendorId: r.vendorId,
     userId: r.userId,
@@ -526,6 +554,12 @@ function mapCustomer(r: typeof schema.customers.$inferSelect): Customer {
     regionId: (r as { regionId?: string | null }).regionId ?? null,
     taxRate: (r as { taxRate?: string }).taxRate ?? "0",
     taxExempt: (r as { taxExempt?: boolean }).taxExempt ?? false,
+    kycStatus: narrowKycStatus(r.kycStatus),
+    riskRating: narrowRiskRating(r.riskRating),
+    pepFlag: r.pepFlag,
+    sanctionsCheckedAt: isoOrNull(r.sanctionsCheckedAt),
+    kycNextReviewDate: r.kycNextReviewDate,
+    kycNotes: r.kycNotes,
     isActive: r.isActive,
     notes: r.notes,
   };
@@ -3789,3 +3823,179 @@ export async function getDimensionsWithValues(): Promise<
   return dims.map((d) => ({ dimension: d, values: byDim.get(d.id) ?? [] }));
 }
 
+
+// --------- Compliance chain: filings / KYC reviews / distributions ---------
+
+function mapEntityFiling(
+  r: typeof schema.entityFilings.$inferSelect,
+): EntityFiling {
+  return {
+    id: r.id,
+    entityId: r.entityId,
+    kind: r.kind as FilingKind,
+    title: r.title,
+    jurisdiction: r.jurisdiction,
+    dueDate: r.dueDate,
+    recurrence: r.recurrence as FilingRecurrence,
+    status: r.status as FilingStatus,
+    completedAt: isoOrNull(r.completedAt),
+    completedBy: r.completedBy,
+    ownerUserId: r.ownerUserId,
+    notes: r.notes,
+  };
+}
+
+/** Firm-wide compliance calendar, soonest due date first. */
+export async function getEntityFilings(): Promise<EntityFiling[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.entityFilings)
+    .orderBy(asc(schema.entityFilings.dueDate), asc(schema.entityFilings.title));
+  return rows.map(mapEntityFiling);
+}
+
+export async function getEntityFilingsByEntityId(
+  entityId: string,
+): Promise<EntityFiling[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.entityFilings)
+    .where(eq(schema.entityFilings.entityId, entityId))
+    .orderBy(asc(schema.entityFilings.dueDate), asc(schema.entityFilings.title));
+  return rows.map(mapEntityFiling);
+}
+
+export async function getEntityFilingById(
+  id: string,
+): Promise<EntityFiling | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.entityFilings)
+    .where(eq(schema.entityFilings.id, id))
+    .limit(1);
+  return row ? mapEntityFiling(row) : undefined;
+}
+
+function mapKycReview(r: typeof schema.kycReviews.$inferSelect): KycReview {
+  return {
+    id: r.id,
+    subjectType: r.subjectType as KycSubjectType,
+    subjectId: r.subjectId,
+    reviewDate: r.reviewDate,
+    outcome: r.outcome as KycReviewOutcome,
+    riskRatingAfter:
+      r.riskRatingAfter === "low" ||
+      r.riskRatingAfter === "medium" ||
+      r.riskRatingAfter === "high"
+        ? (r.riskRatingAfter as RiskRating)
+        : null,
+    reviewerUserId: r.reviewerUserId,
+    notes: r.notes,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+/** Most recent reviews first (firm-wide log). */
+export async function getKycReviews(limit = 25): Promise<KycReview[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.kycReviews)
+    .orderBy(desc(schema.kycReviews.reviewDate), desc(schema.kycReviews.createdAt))
+    .limit(limit);
+  return rows.map(mapKycReview);
+}
+
+export async function getKycReviewsForSubject(
+  subjectType: KycSubjectType,
+  subjectId: string,
+): Promise<KycReview[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.kycReviews)
+    .where(
+      and(
+        eq(schema.kycReviews.subjectType, subjectType),
+        eq(schema.kycReviews.subjectId, subjectId),
+      ),
+    )
+    .orderBy(desc(schema.kycReviews.reviewDate), desc(schema.kycReviews.createdAt));
+  return rows.map(mapKycReview);
+}
+
+function mapDistribution(
+  r: typeof schema.distributions.$inferSelect,
+): Distribution {
+  return {
+    id: r.id,
+    distributionNumber: r.distributionNumber,
+    entityId: r.entityId,
+    beneficiaryContactId: r.beneficiaryContactId,
+    amount: r.amount,
+    currencyCode: r.currencyCode,
+    bankAccountId: r.bankAccountId,
+    status: r.status as DistributionStatus,
+    requestedBy: r.requestedBy,
+    requestedAt: r.requestedAt.toISOString(),
+    firstApprovedBy: r.firstApprovedBy,
+    firstApprovedAt: isoOrNull(r.firstApprovedAt),
+    secondApprovedBy: r.secondApprovedBy,
+    secondApprovedAt: isoOrNull(r.secondApprovedAt),
+    rejectedBy: r.rejectedBy,
+    rejectedAt: isoOrNull(r.rejectedAt),
+    rejectionReason: r.rejectionReason,
+    paidAt: isoOrNull(r.paidAt),
+    journalEntryId: r.journalEntryId,
+    resolutionReference: r.resolutionReference,
+    notes: r.notes,
+  };
+}
+
+/** All distributions, newest request first. */
+export async function getDistributions(): Promise<Distribution[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.distributions)
+    .orderBy(desc(schema.distributions.requestedAt));
+  return rows.map(mapDistribution);
+}
+
+export async function getDistributionById(
+  id: string,
+): Promise<Distribution | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.distributions)
+    .where(eq(schema.distributions.id, id))
+    .limit(1);
+  return row ? mapDistribution(row) : undefined;
+}
+
+export async function getDistributionsByEntityId(
+  entityId: string,
+): Promise<Distribution[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.distributions)
+    .where(eq(schema.distributions.entityId, entityId))
+    .orderBy(desc(schema.distributions.requestedAt));
+  return rows.map(mapDistribution);
+}
+
+/** Beneficiary register: contacts flagged is_beneficiary (active first). */
+export async function getBeneficiaryContacts(): Promise<Contact[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.contacts)
+    .where(eq(schema.contacts.isBeneficiary, true))
+    .orderBy(schema.contacts.name);
+  return rows.map(mapContact);
+}

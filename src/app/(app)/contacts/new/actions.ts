@@ -28,6 +28,7 @@ export async function createContactAction(
   const isVendor = formData.get("isVendor") === "on";
   const isEmployee = formData.get("isEmployee") === "on";
   const isIntermediary = formData.get("isIntermediary") === "on";
+  const isBeneficiary = formData.get("isBeneficiary") === "on";
 
   if (!code) return { error: "Code is required." };
   if (!name) return { error: "Name is required." };
@@ -46,6 +47,7 @@ export async function createContactAction(
       isVendor,
       isEmployee,
       isIntermediary,
+      isBeneficiary,
     });
     revalidatePath("/contacts");
     redirect(`/contacts/${created.id}`);

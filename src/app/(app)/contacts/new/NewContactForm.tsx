@@ -134,6 +134,10 @@ export function NewContactForm({ nextCode }: { nextCode: string }) {
                   <input type="checkbox" name="isIntermediary" />
                   <span style={{ color: "var(--ink-2)" }}>Intermediary</span>
                 </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" name="isBeneficiary" />
+                  <span style={{ color: "var(--ink-2)" }}>Beneficiary</span>
+                </label>
               </div>
             </div>
           </div>

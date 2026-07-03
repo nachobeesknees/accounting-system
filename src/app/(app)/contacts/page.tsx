@@ -16,6 +16,7 @@ function tagPills(c: Contact) {
   if (c.isVendor) pills.push(<Pill key="ven" variant="formation">Vendor</Pill>);
   if (c.isEmployee) pills.push(<Pill key="emp" variant="pending">Employee</Pill>);
   if (c.isIntermediary) pills.push(<Pill key="int" variant="neutral">Intermediary</Pill>);
+  if (c.isBeneficiary) pills.push(<Pill key="ben" variant="formation">Beneficiary</Pill>);
   if (pills.length === 0) pills.push(<Pill key="none" variant="neutral">Contact</Pill>);
   return <div className="flex gap-1 flex-wrap">{pills}</div>;
 }
@@ -27,6 +28,7 @@ function filterContacts(contacts: Contact[], q: string, tag: string): Contact[] 
     if (tag === "vendor" && !c.isVendor) return false;
     if (tag === "employee" && !c.isEmployee) return false;
     if (tag === "intermediary" && !c.isIntermediary) return false;
+    if (tag === "beneficiary" && !c.isBeneficiary) return false;
     if (needle) {
       const hay =
         `${c.code} ${c.name} ${c.email ?? ""} ${c.phone ?? ""}`.toLowerCase();
@@ -52,13 +54,14 @@ export default async function Page({
     vendors: all.filter((c) => c.isVendor).length,
     employees: all.filter((c) => c.isEmployee).length,
     intermediaries: all.filter((c) => c.isIntermediary).length,
+    beneficiaries: all.filter((c) => c.isBeneficiary).length,
   };
 
   return (
     <>
       <PageHeader
         title="Contacts"
-        meta={`${rows.length} of ${all.length} contacts · ${stats.clients} clients · ${stats.vendors} vendors · ${stats.employees} employees · ${stats.intermediaries} intermediaries`}
+        meta={`${rows.length} of ${all.length} contacts · ${stats.clients} clients · ${stats.vendors} vendors · ${stats.employees} employees · ${stats.intermediaries} intermediaries · ${stats.beneficiaries} beneficiaries`}
         actions={
           <ButtonLink variant="primary" href="/contacts/new">
             + New contact
@@ -81,6 +84,7 @@ export default async function Page({
             <option value="vendor">Vendors</option>
             <option value="employee">Employees</option>
             <option value="intermediary">Intermediaries</option>
+            <option value="beneficiary">Beneficiaries</option>
           </SelectField>
           <Button variant="primary" type="submit">
             Apply

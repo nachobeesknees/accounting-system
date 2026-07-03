@@ -17,11 +17,24 @@ import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm"
 import { getDb, schema } from "@/db";
 import { parseAmount, sumCredits, sumDebits, toDecimalString } from "./money";
 import type {
+  FilingKind,
+  FilingRecurrence,
+  FilingStatus,
   InvoiceRecurringFrequency,
   JournalEntry,
+  KycReviewOutcome,
+  KycStatus,
+  KycSubjectType,
   RecurringFrequency,
+  RiskRating,
   SessionUser,
 } from "./types";
+import {
+  addMonthsIso,
+  filingRecurrenceMonths,
+  isOpenFilingStatus,
+  kycReviewIntervalMonths,
+} from "./compliance";
 import { getJournalEntryById } from "./data";
 import { getEntityScope } from "./entity-scope";
 import { checkPeriodForPost } from "./periods";
@@ -1721,6 +1734,8 @@ export type CreateContactInput = {
   isVendor?: boolean;
   isEmployee?: boolean;
   isIntermediary?: boolean;
+  /** Beneficiary register: eligible recipient of entity distributions. */
+  isBeneficiary?: boolean;
   customerId?: string | null;
   vendorId?: string | null;
   userId?: string | null;
@@ -1753,6 +1768,7 @@ export async function createContact(user: SessionUser, input: CreateContactInput
       isVendor: input.isVendor ?? false,
       isEmployee: input.isEmployee ?? false,
       isIntermediary: input.isIntermediary ?? false,
+      isBeneficiary: input.isBeneficiary ?? false,
       customerId: input.customerId ?? null,
       vendorId: input.vendorId ?? null,
       userId: input.userId ?? null,
@@ -1804,6 +1820,9 @@ export async function updateContact(
       ...(input.isEmployee !== undefined && { isEmployee: input.isEmployee }),
       ...(input.isIntermediary !== undefined && {
         isIntermediary: input.isIntermediary,
+      }),
+      ...(input.isBeneficiary !== undefined && {
+        isBeneficiary: input.isBeneficiary,
       }),
       ...(input.customerId !== undefined && { customerId: input.customerId }),
       ...(input.vendorId !== undefined && { vendorId: input.vendorId }),
@@ -5204,4 +5223,842 @@ export async function duplicateBill(
   });
 
   return { id, billNumber };
+}
+
+// --------- Compliance calendar (entity filings) ---------
+
+export type CreateEntityFilingInput = {
+  entityId: string;
+  kind: FilingKind;
+  title: string;
+  jurisdiction?: string | null;
+  dueDate: string;
+  recurrence?: FilingRecurrence;
+  ownerUserId?: string | null;
+  notes?: string | null;
+};
+
+export async function createEntityFiling(
+  user: SessionUser,
+  input: CreateEntityFilingInput,
+) {
+  requirePermission(user, "filing.write");
+  if (!input.title.trim()) throw new Error("Filing title is required.");
+  if (!input.dueDate) throw new Error("Due date is required.");
+
+  const db = getDb();
+  const [entity] = await db
+    .select({ id: schema.entities.id, code: schema.entities.code })
+    .from(schema.entities)
+    .where(eq(schema.entities.id, input.entityId))
+    .limit(1);
+  if (!entity) throw new Error("Entity not found.");
+
+  const id = uid("fil");
+  const now = new Date();
+  const [created] = await db
+    .insert(schema.entityFilings)
+    .values({
+      id,
+      entityId: input.entityId,
+      kind: input.kind,
+      title: input.title.trim(),
+      jurisdiction: input.jurisdiction ?? null,
+      dueDate: input.dueDate,
+      recurrence: input.recurrence ?? "none",
+      status: "pending",
+      ownerUserId: input.ownerUserId ?? null,
+      notes: input.notes ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+
+  await logAuditEvent(user, {
+    action: "filing.create",
+    resourceType: "entity_filing",
+    resourceId: id,
+    resourceName: created.title,
+    changes: {
+      after: {
+        entityId: created.entityId,
+        kind: created.kind,
+        dueDate: created.dueDate,
+        recurrence: created.recurrence,
+      },
+    },
+  });
+  return created;
+}
+
+export type UpdateEntityFilingInput = Partial<CreateEntityFilingInput> & {
+  status?: FilingStatus;
+};
+
+export async function updateEntityFiling(
+  user: SessionUser,
+  id: string,
+  input: UpdateEntityFilingInput,
+) {
+  requirePermission(user, "filing.write");
+  const db = getDb();
+  const [existing] = await db
+    .select({
+      status: schema.entityFilings.status,
+    })
+    .from(schema.entityFilings)
+    .where(eq(schema.entityFilings.id, id))
+    .limit(1);
+  if (!existing) throw new Error("Filing not found.");
+
+  // Completing a filing must go through markFilingFiled / waiveEntityFiling —
+  // they stamp completed_at / completed_by and (for recurring filings)
+  // schedule the next occurrence. A plain edit can't close a filing.
+  if (
+    input.status !== undefined &&
+    input.status !== existing.status &&
+    !isOpenFilingStatus(input.status)
+  ) {
+    throw new Error(
+      'Use the "Mark filed" / "Waive" actions to complete a filing — they record who completed it and schedule the next occurrence.',
+    );
+  }
+  // Reopening a completed filing clears the stale completion stamp.
+  const reopening =
+    input.status !== undefined &&
+    isOpenFilingStatus(input.status) &&
+    !isOpenFilingStatus(existing.status as FilingStatus);
+
+  const [updated] = await db
+    .update(schema.entityFilings)
+    .set({
+      ...(input.entityId !== undefined && { entityId: input.entityId }),
+      ...(input.kind !== undefined && { kind: input.kind }),
+      ...(input.title !== undefined && { title: input.title }),
+      ...(input.jurisdiction !== undefined && { jurisdiction: input.jurisdiction }),
+      ...(input.dueDate !== undefined && { dueDate: input.dueDate }),
+      ...(input.recurrence !== undefined && { recurrence: input.recurrence }),
+      ...(input.status !== undefined && { status: input.status }),
+      ...(reopening && { completedAt: null, completedBy: null }),
+      ...(input.ownerUserId !== undefined && { ownerUserId: input.ownerUserId }),
+      ...(input.notes !== undefined && { notes: input.notes }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.entityFilings.id, id))
+    .returning();
+  if (!updated) throw new Error("Filing not found.");
+
+  await logAuditEvent(user, {
+    action: "filing.update",
+    resourceType: "entity_filing",
+    resourceId: id,
+    resourceName: updated.title,
+    changes: { after: { status: updated.status, dueDate: updated.dueDate } },
+  });
+  return updated;
+}
+
+/**
+ * Mark a filing as filed. Stamps completed_at / completed_by and — when
+ * the filing recurs — automatically creates the NEXT occurrence with the
+ * due date advanced by the recurrence interval (status pending), so the
+ * calendar never goes silent on a recurring obligation.
+ */
+export async function markFilingFiled(user: SessionUser, id: string) {
+  requirePermission(user, "filing.write");
+  const db = getDb();
+  const [filing] = await db
+    .select()
+    .from(schema.entityFilings)
+    .where(eq(schema.entityFilings.id, id))
+    .limit(1);
+  if (!filing) throw new Error("Filing not found.");
+  if (!isOpenFilingStatus(filing.status as FilingStatus)) {
+    throw new Error(`Filing is already ${filing.status}.`);
+  }
+
+  const now = new Date();
+  const months = filingRecurrenceMonths(filing.recurrence as FilingRecurrence);
+  const nextId = months != null ? uid("fil") : null;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(schema.entityFilings)
+      .set({
+        status: "filed",
+        completedAt: now,
+        completedBy: user.userId,
+        updatedAt: now,
+      })
+      .where(eq(schema.entityFilings.id, id));
+
+    if (nextId && months != null) {
+      await tx.insert(schema.entityFilings).values({
+        id: nextId,
+        entityId: filing.entityId,
+        kind: filing.kind,
+        title: filing.title,
+        jurisdiction: filing.jurisdiction,
+        dueDate: addMonthsIso(filing.dueDate, months),
+        recurrence: filing.recurrence,
+        status: "pending",
+        ownerUserId: filing.ownerUserId,
+        notes: filing.notes,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  });
+
+  await logAuditEvent(user, {
+    action: "filing.file",
+    resourceType: "entity_filing",
+    resourceId: id,
+    resourceName: filing.title,
+    changes: { before: { status: filing.status }, after: { status: "filed" } },
+    metadata: { nextFilingId: nextId },
+  });
+  return { filingId: id, nextFilingId: nextId };
+}
+
+export async function waiveEntityFiling(user: SessionUser, id: string) {
+  requirePermission(user, "filing.write");
+  const db = getDb();
+  const [filing] = await db
+    .select()
+    .from(schema.entityFilings)
+    .where(eq(schema.entityFilings.id, id))
+    .limit(1);
+  if (!filing) throw new Error("Filing not found.");
+  if (!isOpenFilingStatus(filing.status as FilingStatus)) {
+    throw new Error(`Filing is already ${filing.status}.`);
+  }
+  const now = new Date();
+  await db
+    .update(schema.entityFilings)
+    .set({ status: "waived", completedAt: now, completedBy: user.userId, updatedAt: now })
+    .where(eq(schema.entityFilings.id, id));
+  await logAuditEvent(user, {
+    action: "filing.waive",
+    resourceType: "entity_filing",
+    resourceId: id,
+    resourceName: filing.title,
+    changes: { before: { status: filing.status }, after: { status: "waived" } },
+  });
+}
+
+export async function deleteEntityFiling(user: SessionUser, id: string) {
+  requirePermission(user, "filing.write");
+  const db = getDb();
+  const [filing] = await db
+    .select()
+    .from(schema.entityFilings)
+    .where(eq(schema.entityFilings.id, id))
+    .limit(1);
+  if (!filing) return;
+  await db.delete(schema.entityFilings).where(eq(schema.entityFilings.id, id));
+  await logAuditEvent(user, {
+    action: "filing.delete",
+    resourceType: "entity_filing",
+    resourceId: id,
+    resourceName: filing.title,
+  });
+}
+
+// --------- KYC / AML due diligence ---------
+
+export type UpdateKycProfileInput = {
+  kycStatus?: KycStatus;
+  riskRating?: RiskRating | null;
+  pepFlag?: boolean;
+  /** yyyy-mm-dd of the last sanctions screening (stored as timestamp). */
+  sanctionsCheckedAt?: string | null;
+  kycNextReviewDate?: string | null;
+  kycNotes?: string | null;
+};
+
+/**
+ * Update the KYC / due-diligence profile on a customer or client entity.
+ * "Overdue" is never stored — it derives from kyc_next_review_date.
+ */
+export async function updateKycProfile(
+  user: SessionUser,
+  subjectType: KycSubjectType,
+  subjectId: string,
+  input: UpdateKycProfileInput,
+) {
+  requirePermission(user, "kyc.write");
+  const db = getDb();
+
+  const sanctionsTs =
+    input.sanctionsCheckedAt === undefined
+      ? undefined
+      : input.sanctionsCheckedAt
+        ? new Date(`${input.sanctionsCheckedAt}T00:00:00Z`)
+        : null;
+
+  const patch = {
+    ...(input.kycStatus !== undefined && { kycStatus: input.kycStatus }),
+    ...(input.riskRating !== undefined && { riskRating: input.riskRating }),
+    ...(input.pepFlag !== undefined && { pepFlag: input.pepFlag }),
+    ...(sanctionsTs !== undefined && { sanctionsCheckedAt: sanctionsTs }),
+    ...(input.kycNextReviewDate !== undefined && {
+      kycNextReviewDate: input.kycNextReviewDate,
+    }),
+    ...(input.kycNotes !== undefined && { kycNotes: input.kycNotes }),
+    updatedAt: new Date(),
+  };
+
+  let resourceName: string;
+  if (subjectType === "customer") {
+    const [updated] = await db
+      .update(schema.customers)
+      .set(patch)
+      .where(eq(schema.customers.id, subjectId))
+      .returning();
+    if (!updated) throw new Error("Client not found.");
+    resourceName = updated.name;
+  } else {
+    const [updated] = await db
+      .update(schema.entities)
+      .set(patch)
+      .where(eq(schema.entities.id, subjectId))
+      .returning();
+    if (!updated) throw new Error("Entity not found.");
+    resourceName = updated.name;
+  }
+
+  await logAuditEvent(user, {
+    action: "kyc.update",
+    resourceType: subjectType,
+    resourceId: subjectId,
+    resourceName,
+    changes: {
+      after: {
+        kycStatus: input.kycStatus,
+        riskRating: input.riskRating,
+        pepFlag: input.pepFlag,
+        kycNextReviewDate: input.kycNextReviewDate,
+      },
+    },
+  });
+}
+
+export type LogKycReviewInput = {
+  subjectType: KycSubjectType;
+  subjectId: string;
+  reviewDate: string;
+  outcome: KycReviewOutcome;
+  riskRatingAfter?: RiskRating | null;
+  notes?: string | null;
+};
+
+/**
+ * Record a periodic due-diligence review and roll the subject forward:
+ *   - outcome "cleared" → kyc_status becomes "verified"
+ *   - kyc_next_review_date advances from review_date by the risk cadence
+ *     (12mo low / 6mo medium / 3mo high — using the post-review rating)
+ *   - risk_rating syncs to riskRatingAfter when given
+ */
+export async function logKycReview(user: SessionUser, input: LogKycReviewInput) {
+  requirePermission(user, "kyc.write");
+  if (!input.reviewDate) throw new Error("Review date is required.");
+  const db = getDb();
+
+  let subjectName: string;
+  let currentRisk: RiskRating | null = null;
+  if (input.subjectType === "customer") {
+    const [row] = await db
+      .select({ name: schema.customers.name, riskRating: schema.customers.riskRating })
+      .from(schema.customers)
+      .where(eq(schema.customers.id, input.subjectId))
+      .limit(1);
+    if (!row) throw new Error("Client not found.");
+    subjectName = row.name;
+    currentRisk =
+      row.riskRating === "low" || row.riskRating === "medium" || row.riskRating === "high"
+        ? row.riskRating
+        : null;
+  } else {
+    const [row] = await db
+      .select({ name: schema.entities.name, riskRating: schema.entities.riskRating })
+      .from(schema.entities)
+      .where(eq(schema.entities.id, input.subjectId))
+      .limit(1);
+    if (!row) throw new Error("Entity not found.");
+    subjectName = row.name;
+    currentRisk =
+      row.riskRating === "low" || row.riskRating === "medium" || row.riskRating === "high"
+        ? row.riskRating
+        : null;
+  }
+
+  const effectiveRisk = input.riskRatingAfter ?? currentRisk;
+  const nextReviewDate = addMonthsIso(
+    input.reviewDate,
+    kycReviewIntervalMonths(effectiveRisk),
+  );
+
+  const reviewId = uid("kyr");
+  const now = new Date();
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.kycReviews).values({
+      id: reviewId,
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      reviewDate: input.reviewDate,
+      outcome: input.outcome,
+      riskRatingAfter: input.riskRatingAfter ?? null,
+      reviewerUserId: user.userId,
+      notes: input.notes ?? null,
+      createdAt: now,
+    });
+
+    const subjectPatch = {
+      ...(input.outcome === "cleared" && { kycStatus: "verified" }),
+      ...(input.riskRatingAfter != null && { riskRating: input.riskRatingAfter }),
+      kycNextReviewDate: nextReviewDate,
+      updatedAt: now,
+    };
+    if (input.subjectType === "customer") {
+      await tx
+        .update(schema.customers)
+        .set(subjectPatch)
+        .where(eq(schema.customers.id, input.subjectId));
+    } else {
+      await tx
+        .update(schema.entities)
+        .set(subjectPatch)
+        .where(eq(schema.entities.id, input.subjectId));
+    }
+  });
+
+  await logAuditEvent(user, {
+    action: "kyc.review",
+    resourceType: input.subjectType,
+    resourceId: input.subjectId,
+    resourceName: subjectName,
+    changes: {
+      after: {
+        outcome: input.outcome,
+        riskRatingAfter: input.riskRatingAfter ?? null,
+        nextReviewDate,
+      },
+    },
+    metadata: { kycReviewId: reviewId },
+  });
+  return { reviewId, nextReviewDate };
+}
+
+// --------- Distributions (beneficiary payouts, dual approval) ---------
+
+export async function nextDistributionNumber(): Promise<string> {
+  const db = getDb();
+  const [row] = await db
+    .select({ distributionNumber: schema.distributions.distributionNumber })
+    .from(schema.distributions)
+    .orderBy(desc(schema.distributions.distributionNumber))
+    .limit(1);
+  const n = parseTrailingInt(row?.distributionNumber) + 1;
+  return `DIST-${pad(n, 6)}`;
+}
+
+export type CreateDistributionInput = {
+  entityId: string;
+  beneficiaryContactId: string;
+  amount: number;
+  currencyCode?: string;
+  bankAccountId?: string | null;
+  resolutionReference?: string | null;
+  notes?: string | null;
+};
+
+export async function createDistribution(
+  user: SessionUser,
+  input: CreateDistributionInput,
+) {
+  requirePermission(user, "distribution.create");
+  if (!(input.amount > 0)) throw new Error("Amount must be greater than zero.");
+
+  const db = getDb();
+  const [entity] = await db
+    .select({ id: schema.entities.id, currencyCode: schema.entities.currencyCode })
+    .from(schema.entities)
+    .where(eq(schema.entities.id, input.entityId))
+    .limit(1);
+  if (!entity) throw new Error("Entity not found.");
+
+  const [beneficiary] = await db
+    .select({
+      id: schema.contacts.id,
+      name: schema.contacts.name,
+      isBeneficiary: schema.contacts.isBeneficiary,
+    })
+    .from(schema.contacts)
+    .where(eq(schema.contacts.id, input.beneficiaryContactId))
+    .limit(1);
+  if (!beneficiary) throw new Error("Beneficiary contact not found.");
+  if (!beneficiary.isBeneficiary) {
+    throw new Error(
+      `${beneficiary.name} is not flagged as a beneficiary. Tag the contact as Beneficiary first.`,
+    );
+  }
+
+  // Distribution currency defaults to the paying entity's currency.
+  const currencyCode = input.currencyCode ?? entity.currencyCode ?? "USD";
+
+  // Funding account must be owned by the paying entity, or be a firm
+  // account (no owner, GL-linked). An account with an owning entity or
+  // client is that owner's money even when it also carries a GL link —
+  // ownership, not GL-linkage, decides. Anything else risks paying from
+  // another client's structure.
+  if (input.bankAccountId) {
+    const [ba] = await db
+      .select({
+        id: schema.bankAccounts.id,
+        entityId: schema.bankAccounts.entityId,
+        clientId: schema.bankAccounts.clientId,
+        accountId: schema.bankAccounts.accountId,
+        currencyCode: schema.bankAccounts.currencyCode,
+      })
+      .from(schema.bankAccounts)
+      .where(eq(schema.bankAccounts.id, input.bankAccountId))
+      .limit(1);
+    if (!ba) throw new Error("Funding bank account not found.");
+    const isFirmAccount =
+      ba.entityId == null && ba.clientId == null && ba.accountId != null;
+    if (ba.entityId !== input.entityId && !isFirmAccount) {
+      throw new Error(
+        "Funding account must belong to the paying entity or be a firm (GL-linked) account.",
+      );
+    }
+    // No FX conversion happens at payment time — the amount posts raw to
+    // the ledger / bank transaction, so the currencies must match.
+    if (ba.currencyCode !== currencyCode) {
+      throw new Error(
+        `Funding account is denominated in ${ba.currencyCode} but the distribution is in ${currencyCode}. Match the distribution currency to the funding account.`,
+      );
+    }
+  }
+
+  const id = uid("dist");
+  const distributionNumber = await nextDistributionNumber();
+  const now = new Date();
+  const [created] = await db
+    .insert(schema.distributions)
+    .values({
+      id,
+      distributionNumber,
+      entityId: input.entityId,
+      beneficiaryContactId: input.beneficiaryContactId,
+      amount: toDecimalString(input.amount),
+      currencyCode,
+      bankAccountId: input.bankAccountId ?? null,
+      status: "requested",
+      requestedBy: user.userId,
+      requestedAt: now,
+      resolutionReference: input.resolutionReference ?? null,
+      notes: input.notes ?? null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .returning();
+
+  await logAuditEvent(user, {
+    action: "distribution.create",
+    resourceType: "distribution",
+    resourceId: id,
+    resourceName: distributionNumber,
+    changes: {
+      after: {
+        entityId: input.entityId,
+        beneficiaryContactId: input.beneficiaryContactId,
+        amount: toDecimalString(input.amount),
+        status: "requested",
+      },
+    },
+  });
+  return created;
+}
+
+/**
+ * Dual approval. First approval: any distribution.approve holder other
+ * than the requester. Second approval: another distinct approver (not
+ * the requester, not the first approver). Both checks are enforced here
+ * regardless of role — the UI only hides buttons.
+ */
+export async function approveDistribution(user: SessionUser, id: string) {
+  requirePermission(user, "distribution.approve");
+  const db = getDb();
+  const [dist] = await db
+    .select()
+    .from(schema.distributions)
+    .where(eq(schema.distributions.id, id))
+    .limit(1);
+  if (!dist) throw new Error("Distribution not found.");
+
+  const now = new Date();
+  if (dist.status === "requested") {
+    if (dist.requestedBy && dist.requestedBy === user.userId) {
+      throw new Error("The requester cannot give the first approval.");
+    }
+    await db
+      .update(schema.distributions)
+      .set({
+        status: "first_approved",
+        firstApprovedBy: user.userId,
+        firstApprovedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(schema.distributions.id, id));
+    await logAuditEvent(user, {
+      action: "distribution.approve_first",
+      resourceType: "distribution",
+      resourceId: id,
+      resourceName: dist.distributionNumber,
+      changes: { before: { status: "requested" }, after: { status: "first_approved" } },
+    });
+    return { stage: "first" as const };
+  }
+
+  if (dist.status === "first_approved") {
+    if (dist.requestedBy && dist.requestedBy === user.userId) {
+      throw new Error("The requester cannot approve their own distribution.");
+    }
+    if (dist.firstApprovedBy && dist.firstApprovedBy === user.userId) {
+      throw new Error("Second approval must come from a different approver.");
+    }
+    await db
+      .update(schema.distributions)
+      .set({
+        status: "approved",
+        secondApprovedBy: user.userId,
+        secondApprovedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(schema.distributions.id, id));
+    await logAuditEvent(user, {
+      action: "distribution.approve_second",
+      resourceType: "distribution",
+      resourceId: id,
+      resourceName: dist.distributionNumber,
+      changes: { before: { status: "first_approved" }, after: { status: "approved" } },
+    });
+    return { stage: "second" as const };
+  }
+
+  throw new Error(`Distribution is ${dist.status} — nothing to approve.`);
+}
+
+export async function rejectDistribution(
+  user: SessionUser,
+  id: string,
+  reason: string,
+) {
+  requirePermission(user, "distribution.approve");
+  if (!reason.trim()) throw new Error("A rejection reason is required.");
+  const db = getDb();
+  const [dist] = await db
+    .select()
+    .from(schema.distributions)
+    .where(eq(schema.distributions.id, id))
+    .limit(1);
+  if (!dist) throw new Error("Distribution not found.");
+  if (!["requested", "first_approved", "approved"].includes(dist.status)) {
+    throw new Error(`Distribution is ${dist.status} — it can no longer be rejected.`);
+  }
+  const now = new Date();
+  await db
+    .update(schema.distributions)
+    .set({
+      status: "rejected",
+      rejectedBy: user.userId,
+      rejectedAt: now,
+      rejectionReason: reason.trim(),
+      updatedAt: now,
+    })
+    .where(eq(schema.distributions.id, id));
+  await logAuditEvent(user, {
+    action: "distribution.reject",
+    resourceType: "distribution",
+    resourceId: id,
+    resourceName: dist.distributionNumber,
+    changes: { before: { status: dist.status }, after: { status: "rejected" } },
+    metadata: { reason: reason.trim() },
+  });
+}
+
+/**
+ * Mark a fully-approved distribution as paid.
+ *
+ * Ledger rule: ONLY when the funding bank account is a FIRM account
+ * (no owning entity/client, GL-linked) does this post a JE — Dr the
+ * equity distributions account (an equity account named like
+ * "distribution", else Owner's Equity 3000), Cr the bank GL account —
+ * and record a matching bank_transactions row (source "system",
+ * negative amount), mirroring the bill-payment posting flow. Accounts
+ * owned by a client or entity are operational records only, even when
+ * they happen to carry a GL link — client entities NEVER report in
+ * firm financials.
+ */
+export async function markDistributionPaid(user: SessionUser, id: string) {
+  requirePermission(user, "distribution.approve");
+  const db = getDb();
+  const [dist] = await db
+    .select()
+    .from(schema.distributions)
+    .where(eq(schema.distributions.id, id))
+    .limit(1);
+  if (!dist) throw new Error("Distribution not found.");
+  if (dist.status !== "approved") {
+    throw new Error("Only a fully approved distribution can be marked paid.");
+  }
+
+  const amount = parseAmount(dist.amount);
+  const now = new Date();
+  const paymentDate = now.toISOString().slice(0, 10);
+
+  // Claim the row FIRST with a conditional update so two concurrent
+  // mark-paid submissions can't both post the ledger side — only the
+  // request that flips approved → paid proceeds.
+  const claimed = await db
+    .update(schema.distributions)
+    .set({ status: "paid", paidAt: now, updatedAt: now })
+    .where(
+      and(
+        eq(schema.distributions.id, id),
+        eq(schema.distributions.status, "approved"),
+      ),
+    )
+    .returning();
+  if (claimed.length === 0) {
+    throw new Error("Only a fully approved distribution can be marked paid.");
+  }
+
+  let journalEntryId: string | null = null;
+  let entryNumber: string | null = null;
+
+  try {
+    if (dist.bankAccountId) {
+      const [ba] = await db
+        .select({
+          id: schema.bankAccounts.id,
+          name: schema.bankAccounts.name,
+          accountId: schema.bankAccounts.accountId,
+          entityId: schema.bankAccounts.entityId,
+          clientId: schema.bankAccounts.clientId,
+        })
+        .from(schema.bankAccounts)
+        .where(eq(schema.bankAccounts.id, dist.bankAccountId))
+        .limit(1);
+      if (!ba) throw new Error("Funding bank account not found.");
+
+      if (ba.accountId && ba.entityId == null && ba.clientId == null) {
+        // Firm account (unowned, GL-linked) → post the ledger side.
+        // Client/entity-owned accounts never touch the firm ledger.
+        const [distAccount] = await db
+          .select({ id: schema.accounts.id })
+          .from(schema.accounts)
+          .where(
+            and(
+              isNull(schema.accounts.entityId),
+              eq(schema.accounts.accountType, "equity"),
+              eq(schema.accounts.isActive, true),
+              sql`lower(${schema.accounts.name}) LIKE '%distribution%'`,
+            ),
+          )
+          .orderBy(schema.accounts.code)
+          .limit(1);
+        let equityAccountId = distAccount?.id ?? null;
+        if (!equityAccountId) {
+          const [ownersEquity] = await db
+            .select({ id: schema.accounts.id })
+            .from(schema.accounts)
+            .where(
+              and(
+                isNull(schema.accounts.entityId),
+                eq(schema.accounts.code, "3000"),
+              ),
+            )
+            .limit(1);
+          equityAccountId = ownersEquity?.id ?? null;
+        }
+        if (!equityAccountId) {
+          throw new Error(
+            "No equity account found to post the distribution against (looked for an equity account named like 'Distributions', then code 3000).",
+          );
+        }
+
+        const [beneficiary] = await db
+          .select({ name: schema.contacts.name })
+          .from(schema.contacts)
+          .where(eq(schema.contacts.id, dist.beneficiaryContactId))
+          .limit(1);
+        const beneficiaryName = beneficiary?.name ?? dist.beneficiaryContactId;
+
+        const { firmEntityId } = await getFirmIssuingCurrency();
+        const je = await createJournalEntry(user, {
+          entryDate: paymentDate,
+          description: `Distribution paid (${dist.distributionNumber}) — ${beneficiaryName}`,
+          reference: dist.resolutionReference ?? dist.distributionNumber,
+          source: "manual",
+          status: "posted",
+          firmEntityId,
+          lines: [
+            {
+              accountId: equityAccountId,
+              description: `Distribution to ${beneficiaryName}`,
+              debit: amount,
+              credit: 0,
+            },
+            {
+              accountId: ba.accountId,
+              description: "Bank out",
+              debit: 0,
+              credit: amount,
+            },
+          ],
+        });
+        journalEntryId = je.id;
+        entryNumber = je.entryNumber;
+
+        await db.insert(schema.bankTransactions).values({
+          id: uid("bt"),
+          bankAccountId: ba.id,
+          transactionDate: paymentDate,
+          description: `Distribution ${dist.distributionNumber} — ${beneficiaryName}`,
+          amount: toDecimalString(-amount),
+          reference: dist.distributionNumber,
+          isReconciled: false,
+          journalEntryId: je.id,
+          source: "system",
+        });
+      }
+    }
+
+    if (journalEntryId) {
+      await db
+        .update(schema.distributions)
+        .set({ journalEntryId, updatedAt: new Date() })
+        .where(eq(schema.distributions.id, id));
+    }
+  } catch (err) {
+    // Posting failed after the claim — release it so the distribution
+    // isn't stuck at "paid" without its ledger side.
+    await db
+      .update(schema.distributions)
+      .set({ status: "approved", paidAt: null, updatedAt: new Date() })
+      .where(eq(schema.distributions.id, id));
+    throw err;
+  }
+
+  await logAuditEvent(user, {
+    action: "distribution.pay",
+    resourceType: "distribution",
+    resourceId: id,
+    resourceName: dist.distributionNumber,
+    changes: { before: { status: "approved" }, after: { status: "paid" } },
+    metadata: { journalEntryId, entryNumber },
+  });
+  return { distributionId: id, journalEntryId, entryNumber };
 }

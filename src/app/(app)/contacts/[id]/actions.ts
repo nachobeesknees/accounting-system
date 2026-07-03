@@ -46,6 +46,7 @@ export async function updateContactAction(formData: FormData) {
   const isVendor = formData.get("isVendor") === "on";
   const isEmployee = formData.get("isEmployee") === "on";
   const isIntermediary = formData.get("isIntermediary") === "on";
+  const isBeneficiary = formData.get("isBeneficiary") === "on";
   const isActive = formData.get("isActive") === "on";
 
   try {
@@ -61,6 +62,7 @@ export async function updateContactAction(formData: FormData) {
       isVendor,
       isEmployee,
       isIntermediary,
+      isBeneficiary,
       isActive,
     });
   } catch (err) {
