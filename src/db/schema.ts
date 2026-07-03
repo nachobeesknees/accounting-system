@@ -945,10 +945,14 @@ export const bills = pgTable("bills", {
   // Chargeback (rebill to client / entity) — see scripts/sync-schema.ts.
   chargebackClientId: text("chargeback_client_id"),
   chargebackEntityId: text("chargeback_entity_id"),
-  /** True when the rebill splits per line: each line's client_id says who
-   *  pays for it (lines with NULL client aren't rebilled). Mutually
-   *  exclusive with chargeback_client_id / chargeback_entity_id. */
+  /** True when the rebill splits per line: each line's client_id (or
+   *  entity_id, per chargeback_split_by) says who pays for it (lines with
+   *  no allocation aren't rebilled). Mutually exclusive with
+   *  chargeback_client_id / chargeback_entity_id. */
   chargebackSplit: boolean("chargeback_split").notNull().default(false),
+  /** 'client' | 'entity' — which per-line column drives a split rebill.
+   *  NULL on legacy split rows = 'client'. */
+  chargebackSplitBy: text("chargeback_split_by"),
   chargebackType: text("chargeback_type"),
   markupPct: numeric("markup_pct", { precision: 7, scale: 4 }),
   rebillAmount: numeric("rebill_amount", { precision: 15, scale: 2 }),

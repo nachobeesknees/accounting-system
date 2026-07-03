@@ -3285,12 +3285,14 @@ export type CreateBillInput = {
   chargebackClientId?: string | null;
   chargebackEntityId?: string | null;
   /**
-   * Split rebill: each line's clientId decides who pays for it (lines with
-   * no client aren't rebilled). Requires chargebackType cost/markup/included
-   * — "fixed" is ambiguous across clients. Mutually exclusive with
-   * chargebackClientId / chargebackEntityId.
+   * Split rebill: each line's clientId (or entityId when chargebackSplitBy
+   * is 'entity') decides who pays for it (lines with no allocation aren't
+   * rebilled). Requires chargebackType cost/markup/included — "fixed" is
+   * ambiguous across payers. Mutually exclusive with chargebackClientId /
+   * chargebackEntityId.
    */
   chargebackSplit?: boolean;
+  chargebackSplitBy?: "client" | "entity";
   chargebackType?: "cost" | "markup" | "fixed" | "included" | null;
   markupPct?: number | null;
   rebillAmount?: number | null;
@@ -3319,9 +3321,13 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
       throw new Error("Split chargeback can't also have a single rebill recipient.");
     }
     if (input.chargebackType === "fixed") {
-      throw new Error("Fixed-amount rebill can't be split across clients.");
+      throw new Error("Fixed-amount rebill can't be split across payers.");
     }
-    if (!input.lines.some((l) => l.clientId)) {
+    if (input.chargebackSplitBy === "entity") {
+      if (!input.lines.some((l) => l.entityId)) {
+        throw new Error("Split chargeback needs at least one line with an entity.");
+      }
+    } else if (!input.lines.some((l) => l.clientId)) {
       throw new Error("Split chargeback needs at least one line with a client.");
     }
   }
@@ -3368,6 +3374,9 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
       chargebackClientId: input.chargebackClientId ?? null,
       chargebackEntityId: input.chargebackEntityId ?? null,
       chargebackSplit: input.chargebackSplit ?? false,
+      chargebackSplitBy: input.chargebackSplit
+        ? (input.chargebackSplitBy ?? "client")
+        : null,
       chargebackType: input.chargebackType ?? null,
       markupPct:
         input.markupPct != null ? input.markupPct.toFixed(4) : null,
@@ -3388,12 +3397,17 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
         unitPrice: toDecimalString(l.unitPrice),
         amount: toDecimalString(l.quantity * l.unitPrice),
         accountId: l.accountId,
-        // Split rebills: a line with no client is deliberately not billed —
-        // don't let the header on-behalf-of client leak in as its payer.
-        clientId: input.chargebackSplit
-          ? (l.clientId ?? null)
-          : (l.clientId ?? input.clientId ?? null),
-        entityId: l.entityId ?? input.entityId ?? null,
+        // Split rebills: a line with no allocation is deliberately not
+        // billed — don't let the header on-behalf-of client/entity leak in
+        // as its payer.
+        clientId:
+          input.chargebackSplit && (input.chargebackSplitBy ?? "client") === "client"
+            ? (l.clientId ?? null)
+            : (l.clientId ?? input.clientId ?? null),
+        entityId:
+          input.chargebackSplit && input.chargebackSplitBy === "entity"
+            ? (l.entityId ?? null)
+            : (l.entityId ?? input.entityId ?? null),
         dimensions: l.dimensions ?? {},
         createdAt: now,
       })),
@@ -3690,6 +3704,7 @@ export async function setBillChargeback(
         chargebackClientId: null,
         chargebackEntityId: null,
         chargebackSplit: false,
+        chargebackSplitBy: null,
         chargebackType: null,
         markupPct: null,
         rebillAmount: null,
@@ -3717,6 +3732,7 @@ export async function setBillChargeback(
       chargebackEntityId: input.entityId ?? null,
       // Single-recipient config replaces any (un-invoiced) split setup.
       chargebackSplit: false,
+      chargebackSplitBy: null,
       chargebackType: input.type,
       markupPct:
         input.type === "markup" && input.markupPct != null
@@ -3799,13 +3815,36 @@ export async function generateChargebackInvoice(
       throw new Error(`Bill ${b.billNumber} isn't set to rebill.`);
     }
     if (b.chargebackSplit) {
+      // Entity splits invoice the entity's owning client — resolve which
+      // line allocations belong to input.clientId for this bill's split kind.
+      const splitBy =
+        ((b as { chargebackSplitBy?: string | null }).chargebackSplitBy ??
+          "client") as "client" | "entity";
+      let lineFilter;
+      if (splitBy === "entity") {
+        const owned = await db
+          .select({ id: schema.entities.id })
+          .from(schema.entities)
+          .where(eq(schema.entities.clientId, input.clientId));
+        if (owned.length === 0) {
+          throw new Error(
+            `Bill ${b.billNumber} splits by entity but this client owns none.`,
+          );
+        }
+        lineFilter = inArray(
+          schema.billLines.entityId,
+          owned.map((e) => e.id),
+        );
+      } else {
+        lineFilter = eq(schema.billLines.clientId, input.clientId);
+      }
       const billLines = await db
         .select()
         .from(schema.billLines)
         .where(
           and(
             eq(schema.billLines.billId, b.id),
-            eq(schema.billLines.clientId, input.clientId),
+            lineFilter,
             isNull(schema.billLines.chargebackInvoiceId),
           ),
         );
@@ -3883,6 +3922,75 @@ export async function generateChargebackInvoice(
   }
 
   return created;
+}
+
+// --------- Budgets ---------
+
+export type BudgetCell = {
+  accountId: string;
+  /** 1–12. The editor manages monthly budgets only; annual (month NULL)
+   *  rows are left untouched. */
+  month: number;
+  /** Parsed amount; null/0 = no budget for that cell. */
+  amount: number | null;
+};
+
+/**
+ * Replace the monthly budget grid for one fiscal year. The editor submits
+ * every cell, so this deletes the year's monthly rows and re-inserts the
+ * non-empty ones in a single transaction. Annual budgets (month IS NULL)
+ * are preserved.
+ */
+export async function setMonthlyBudgets(
+  user: SessionUser,
+  fiscalYear: number,
+  cells: BudgetCell[],
+) {
+  requirePermission(user, "settings.write");
+  if (!Number.isInteger(fiscalYear) || fiscalYear < 2000 || fiscalYear > 2100) {
+    throw new Error("Invalid fiscal year.");
+  }
+  const now = new Date();
+  const rows = cells
+    .filter(
+      (c) =>
+        c.amount != null &&
+        Number.isFinite(c.amount) &&
+        c.amount !== 0 &&
+        c.month >= 1 &&
+        c.month <= 12,
+    )
+    .map((c) => ({
+      id: uid("bud"),
+      accountId: c.accountId,
+      fiscalYear,
+      month: c.month,
+      amount: toDecimalString(c.amount as number),
+      notes: null,
+      createdAt: now,
+      updatedAt: now,
+    }));
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(schema.budgets)
+      .where(
+        and(
+          eq(schema.budgets.fiscalYear, fiscalYear),
+          isNotNull(schema.budgets.month),
+        ),
+      );
+    if (rows.length > 0) {
+      await tx.insert(schema.budgets).values(rows);
+    }
+  });
+  await logAuditEvent(user, {
+    action: "budget.set",
+    resourceType: "budget",
+    resourceId: String(fiscalYear),
+    resourceName: `FY${fiscalYear} monthly budgets`,
+    changes: { after: { cells: rows.length } },
+  });
 }
 
 // --------- Bank accounts + signers ---------

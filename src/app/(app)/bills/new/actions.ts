@@ -75,6 +75,7 @@ type ParsedLine = {
   quantity: number;
   unitPrice: number;
   clientId: string | null;
+  entityId: string | null;
   dimensions: Record<string, string>;
 };
 
@@ -112,6 +113,7 @@ function parseLines(formData: FormData): ParsedLine[] {
     }
 
     const lineClientId = formData.get(`lines[${i}][clientId]`);
+    const lineEntityId = formData.get(`lines[${i}][entityId]`);
     lines.push({
       description: typeof description === "string" ? description : "",
       accountId: typeof accountId === "string" ? accountId : "",
@@ -120,6 +122,10 @@ function parseLines(formData: FormData): ParsedLine[] {
       clientId:
         typeof lineClientId === "string" && lineClientId.trim() !== ""
           ? lineClientId.trim()
+          : null,
+      entityId:
+        typeof lineEntityId === "string" && lineEntityId.trim() !== ""
+          ? lineEntityId.trim()
           : null,
       dimensions: parseDimensionsForLine(formData, i),
     });
@@ -195,6 +201,7 @@ export async function createBillAction(
       quantity: l.quantity,
       unitPrice: l.unitPrice,
       clientId: l.clientId,
+      entityId: l.entityId,
       dimensions: l.dimensions,
     }));
 
@@ -229,6 +236,7 @@ export async function createBillAction(
           };
         }
         chargeback.chargebackSplit = true;
+        chargeback.chargebackSplitBy = "client";
         chargeback.chargebackClientId = null;
         chargeback.chargebackEntityId = null;
       } else {
@@ -239,8 +247,25 @@ export async function createBillAction(
       if (!chargebackEntityId) {
         return { error: "Pick an entity to rebill to." };
       }
-      chargeback.chargebackEntityId = chargebackEntityId;
-      chargeback.chargebackClientId = null;
+      if (chargebackEntityId === "__split__") {
+        // [Split]: each line's entityId decides who pays for it; invoices
+        // roll up to each entity's owning client.
+        if (chargebackType === "fixed") {
+          return { error: "Fixed-amount rebill can't be used with split billing." };
+        }
+        if (!lines.some((l) => l.entityId)) {
+          return {
+            error: "Split billing needs at least one line with an entity picked.",
+          };
+        }
+        chargeback.chargebackSplit = true;
+        chargeback.chargebackSplitBy = "entity";
+        chargeback.chargebackClientId = null;
+        chargeback.chargebackEntityId = null;
+      } else {
+        chargeback.chargebackEntityId = chargebackEntityId;
+        chargeback.chargebackClientId = null;
+      }
     }
     chargeback.chargebackType = chargebackType;
     if (chargebackType === "markup") {

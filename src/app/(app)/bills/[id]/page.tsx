@@ -154,8 +154,18 @@ export default async function Page({
   const rebillPreview = computeRebill(bill);
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
   const customerNameById = new Map(customers.map((c) => [c.id, c.name] as const));
+  const entityNameById = new Map(entities.map((e) => [e.id, e.name] as const));
   // Split chargebacks show a per-line "Billed to" column.
   const showLineClients = bill.chargebackSplit === true;
+  const splitByEntity = bill.chargebackSplitBy === "entity";
+  const linePayerName = (l: (typeof bill.lines)[number]) =>
+    splitByEntity
+      ? l.entityId
+        ? (entityNameById.get(l.entityId) ?? "—")
+        : null
+      : l.clientId
+        ? (customerNameById.get(l.clientId) ?? "—")
+        : null;
   const activeBankAccounts = bankAccounts
     .filter((b) => b.isActive)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -534,9 +544,9 @@ export default async function Page({
                     </TD>
                     {showLineClients && (
                       <TD>
-                        {line.clientId ? (
+                        {linePayerName(line) ? (
                           <span>
-                            {customerNameById.get(line.clientId) ?? "—"}
+                            {linePayerName(line)}
                             {line.chargebackInvoiceId && (
                               <span
                                 className="ml-1.5"
@@ -633,8 +643,9 @@ export default async function Page({
 
           {bill.chargebackSplit ? (
             (() => {
-              // Per-client breakdown from the line allocations. A client is
-              // fully invoiced when every one of their lines is stamped.
+              // Per-payer breakdown from the line allocations (client or
+              // entity per chargebackSplitBy). A payer is fully invoiced
+              // when every one of their lines is stamped.
               const pct =
                 bill.chargebackType === "markup" && bill.markupPct
                   ? parseFloat(bill.markupPct)
@@ -646,19 +657,20 @@ export default async function Page({
               let unassigned = 0;
               for (const l of bill.lines) {
                 const amt = parseAmount(l.amount);
-                if (!l.clientId) {
+                const payer = splitByEntity ? l.entityId : l.clientId;
+                if (!payer) {
                   unassigned += amt;
                   continue;
                 }
                 const agg =
-                  byClient.get(l.clientId) ??
+                  byClient.get(payer) ??
                   { share: 0, billed: 0, invoiceIds: new Set<string>() };
                 agg.share += amt;
                 if (l.chargebackInvoiceId) {
                   agg.billed += amt;
                   agg.invoiceIds.add(l.chargebackInvoiceId);
                 }
-                byClient.set(l.clientId, agg);
+                byClient.set(payer, agg);
               }
               const anyInvoiced = [...byClient.values()].some(
                 (a) => a.invoiceIds.size > 0,
@@ -672,7 +684,7 @@ export default async function Page({
                       : bill.chargebackType === "included"
                         ? "included in annual fee"
                         : "at cost"}
-                    , per-line clients.
+                    , per-line {splitByEntity ? "entities" : "clients"}.
                   </div>
                   <KVGrid>
                     {[...byClient.entries()].map(([cid, agg]) => {
@@ -683,7 +695,11 @@ export default async function Page({
                       return (
                         <KV
                           key={cid}
-                          k={customerNameById.get(cid) ?? "—"}
+                          k={
+                            splitByEntity
+                              ? (entityNameById.get(cid) ?? "—")
+                              : (customerNameById.get(cid) ?? "—")
+                          }
                           v={`${formatMoney(rebill, bill.currencyCode, { paren: true, compact: true })}${
                             bill.chargebackType === "included"
                               ? ""
@@ -713,7 +729,9 @@ export default async function Page({
                     className="text-[11.5px]"
                     style={{ color: "var(--ink-4)" }}
                   >
-                    Pending shares are invoiced from each client&apos;s page
+                    {splitByEntity
+                      ? "Pending shares are invoiced from each entity's owning client's page"
+                      : "Pending shares are invoiced from each client's page"}{" "}
                     (Pending chargebacks).
                   </div>
                   {!anyInvoiced && (

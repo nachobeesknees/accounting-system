@@ -698,8 +698,10 @@ export type Bill = {
   // bill is an internal expense, not rebilled.
   chargebackClientId?: string | null;
   chargebackEntityId?: string | null;
-  /** True = rebill splits per line by each line's clientId. */
+  /** True = rebill splits per line by each line's clientId or entityId. */
   chargebackSplit?: boolean;
+  /** Which per-line column drives a split: 'client' (default) or 'entity'. */
+  chargebackSplitBy?: "client" | "entity" | null;
   chargebackType?: BillChargebackType | null;
   markupPct?: string | null;
   rebillAmount?: string | null;

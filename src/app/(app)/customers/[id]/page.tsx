@@ -27,12 +27,24 @@ import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
 import { PendingChargebacksCard } from "./PendingChargebacksCard";
 
-function computeRebill(bill: Bill, clientId: string): number | null {
-  // Split bills rebill only this client's unbilled line share.
+function computeRebill(
+  bill: Bill,
+  clientId: string,
+  clientEntityIds: Set<string>,
+): number | null {
+  // Split bills rebill only this client's unbilled line share — allocated
+  // per line by client, or by entity (rolled up to the owning client).
   if (bill.chargebackSplit) {
     if (bill.chargebackType === "included" || bill.chargebackType == null) return null;
+    const byEntity = bill.chargebackSplitBy === "entity";
     const share = bill.lines
-      .filter((l) => l.clientId === clientId && !l.chargebackInvoiceId)
+      .filter(
+        (l) =>
+          !l.chargebackInvoiceId &&
+          (byEntity
+            ? !!l.entityId && clientEntityIds.has(l.entityId)
+            : l.clientId === clientId),
+      )
       .reduce((s, l) => s + parseAmount(l.amount), 0);
     if (share <= 0) return null;
     const pct =
@@ -59,7 +71,11 @@ function computeRebill(bill: Bill, clientId: string): number | null {
 }
 
 function methodLabel(bill: Bill): string {
-  const split = bill.chargebackSplit ? " · split" : "";
+  const split = bill.chargebackSplit
+    ? bill.chargebackSplitBy === "entity"
+      ? " · split by entity"
+      : " · split"
+    : "";
   switch (bill.chargebackType) {
     case "cost":
       return `At cost${split}`;
@@ -154,7 +170,11 @@ export default async function Page({
       vendorName: vendorById.get(b.vendorId)?.name ?? "—",
       chargebackType: b.chargebackType,
       methodLabel: methodLabel(b),
-      rebillAmount: computeRebill(b, customer.id),
+      rebillAmount: computeRebill(
+        b,
+        customer.id,
+        new Set(entities.map((e) => e.id)),
+      ),
     }));
   const userById = new Map(users.map((u) => [u.id, u] as const));
   const assignedUserIds = new Set(assignments.map((a) => a.userId));

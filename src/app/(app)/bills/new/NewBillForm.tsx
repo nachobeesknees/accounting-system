@@ -44,6 +44,8 @@ type Line = {
   unitPrice: string;
   /** Per-line rebill client — only used when the chargeback is [Split]. */
   clientId: string;
+  /** Per-line rebill entity — only used when splitting by entity. */
+  entityId: string;
   dimensions: Record<string, string>;
 };
 
@@ -54,6 +56,7 @@ function blankLine(accountId = ""): Line {
     quantity: "1",
     unitPrice: "",
     clientId: "",
+    entityId: "",
     dimensions: {},
   };
 }
@@ -114,9 +117,10 @@ export function NewBillForm({
     blankLine(vendors[0]?.defaultExpenseAccountId ?? ""),
   ]);
   const [recipient, setRecipient] = useState<Recipient>("none");
-  // Chargeback client picker: a real client id, or SPLIT_CLIENT_VALUE for
-  // per-line billing (the [Split] option).
+  // Chargeback recipient pickers: a real id, or SPLIT_CLIENT_VALUE for
+  // per-line billing (the [Split] option, on either picker).
   const [cbClientId, setCbClientId] = useState<string>("");
+  const [cbEntityId, setCbEntityId] = useState<string>("");
   const [cbMethod, setCbMethod] = useState<CbMethod>("cost");
   const [markupPct, setMarkupPct] = useState<string>("");
   const [rebillAmount, setRebillAmount] = useState<string>("");
@@ -288,6 +292,7 @@ export function NewBillForm({
                   ? (li.total / li.quantity).toFixed(2)
                   : "",
             clientId: "",
+            entityId: "",
             dimensions: {},
           })),
         );
@@ -358,7 +363,18 @@ export function NewBillForm({
     ],
     [clientOptions],
   );
-  const splitBilling = recipient === "client" && cbClientId === SPLIT_CLIENT_VALUE;
+  // Which per-line column drives the split (null = not splitting).
+  const splitBy: "client" | "entity" | null =
+    recipient === "client" && cbClientId === SPLIT_CLIENT_VALUE
+      ? "client"
+      : recipient === "entity" && cbEntityId === SPLIT_CLIENT_VALUE
+        ? "entity"
+        : null;
+  const splitBilling = splitBy !== null;
+  const entityById = useMemo(
+    () => new Map(entities.map((e) => [e.id, e] as const)),
+    [entities],
+  );
   const entityOptionsForClient = useMemo<SmartSelectOption[]>(
     () =>
       entitiesForClient.map((e) => {
@@ -383,6 +399,17 @@ export function NewBillForm({
       }),
     [entities, customerById],
   );
+  const cbEntityOptions = useMemo<SmartSelectOption[]>(
+    () => [
+      {
+        value: SPLIT_CLIENT_VALUE,
+        label: "[Split] — choose an entity per line",
+        search: "split",
+      },
+      ...allEntityOptions,
+    ],
+    [allEntityOptions],
+  );
   const expenseAccountOptions = useMemo<SmartSelectOption[]>(
     () =>
       expenseAccounts.map((a) => ({
@@ -405,34 +432,39 @@ export function NewBillForm({
 
   const previewRebill = useMemo<string | null>(() => {
     if (recipient === "none") return null;
-    if (recipient === "client" && cbClientId === SPLIT_CLIENT_VALUE) {
+    if (splitBy) {
       if (cbMethod === "included") {
         return "Included in annual fee — no separate invoice will be generated.";
       }
       const pct = cbMethod === "markup" ? parseAmount(markupPct) : 0;
-      const byClient = new Map<string, number>();
+      const byPayer = new Map<string, number>();
       let unassigned = 0;
       for (const l of lines) {
         const amt = parseAmount(l.quantity) * parseAmount(l.unitPrice);
-        if (l.clientId) {
-          byClient.set(l.clientId, (byClient.get(l.clientId) ?? 0) + amt);
+        const payer = splitBy === "entity" ? l.entityId : l.clientId;
+        if (payer) {
+          byPayer.set(payer, (byPayer.get(payer) ?? 0) + amt);
         } else {
           unassigned += amt;
         }
       }
-      if (byClient.size === 0) {
-        return "Split: no lines assigned to a client yet — pick a client on each line to rebill.";
+      if (byPayer.size === 0) {
+        return `Split: no lines assigned yet — pick ${splitBy === "entity" ? "an entity" : "a client"} on each line to rebill.`;
       }
-      const parts = [...byClient.entries()].map(([cid, amt]) => {
+      const parts = [...byPayer.entries()].map(([pid, amt]) => {
         const rebill = Math.round(amt * (1 + pct / 100) * 100) / 100;
-        return `${customerById.get(cid)?.name ?? "?"}: ${formatMoney(rebill, currencyCode, { paren: true })}`;
+        const name =
+          splitBy === "entity"
+            ? (entityById.get(pid)?.name ?? "?")
+            : (customerById.get(pid)?.name ?? "?");
+        return `${name}: ${formatMoney(rebill, currencyCode, { paren: true })}`;
       });
       if (unassigned > 0) {
         parts.push(
           `not rebilled: ${formatMoney(unassigned, currencyCode, { paren: true })}`,
         );
       }
-      return `Split ${pct ? `with ${pct}% markup` : "at cost"} — ${parts.join(" · ")}`;
+      return `Split by ${splitBy} ${pct ? `with ${pct}% markup` : "at cost"} — ${parts.join(" · ")}`;
     }
     switch (cbMethod) {
       case "cost":
@@ -451,7 +483,7 @@ export function NewBillForm({
       default:
         return null;
     }
-  }, [recipient, cbMethod, subtotal, markupPct, rebillAmount, currencyCode, cbClientId, lines, customerById]);
+  }, [recipient, cbMethod, subtotal, markupPct, rebillAmount, currencyCode, splitBy, lines, customerById, entityById]);
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -747,7 +779,9 @@ export function NewBillForm({
               {dimensionsWithValues.map(({ dimension }) => (
                 <TH key={dimension.id}>{dimension.label}</TH>
               ))}
-              {splitBilling && <TH>Bill to client</TH>}
+              {splitBilling && (
+                <TH>{splitBy === "entity" ? "Bill to entity" : "Bill to client"}</TH>
+              )}
               <TH num>Qty</TH>
               <TH num>Unit price</TH>
               <TH num>Amount</TH>
@@ -812,15 +846,27 @@ export function NewBillForm({
                   ))}
                   {splitBilling && (
                     <TD>
-                      <SmartSelect
-                        name={`lines[${i}][clientId]`}
-                        value={line.clientId}
-                        onChange={(v) => updateLine(i, { clientId: v })}
-                        options={clientOptions}
-                        emptyLabel="— Not rebilled —"
-                        clearable
-                        ariaLabel={`Bill line ${i + 1} to client`}
-                      />
+                      {splitBy === "entity" ? (
+                        <SmartSelect
+                          name={`lines[${i}][entityId]`}
+                          value={line.entityId}
+                          onChange={(v) => updateLine(i, { entityId: v })}
+                          options={allEntityOptions}
+                          emptyLabel="— Not rebilled —"
+                          clearable
+                          ariaLabel={`Bill line ${i + 1} to entity`}
+                        />
+                      ) : (
+                        <SmartSelect
+                          name={`lines[${i}][clientId]`}
+                          value={line.clientId}
+                          onChange={(v) => updateLine(i, { clientId: v })}
+                          options={clientOptions}
+                          emptyLabel="— Not rebilled —"
+                          clearable
+                          ariaLabel={`Bill line ${i + 1} to client`}
+                        />
+                      )}
                     </TD>
                   )}
                   <TD num>
@@ -1003,6 +1049,7 @@ export function NewBillForm({
           {splitBilling && (
             <>
               <input type="hidden" name="chargebackSplit" value="1" />
+              <input type="hidden" name="chargebackSplitBy" value={splitBy ?? "client"} />
               <div
                 className="text-[12px] rounded-md px-3 py-2"
                 style={{
@@ -1011,8 +1058,9 @@ export function NewBillForm({
                   border: "1px solid var(--line)",
                 }}
               >
-                Pick a client on each line above (Bill to client column).
-                Lines left blank are not rebilled.
+                {splitBy === "entity"
+                  ? "Pick an entity on each line above (Bill to entity column). Lines left blank are not rebilled; invoices go to each entity's owning client."
+                  : "Pick a client on each line above (Bill to client column). Lines left blank are not rebilled."}
               </div>
             </>
           )}
@@ -1020,10 +1068,17 @@ export function NewBillForm({
           {recipient === "entity" && (
             <Row>
               <SmartSelectField
-                label="Entity"
+                label="Bill to entity"
                 name="chargebackEntityId"
                 required
-                options={allEntityOptions}
+                value={cbEntityId}
+                onChange={(v) => {
+                  setCbEntityId(v);
+                  if (v === SPLIT_CLIENT_VALUE && cbMethod === "fixed") {
+                    setCbMethod("cost");
+                  }
+                }}
+                options={cbEntityOptions}
                 emptyLabel="— Select entity —"
               />
               <div />

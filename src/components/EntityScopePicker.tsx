@@ -91,7 +91,7 @@ export function EntityScopePicker({
         disabled={isPending}
         ariaLabel="Entity scope"
         options={[
-          { value: "all", label: "All entities" },
+          { value: "all", label: "All entities (consolidated)", search: "all consolidated" },
           ...usableRegions.map((r) => ({
             value: `${REGION_PREFIX}${r.id}`,
             label: `${r.name} — all firm entities`,

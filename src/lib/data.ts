@@ -782,6 +782,9 @@ function mapBill(r: typeof schema.bills.$inferSelect, lines: BillLine[]): Bill {
     chargebackClientId: r.chargebackClientId ?? null,
     chargebackEntityId: r.chargebackEntityId ?? null,
     chargebackSplit: r.chargebackSplit ?? false,
+    chargebackSplitBy:
+      ((r as { chargebackSplitBy?: string | null }).chargebackSplitBy ??
+        (r.chargebackSplit ? "client" : null)) as Bill["chargebackSplitBy"],
     chargebackType: (r.chargebackType ?? null) as Bill["chargebackType"],
     markupPct: r.markupPct ?? null,
     rebillAmount: r.rebillAmount ?? null,
@@ -1761,8 +1764,18 @@ export async function getPendingChargebacksForClient(
   clientId: string,
 ): Promise<Bill[]> {
   const db = getDb();
+  // Entity-split rebills roll up to the entity's owning client — invoices
+  // always go to a customer.
+  const clientEntities = await db
+    .select({ id: schema.entities.id })
+    .from(schema.entities)
+    .where(eq(schema.entities.clientId, clientId));
+  const clientEntityIds = clientEntities.map((e) => e.id);
   // Whole-bill chargebacks tagged to this client, plus split bills that
-  // still have unbilled lines allocated to this client.
+  // still have unbilled lines allocated to this client — via the per-line
+  // client column (split_by client/legacy-null) or via one of the client's
+  // entities (split_by entity). The split_by check keeps a client-split
+  // bill's incidental entity tags from surfacing as entity allocations.
   const heads = await db
     .select()
     .from(schema.bills)
@@ -1774,6 +1787,10 @@ export async function getPendingChargebacksForClient(
         ),
         and(
           eq(schema.bills.chargebackSplit, true),
+          or(
+            isNull(schema.bills.chargebackSplitBy),
+            eq(schema.bills.chargebackSplitBy, "client"),
+          ),
           exists(
             db
               .select({ id: schema.billLines.id })
@@ -1787,6 +1804,24 @@ export async function getPendingChargebacksForClient(
               ),
           ),
         ),
+        clientEntityIds.length > 0
+          ? and(
+              eq(schema.bills.chargebackSplit, true),
+              eq(schema.bills.chargebackSplitBy, "entity"),
+              exists(
+                db
+                  .select({ id: schema.billLines.id })
+                  .from(schema.billLines)
+                  .where(
+                    and(
+                      eq(schema.billLines.billId, schema.bills.id),
+                      inArray(schema.billLines.entityId, clientEntityIds),
+                      isNull(schema.billLines.chargebackInvoiceId),
+                    ),
+                  ),
+              ),
+            )
+          : undefined,
       ),
     )
     .orderBy(desc(schema.bills.billDate));

@@ -311,7 +311,7 @@ export default async function Page({
             current={regionId}
           />
         </div>
-        {regionName && (
+        {regionName ? (
           <div
             className="px-3 py-1.5 rounded-md text-[11.5px]"
             style={{
@@ -324,9 +324,36 @@ export default async function Page({
             Scoped to <strong style={{ color: "var(--ink-2)" }}>{regionName}</strong>{" "}
             ({entityIdsInRegion?.length ?? 0} entit
             {(entityIdsInRegion?.length ?? 0) === 1 ? "y" : "ies"}). Firm-level
-            entries with no entity are excluded.
+            entries with no entity are excluded — as are intercompany
+            elimination entries, which only apply at the consolidated view.
           </div>
-        )}
+        ) : tab !== "by-entity" ? (
+          <div
+            className="px-3 py-1.5 rounded-md text-[11.5px]"
+            style={{
+              background: "var(--rail)",
+              color: "var(--ink-3)",
+              border: "1px solid var(--line)",
+              alignSelf: "flex-start",
+            }}
+          >
+            {scope === null ? (
+              <>
+                <strong style={{ color: "var(--ink-2)" }}>Consolidated</strong>{" "}
+                — all firm entities, intercompany elimination entries
+                included. Pick a single entity in the topbar for standalone
+                books.
+              </>
+            ) : (
+              <>
+                Standalone entity books — intercompany elimination entries
+                excluded. Switch the topbar to{" "}
+                <strong style={{ color: "var(--ink-2)" }}>All entities</strong>{" "}
+                for the consolidated view.
+              </>
+            )}
+          </div>
+        ) : null}
 
         {tab === "balance" && (
           <BalanceSheetCard

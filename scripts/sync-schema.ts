@@ -28,6 +28,7 @@ const COLUMNS: ColumnSpec[] = [
 
   // Split chargebacks: per-line client billing on vendor bills
   { table: "bills", column: "chargeback_split", type: "boolean", notNull: true, default: "false" },
+  { table: "bills", column: "chargeback_split_by", type: "text" },
   { table: "bill_lines", column: "chargeback_invoice_id", type: "text" },
 
   // entities additions
