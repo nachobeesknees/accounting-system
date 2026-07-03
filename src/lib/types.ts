@@ -719,8 +719,15 @@ export type Bill = {
 export type BankAccount = {
   id: string;
   name: string;
-  accountId: string;
+  /** GL link — required for firm accounts, optional for client accounts. */
+  accountId: string | null;
   institution: string | null;
+  /** checking | savings | money_market | custody | brokerage | other */
+  accountType?: string | null;
+  swiftBic?: string | null;
+  iban?: string | null;
+  bankAddress?: string | null;
+  bankCountry?: string | null;
   /** Full account number. Never render raw — use maskAccountNumber().
    *  Read side always populates (null when not on file). */
   accountNumber?: string | null;

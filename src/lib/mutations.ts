@@ -2895,7 +2895,7 @@ export async function recordInvoicePayment(
       .from(schema.bankAccounts)
       .where(eq(schema.bankAccounts.id, input.bankAccountId))
       .limit(1);
-    if (ba) cashAccountId = ba.accountId;
+    if (ba?.accountId) cashAccountId = ba.accountId;
   }
 
   const entityId =
@@ -3576,7 +3576,7 @@ export async function recordBillPayment(
       .from(schema.bankAccounts)
       .where(eq(schema.bankAccounts.id, input.bankAccountId))
       .limit(1);
-    if (ba) cashAccountId = ba.accountId;
+    if (ba?.accountId) cashAccountId = ba.accountId;
   }
 
   const { firmEntityId } = await getFirmIssuingCurrency();
@@ -3993,6 +3993,18 @@ export async function setMonthlyBudgets(
   });
 }
 
+// --------- Dashboard preferences ---------
+
+/** Save the caller's OWN dashboard widget visibility. No extra permission
+ *  — every signed-in user may customize their dashboard. */
+export async function saveDashboardPrefs(user: SessionUser, hidden: string[]) {
+  const db = getDb();
+  await db
+    .update(schema.users)
+    .set({ dashboardPrefs: { hidden: hidden.slice(0, 50) } })
+    .where(eq(schema.users.id, user.userId));
+}
+
 // --------- Variance notes ---------
 
 export type VarianceNoteKey = {
@@ -4066,8 +4078,15 @@ function deriveLastFour(accountNumber: string | null | undefined): string | null
 
 export type CreateBankAccountInput = {
   name: string;
-  accountId: string; // GL account
+  /** GL account — required for firm accounts; optional when the account
+   *  belongs to a client/entity (their money, not firm ledger). */
+  accountId?: string | null;
   institution?: string | null;
+  accountType?: string | null;
+  swiftBic?: string | null;
+  iban?: string | null;
+  bankAddress?: string | null;
+  bankCountry?: string | null;
   /** Full account number — stored whole, always DISPLAYED masked. */
   accountNumber?: string | null;
   /** ABA routing number. */
@@ -4087,6 +4106,11 @@ export async function createBankAccount(
   input: CreateBankAccountInput,
 ) {
   requirePermission(user, "settings.write");
+  // Firm accounts must post somewhere in the GL; client/entity accounts
+  // live on the client's side and may skip the link.
+  if (!input.accountId && !input.entityId && !input.clientId) {
+    throw new Error("Firm bank accounts need a GL account (or assign the account to a client/entity).");
+  }
   const db = getDb();
   const id = uid("ba");
   const [created] = await db
@@ -4094,8 +4118,13 @@ export async function createBankAccount(
     .values({
       id,
       name: input.name,
-      accountId: input.accountId,
+      accountId: input.accountId ?? null,
       institution: input.institution ?? null,
+      accountType: input.accountType ?? null,
+      swiftBic: input.swiftBic ?? null,
+      iban: input.iban ?? null,
+      bankAddress: input.bankAddress ?? null,
+      bankCountry: input.bankCountry ?? null,
       accountNumber: input.accountNumber ?? null,
       routingNumber: input.routingNumber ?? null,
       // last_four stays derived from the full number when we have one so
@@ -4136,6 +4165,11 @@ export async function updateBankAccount(
       ...(input.name !== undefined && { name: input.name }),
       ...(input.accountId !== undefined && { accountId: input.accountId }),
       ...(input.institution !== undefined && { institution: input.institution }),
+      ...(input.accountType !== undefined && { accountType: input.accountType }),
+      ...(input.swiftBic !== undefined && { swiftBic: input.swiftBic }),
+      ...(input.iban !== undefined && { iban: input.iban }),
+      ...(input.bankAddress !== undefined && { bankAddress: input.bankAddress }),
+      ...(input.bankCountry !== undefined && { bankCountry: input.bankCountry }),
       // A new full number re-derives last_four; otherwise honor an explicit
       // lastFour edit (legacy rows that only ever stored the last four).
       ...(input.accountNumber !== undefined && {

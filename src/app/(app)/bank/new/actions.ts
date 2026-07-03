@@ -20,6 +20,11 @@ export async function createBankAccountAction(
   const institution = String(formData.get("institution") ?? "").trim();
   const accountNumber = String(formData.get("accountNumber") ?? "").trim();
   const routingNumber = String(formData.get("routingNumber") ?? "").trim();
+  const accountType = String(formData.get("accountType") ?? "").trim();
+  const swiftBic = String(formData.get("swiftBic") ?? "").trim();
+  const iban = String(formData.get("iban") ?? "").trim();
+  const bankAddress = String(formData.get("bankAddress") ?? "").trim();
+  const bankCountry = String(formData.get("bankCountry") ?? "").trim().toUpperCase();
   const currencyCode = String(formData.get("currencyCode") ?? "USD").trim();
   const entityId = String(formData.get("entityId") ?? "").trim();
   const clientId = String(formData.get("clientId") ?? "").trim();
@@ -32,13 +37,20 @@ export async function createBankAccountAction(
       : Math.max(0, Math.min(100, parseFloat(ownershipRaw)));
 
   if (!name) return { error: "Name is required." };
-  if (!accountId) return { error: "GL account is required." };
+  if (!accountId && !entityId && !clientId) {
+    return { error: "Firm bank accounts need a GL account (or assign the account to a client/entity)." };
+  }
 
   try {
     const created = await createBankAccount(user, {
       name,
-      accountId,
+      accountId: accountId || null,
       institution: institution || null,
+      accountType: accountType || null,
+      swiftBic: swiftBic || null,
+      iban: iban || null,
+      bankAddress: bankAddress || null,
+      bankCountry: bankCountry || null,
       accountNumber: accountNumber || null,
       routingNumber: routingNumber || null,
       currencyCode: currencyCode || "USD",

@@ -37,6 +37,11 @@ export async function updateBankAccountAction(formData: FormData) {
   // number back, so an untouched field must not clear it).
   const accountNumber = String(formData.get("accountNumber") ?? "").trim();
   const routingNumber = String(formData.get("routingNumber") ?? "").trim();
+  const accountType = String(formData.get("accountType") ?? "").trim();
+  const swiftBic = String(formData.get("swiftBic") ?? "").trim();
+  const iban = String(formData.get("iban") ?? "").trim();
+  const bankAddress = String(formData.get("bankAddress") ?? "").trim();
+  const bankCountry = String(formData.get("bankCountry") ?? "").trim().toUpperCase();
   const currencyCode = String(formData.get("currencyCode") ?? "").trim();
   const entityId = String(formData.get("entityId") ?? "").trim();
   const clientId = String(formData.get("clientId") ?? "").trim();
@@ -52,10 +57,15 @@ export async function updateBankAccountAction(formData: FormData) {
   try {
     await updateBankAccount(user, id, {
       name: name || undefined,
-      accountId: accountId || undefined,
+      accountId: accountId || null,
       institution: institution || null,
       ...(accountNumber !== "" && { accountNumber }),
       routingNumber: routingNumber || null,
+      accountType: accountType || null,
+      swiftBic: swiftBic || null,
+      iban: iban || null,
+      bankAddress: bankAddress || null,
+      bankCountry: bankCountry || null,
       currencyCode: currencyCode || undefined,
       entityId: entityId || null,
       clientId: clientId || null,

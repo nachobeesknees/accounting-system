@@ -568,8 +568,13 @@ function mapBankAccount(r: typeof schema.bankAccounts.$inferSelect): BankAccount
   return {
     id: r.id,
     name: r.name,
-    accountId: r.accountId,
+    accountId: r.accountId ?? null,
     institution: r.institution,
+    accountType: r.accountType ?? null,
+    swiftBic: r.swiftBic ?? null,
+    iban: r.iban ?? null,
+    bankAddress: r.bankAddress ?? null,
+    bankCountry: r.bankCountry ?? null,
     accountNumber: r.accountNumber ?? null,
     routingNumber: r.routingNumber ?? null,
     lastFour: r.lastFour,
@@ -2390,6 +2395,26 @@ export type BusinessKpis = {
   newClientsYtd: number;
 };
 
+export async function getDashboardPrefs(
+  userId: string,
+): Promise<import("./dashboard-widgets").DashboardPrefs> {
+  const db = getDb();
+  const [row] = await db
+    .select({ prefs: schema.users.dashboardPrefs })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId))
+    .limit(1);
+  const raw = row?.prefs;
+  if (raw && typeof raw === "object" && Array.isArray((raw as { hidden?: unknown }).hidden)) {
+    return {
+      hidden: ((raw as { hidden: unknown[] }).hidden).filter(
+        (h): h is string => typeof h === "string",
+      ),
+    };
+  }
+  return { hidden: [] };
+}
+
 export async function getBusinessKpis(year: number): Promise<BusinessKpis> {
   const db = getDb();
   const yearStart = `${year}-01-01`;
@@ -3413,6 +3438,69 @@ export async function getBudgetByAccountForMonths(
     if (add !== 0) out.set(b.accountId, (out.get(b.accountId) ?? 0) + add);
   }
   return out;
+}
+
+/**
+ * Posted journal lines in a date range for the General Ledger / General
+ * Journal reports. Consolidated view (all firm entities, eliminations
+ * included). Ordered by entry date, then entry number, then line number.
+ */
+export type LedgerLine = {
+  accountId: string;
+  entryId: string;
+  entryNumber: string;
+  entryDate: string;
+  entryDescription: string | null;
+  lineDescription: string | null;
+  debit: number;
+  credit: number;
+};
+
+export async function getLedgerLinesInRange(
+  start: string,
+  end: string,
+  accountId?: string,
+): Promise<LedgerLine[]> {
+  const db = getDb();
+  const conds = [
+    eq(schema.journalEntries.status, "posted"),
+    gte(schema.journalEntries.entryDate, start),
+    lte(schema.journalEntries.entryDate, end),
+  ];
+  if (accountId) conds.push(eq(schema.journalLines.accountId, accountId));
+  const rows = await db
+    .select({
+      accountId: schema.journalLines.accountId,
+      entryId: schema.journalEntries.id,
+      entryNumber: schema.journalEntries.entryNumber,
+      entryDate: schema.journalEntries.entryDate,
+      entryDescription: schema.journalEntries.description,
+      lineDescription: schema.journalLines.description,
+      lineNumber: schema.journalLines.lineNumber,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .where(and(...conds))
+    .orderBy(
+      asc(schema.journalEntries.entryDate),
+      asc(schema.journalEntries.entryNumber),
+      asc(schema.journalLines.lineNumber),
+    );
+  return rows.map((r) => ({
+    accountId: r.accountId,
+    entryId: r.entryId,
+    entryNumber: r.entryNumber,
+    entryDate: r.entryDate,
+    entryDescription: r.entryDescription,
+    lineDescription: r.lineDescription,
+    debit: parseAmount(r.debit),
+    credit: parseAmount(r.credit),
+  }));
 }
 
 /** Public wrapper for the signed-balance rollup (used by the Variance

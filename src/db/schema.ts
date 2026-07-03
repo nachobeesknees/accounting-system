@@ -102,6 +102,8 @@ export const users = pgTable("users", {
   isActive: boolean("is_active").notNull().default(true),
   /** Set on every successful login by the Auth.js authorize() callback. */
   lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
+  /** Per-user dashboard customization: { hidden: string[] }. */
+  dashboardPrefs: jsonb("dashboard_prefs"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -1016,8 +1018,19 @@ export const billLines = pgTable("bill_lines", {
 export const bankAccounts = pgTable("bank_accounts", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
-  accountId: text("account_id").notNull(),
+  /** GL account link. Required for FIRM accounts (reconciliation / cash
+   *  forecast); optional for client/entity-owned accounts, which live on
+   *  the client's side and don't post to the firm ledger. */
+  accountId: text("account_id"),
   institution: text("institution"),
+  /** checking | savings | money_market | custody | brokerage | other */
+  accountType: text("account_type"),
+  /** SWIFT/BIC for international wires. */
+  swiftBic: text("swift_bic"),
+  iban: text("iban"),
+  bankAddress: text("bank_address"),
+  /** ISO country of the bank branch. */
+  bankCountry: text("bank_country"),
   /** Full account number. NEVER render this raw — display via
    *  maskAccountNumber() (····1234). last_four stays derived for lists. */
   accountNumber: text("account_number"),

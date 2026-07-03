@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Field, Row } from "@/components/ui/Field";
+import { Field, Row, SelectField } from "@/components/ui/Field";
 import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { MoneyInput } from "@/components/ui/MoneyInput";
 import {
@@ -59,13 +59,14 @@ export function NewBankAccountForm({
               <SmartSelectField
                 label="GL account"
                 name="accountId"
-                required
                 options={cashAccounts.map((a) => ({
                   value: a.id,
                   label: `${a.code} — ${a.name}`,
                   search: a.code,
                 }))}
-                emptyLabel="Select GL account…"
+                emptyLabel="— No GL link (client account) —"
+                clearable
+                help="Required for firm accounts; optional when the account belongs to a client or entity."
               />
             </Row>
             <Row>
@@ -90,7 +91,23 @@ export function NewBankAccountForm({
                 placeholder="Full account number"
                 help="Stored in full; always displayed masked (····1234)."
               />
-              <div />
+              <SelectField label="Account type" name="accountType" defaultValue="">
+                <option value="">—</option>
+                <option value="checking">Checking</option>
+                <option value="savings">Savings</option>
+                <option value="money_market">Money market</option>
+                <option value="custody">Custody</option>
+                <option value="brokerage">Brokerage</option>
+                <option value="other">Other</option>
+              </SelectField>
+            </Row>
+            <Row>
+              <Field label="SWIFT / BIC" name="swiftBic" mono maxLength={11} placeholder="CHASUS33" />
+              <Field label="IBAN" name="iban" mono maxLength={34} placeholder="For non-US accounts" />
+            </Row>
+            <Row>
+              <Field label="Bank address" name="bankAddress" placeholder="Branch street address" />
+              <Field label="Bank country" name="bankCountry" mono maxLength={2} placeholder="US" />
             </Row>
             <Row>
               <Field

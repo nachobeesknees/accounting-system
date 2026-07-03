@@ -11,6 +11,7 @@ import {
   getBaseCurrency,
   getBills,
   getCustomers,
+  getDashboardPrefs,
   getDueRecurringTemplateCount,
   getEntities,
   getFirmPlRollup,
@@ -31,6 +32,7 @@ import { parseAmount } from "@/lib/money";
 import { resolveEntityScope } from "@/lib/entity-scope";
 import { getSessionUser } from "@/lib/session";
 import { hasPermission } from "@/lib/permissions";
+import { DashboardCustomize } from "@/components/DashboardCustomize";
 import {
   ensureAccountingPeriods,
   getAccountingPeriods,
@@ -288,6 +290,10 @@ export default async function Page() {
   const totalNetBase =
     entityPlRows.reduce((s, r) => s + r.netBase, 0) + firmLevelNet + elimNet;
 
+  const prefs = user
+    ? await getDashboardPrefs(user.userId)
+    : { hidden: [] as string[] };
+  const show = (k: string) => !prefs.hidden.includes(k);
   const currentYear = new Date().getUTCFullYear();
   // AUA/AUM: latest valuation snapshot per asset, FX-converted to base —
   // same math as the AUA Report page.
@@ -347,10 +353,12 @@ export default async function Page() {
                 + New entry
               </ButtonLink>
             )}
+            <DashboardCustomize hidden={prefs.hidden} />
           </>
         }
       />
 
+      {show("quickActions") && (
       <div className="px-6 my-3.5">
         <div className="flex flex-wrap gap-1.5">
           {hasPermission(user, "settings.write") && (
@@ -380,8 +388,9 @@ export default async function Page() {
           )}
         </div>
       </div>
+      )}
 
-      {dueTemplateCount > 0 && (
+      {show("recurringDue") && dueTemplateCount > 0 && (
         <div className="px-6 my-3.5">
           <Card
             title="Recurring entries due"
@@ -408,7 +417,7 @@ export default async function Page() {
         </div>
       )}
 
-      {awaitingApproval.length > 0 && (
+      {show("awaitingApproval") && awaitingApproval.length > 0 && (
         <div className="px-6 my-3.5">
           <Card
             title={`Awaiting your approval — ${awaitingApproval.length}`}
@@ -469,6 +478,7 @@ export default async function Page() {
         </div>
       )}
 
+      {show("bizKpis") && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 px-6 my-3.5">
         <Tile
           label={`Annual Recurring Revenue (${baseCode})`}
@@ -501,7 +511,9 @@ export default async function Page() {
           href="/customers"
         />
       </div>
+      )}
 
+      {show("ledgerKpis") && (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 px-6 my-3.5">
         <Tile
           label={`AUA / AUM (${baseCode})`}
@@ -522,8 +534,9 @@ export default async function Page() {
           href="/bank"
         />
       </div>
+      )}
 
-      {(entityPlRows.length > 0 || firmLevelNet !== 0) && (
+      {show("firmPl") && (entityPlRows.length > 0 || firmLevelNet !== 0) && (
         <div className="px-6 mb-3.5">
           <Card
             title="Per firm entity P&L (YTD, posted)"
@@ -609,6 +622,7 @@ export default async function Page() {
         </div>
       )}
 
+      {show("agings") && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 px-6 mb-3.5">
         <Card
           title="Accounts Receivable aging"
@@ -698,8 +712,9 @@ export default async function Page() {
           </Table>
         </Card>
       </div>
+      )}
 
-      {recentPeriods.length > 0 && (
+      {show("periodStatus") && recentPeriods.length > 0 && (
         <div className="px-6 mb-3.5">
           <Card
             title="Period status"
@@ -791,6 +806,7 @@ export default async function Page() {
         </div>
       )}
 
+      {show("activity") && (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 px-6 mb-3.5">
         <Card
           title="Recent journal entries"
@@ -880,8 +896,9 @@ export default async function Page() {
           </Table>
         </Card>
       </div>
+      )}
 
-      {overdueInvoices.length > 0 && (
+      {show("overdueInvoices") && overdueInvoices.length > 0 && (
         <div className="px-6 mb-8">
           <Card
             title="Overdue invoices"

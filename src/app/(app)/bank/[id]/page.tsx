@@ -131,13 +131,15 @@ export default async function Page({
                     <SmartSelectField
                       label="GL account"
                       name="accountId"
-                      required
-                      defaultValue={bank.accountId}
+                      defaultValue={bank.accountId ?? ""}
                       options={cashAccounts.map((a) => ({
                         value: a.id,
                         label: `${a.code} — ${a.name}`,
                         search: a.code,
                       }))}
+                      emptyLabel="— No GL link (client account) —"
+                      clearable
+                      help="Required for firm accounts; leave blank for client/entity-owned accounts."
                     />
                   </Row>
                   <Row>
@@ -162,7 +164,53 @@ export default async function Page({
                       placeholder="Leave blank to keep the current number"
                       help="The full number is stored but never displayed — only the last four digits show anywhere in the app."
                     />
-                    <div />
+                    <SelectField
+                      label="Account type"
+                      name="accountType"
+                      defaultValue={bank.accountType ?? ""}
+                    >
+                      <option value="">—</option>
+                      <option value="checking">Checking</option>
+                      <option value="savings">Savings</option>
+                      <option value="money_market">Money market</option>
+                      <option value="custody">Custody</option>
+                      <option value="brokerage">Brokerage</option>
+                      <option value="other">Other</option>
+                    </SelectField>
+                  </Row>
+                  <Row>
+                    <Field
+                      label="SWIFT / BIC"
+                      name="swiftBic"
+                      mono
+                      maxLength={11}
+                      defaultValue={bank.swiftBic ?? ""}
+                      placeholder="CHASUS33"
+                    />
+                    <Field
+                      label="IBAN"
+                      name="iban"
+                      mono
+                      maxLength={34}
+                      defaultValue={bank.iban ?? ""}
+                      placeholder="For non-US accounts"
+                    />
+                  </Row>
+                  <Row>
+                    <Field
+                      label="Bank address"
+                      name="bankAddress"
+                      defaultValue={bank.bankAddress ?? ""}
+                      placeholder="Branch street address"
+                    />
+                    <Field
+                      label="Bank country"
+                      name="bankCountry"
+                      mono
+                      maxLength={2}
+                      defaultValue={bank.bankCountry ?? ""}
+                      placeholder="US"
+                    />
                   </Row>
                   <Row>
                     <Field

@@ -26,6 +26,16 @@ const COLUMNS: ColumnSpec[] = [
   { table: "bank_accounts", column: "account_number", type: "text" },
   { table: "bank_accounts", column: "routing_number", type: "text" },
 
+  // Per-user dashboard customization
+  { table: "users", column: "dashboard_prefs", type: "jsonb" },
+
+  // Richer bank details (client accounts especially)
+  { table: "bank_accounts", column: "account_type", type: "text" },
+  { table: "bank_accounts", column: "swift_bic", type: "text" },
+  { table: "bank_accounts", column: "iban", type: "text" },
+  { table: "bank_accounts", column: "bank_address", type: "text" },
+  { table: "bank_accounts", column: "bank_country", type: "text" },
+
   // Split chargebacks: per-line client billing on vendor bills
   { table: "bills", column: "chargeback_split", type: "boolean", notNull: true, default: "false" },
   { table: "bills", column: "chargeback_split_by", type: "text" },
@@ -650,6 +660,16 @@ async function main() {
   }
   for (const ev of ENUM_VALUES) {
     const stmt = `ALTER TYPE ${ev.enumName} ADD VALUE IF NOT EXISTS '${ev.value}'`;
+    console.log(`~ ${stmt}`);
+    await sql.unsafe(stmt);
+  }
+  // Columns whose NOT NULL constraint was relaxed after creation.
+  const DROP_NOT_NULL: Array<{ table: string; column: string }> = [
+    // GL link optional for client/entity-owned bank accounts.
+    { table: "bank_accounts", column: "account_id" },
+  ];
+  for (const d of DROP_NOT_NULL) {
+    const stmt = `ALTER TABLE ${d.table} ALTER COLUMN ${d.column} DROP NOT NULL`;
     console.log(`~ ${stmt}`);
     await sql.unsafe(stmt);
   }

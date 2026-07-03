@@ -58,6 +58,8 @@ const SECTIONS: Section[] = [
     heading: "Reporting",
     items: [
       { href: "/reports", label: "Financial Statements" },
+      { href: "/reports/general-ledger", label: "General Ledger" },
+      { href: "/reports/general-journal", label: "General Journal" },
       { href: "/budgets", label: "Budgets" },
       { href: "/reports/variance", label: "Variance Analysis" },
       { href: "/reports/ap-aging", label: "AP Aging" },

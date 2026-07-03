@@ -103,7 +103,8 @@ export default async function Page({
 
   const [txs, bookBalance, allEntries] = await Promise.all([
     getBankTransactions(account.id),
-    getAccountBalance(account.accountId),
+    // Client accounts may have no GL link — book balance is 0-N/A there.
+    account.accountId ? getAccountBalance(account.accountId) : Promise.resolve(0),
     getJournalEntries(),
   ]);
   const entriesById = new Map(allEntries.map((e) => [e.id, e] as const));
