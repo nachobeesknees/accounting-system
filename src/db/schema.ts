@@ -751,6 +751,30 @@ export const budgets = pgTable("budgets", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * Per-account variance explanations for the Variance Analysis report.
+ * One note per (fiscal_year, month, mode, compare, account). AI writes the
+ * default (source='ai'); accountant edits flip source to 'user' and are
+ * never overwritten by regeneration.
+ */
+export const varianceNotes = pgTable("variance_notes", {
+  id: text("id").primaryKey(),
+  fiscalYear: integer("fiscal_year").notNull(),
+  /** Report month 1–12 (for YTD mode: the through-month). */
+  month: integer("month").notNull(),
+  /** 'monthly' | 'ytd' */
+  mode: text("mode").notNull(),
+  /** 'budget' | 'prior_year' */
+  compare: text("compare").notNull(),
+  accountId: text("account_id").notNull(),
+  note: text("note").notNull(),
+  /** 'ai' | 'user' */
+  source: text("source").notNull().default("ai"),
+  updatedBy: text("updated_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const assets = pgTable("assets", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),

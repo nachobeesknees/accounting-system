@@ -3993,6 +3993,69 @@ export async function setMonthlyBudgets(
   });
 }
 
+// --------- Variance notes ---------
+
+export type VarianceNoteKey = {
+  fiscalYear: number;
+  month: number;
+  mode: "monthly" | "ytd";
+  compare: "budget" | "prior_year";
+  accountId: string;
+};
+
+/**
+ * Upsert one variance explanation. AI regeneration passes source='ai' and
+ * must not clobber accountant edits — set `preserveUserEdits` so an
+ * existing source='user' row wins.
+ */
+export async function upsertVarianceNote(
+  user: SessionUser,
+  key: VarianceNoteKey,
+  note: string,
+  source: "ai" | "user",
+  opts: { preserveUserEdits?: boolean } = {},
+) {
+  requirePermission(user, "bill.update");
+  const db = getDb();
+  const [existing] = await db
+    .select()
+    .from(schema.varianceNotes)
+    .where(
+      and(
+        eq(schema.varianceNotes.fiscalYear, key.fiscalYear),
+        eq(schema.varianceNotes.month, key.month),
+        eq(schema.varianceNotes.mode, key.mode),
+        eq(schema.varianceNotes.compare, key.compare),
+        eq(schema.varianceNotes.accountId, key.accountId),
+      ),
+    )
+    .limit(1);
+  if (existing) {
+    if (opts.preserveUserEdits && existing.source === "user") return existing;
+    const [updated] = await db
+      .update(schema.varianceNotes)
+      .set({ note, source, updatedBy: user.userId, updatedAt: new Date() })
+      .where(eq(schema.varianceNotes.id, existing.id))
+      .returning();
+    return updated;
+  }
+  const [created] = await db
+    .insert(schema.varianceNotes)
+    .values({
+      id: uid("vn"),
+      fiscalYear: key.fiscalYear,
+      month: key.month,
+      mode: key.mode,
+      compare: key.compare,
+      accountId: key.accountId,
+      note,
+      source,
+      updatedBy: user.userId,
+    })
+    .returning();
+  return created;
+}
+
 // --------- Bank accounts + signers ---------
 
 /** Last four characters of an account number, for masked list display. */

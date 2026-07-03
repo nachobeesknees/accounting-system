@@ -3217,6 +3217,131 @@ export async function getBudgetByAccount(
   return out;
 }
 
+/**
+ * Budget per account for months [fromMonth..toMonth] of a fiscal year.
+ * Monthly rows inside the window count in full; annual rows (month IS NULL)
+ * are prorated by window length / 12.
+ */
+export async function getBudgetByAccountForMonths(
+  fiscalYear: number,
+  fromMonth: number,
+  toMonth: number,
+): Promise<Map<string, number>> {
+  const budgets = await getBudgets(fiscalYear);
+  const share = (toMonth - fromMonth + 1) / 12;
+  const out = new Map<string, number>();
+  for (const b of budgets) {
+    const add =
+      b.month == null
+        ? parseAmount(b.amount) * share
+        : b.month >= fromMonth && b.month <= toMonth
+          ? parseAmount(b.amount)
+          : 0;
+    if (add !== 0) out.set(b.accountId, (out.get(b.accountId) ?? 0) + add);
+  }
+  return out;
+}
+
+/** Public wrapper for the signed-balance rollup (used by the Variance
+ *  Analysis report, which lives outside this module). */
+export async function getSignedBalancesInRangePublic(
+  start: string,
+  end: string,
+  scope: FirmScopeArg = "all",
+): Promise<Map<string, number>> {
+  return getSignedBalancesInRange(start, end, scope);
+}
+
+// --------- Variance notes ---------
+
+export type VarianceNote = {
+  accountId: string;
+  note: string;
+  source: "ai" | "user";
+};
+
+export async function getVarianceNotes(
+  fiscalYear: number,
+  month: number,
+  mode: "monthly" | "ytd",
+  compare: "budget" | "prior_year",
+): Promise<Map<string, VarianceNote>> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.varianceNotes)
+    .where(
+      and(
+        eq(schema.varianceNotes.fiscalYear, fiscalYear),
+        eq(schema.varianceNotes.month, month),
+        eq(schema.varianceNotes.mode, mode),
+        eq(schema.varianceNotes.compare, compare),
+      ),
+    );
+  const out = new Map<string, VarianceNote>();
+  for (const r of rows) {
+    out.set(r.accountId, {
+      accountId: r.accountId,
+      note: r.note,
+      source: (r.source === "user" ? "user" : "ai") as "ai" | "user",
+    });
+  }
+  return out;
+}
+
+/**
+ * Top posted journal lines per account in a date range — grounding context
+ * for AI variance explanations. Returns up to `perAccount` lines per
+ * account, biggest absolute amount first.
+ */
+export async function getTopJournalLinesByAccount(
+  accountIds: string[],
+  start: string,
+  end: string,
+  perAccount = 3,
+): Promise<Map<string, Array<{ description: string; amount: number; date: string }>>> {
+  if (accountIds.length === 0) return new Map();
+  const db = getDb();
+  const rows = await db
+    .select({
+      accountId: schema.journalLines.accountId,
+      lineDescription: schema.journalLines.description,
+      entryDescription: schema.journalEntries.description,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+      date: schema.journalEntries.entryDate,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .where(
+      and(
+        inArray(schema.journalLines.accountId, accountIds),
+        eq(schema.journalEntries.status, "posted"),
+        gte(schema.journalEntries.entryDate, start),
+        lte(schema.journalEntries.entryDate, end),
+      ),
+    );
+  const grouped = new Map<string, Array<{ description: string; amount: number; date: string }>>();
+  for (const r of rows) {
+    const amount = parseAmount(r.debit) - parseAmount(r.credit);
+    const arr = grouped.get(r.accountId) ?? [];
+    arr.push({
+      description: r.lineDescription || r.entryDescription || "(no description)",
+      amount,
+      date: r.date,
+    });
+    grouped.set(r.accountId, arr);
+  }
+  for (const [k, arr] of grouped) {
+    arr.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+    grouped.set(k, arr.slice(0, perAccount));
+  }
+  return grouped;
+}
+
 // --------- Helpers (pure, no DB) ---------
 
 export function totalDebits(entry: JournalEntry): number {

@@ -256,6 +256,26 @@ const COLUMNS: ColumnSpec[] = [
 
 const TABLES = [
   {
+    // Per-account variance explanations for the Variance Analysis report.
+    // AI writes the default (source='ai'); accountant edits flip source to
+    // 'user' and are never overwritten by regeneration.
+    name: "variance_notes",
+    ddl: `CREATE TABLE IF NOT EXISTS variance_notes (
+      id text PRIMARY KEY,
+      fiscal_year integer NOT NULL,
+      month integer NOT NULL,
+      mode text NOT NULL,
+      compare text NOT NULL,
+      account_id text NOT NULL,
+      note text NOT NULL,
+      source text DEFAULT 'ai' NOT NULL,
+      updated_by text,
+      created_at timestamp with time zone DEFAULT now() NOT NULL,
+      updated_at timestamp with time zone DEFAULT now() NOT NULL,
+      CONSTRAINT variance_notes_key UNIQUE (fiscal_year, month, mode, compare, account_id)
+    )`,
+  },
+  {
     // Monthly period close. Status starts "open"; admins move to "closed"
     // (soft warning + override w/ reason on new entries) or "locked" (hard
     // block). Auto-seeded for the current year + next year by the

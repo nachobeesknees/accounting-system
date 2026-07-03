@@ -1145,8 +1145,8 @@ function ByEntityHeader({
       <TH>Code</TH>
       <TH>Account</TH>
       {entities.map((e) => (
-        <TH key={e.id} num title={e.name}>
-          {e.code}
+        <TH key={e.id} num title={`${e.code} — ${e.name}`}>
+          {e.name}
         </TH>
       ))}
       <TH num>Firm</TH>
