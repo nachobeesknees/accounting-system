@@ -21,7 +21,10 @@ import postgres from "postgres";
 
 const USERS = [
   {
-    id: "u-admin",
+    // NOT "u-admin" — that id is the owner's personal account (email was
+    // repurposed during the May 2026 hardening). Colliding with it makes
+    // the insert blow up on users_pkey.
+    id: "u-demo-admin",
     email: "admin@thistlewood.com",
     fullName: "Demo Admin",
     password: "Admin123!",
