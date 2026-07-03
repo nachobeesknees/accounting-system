@@ -42,6 +42,8 @@ type Line = {
   accountId: string;
   quantity: string;
   unitPrice: string;
+  /** Per-line rebill client — only used when the chargeback is [Split]. */
+  clientId: string;
   dimensions: Record<string, string>;
 };
 
@@ -51,9 +53,13 @@ function blankLine(accountId = ""): Line {
     accountId,
     quantity: "1",
     unitPrice: "",
+    clientId: "",
     dimensions: {},
   };
 }
+
+/** Sentinel value for the chargeback client picker's "[Split]" option. */
+export const SPLIT_CLIENT_VALUE = "__split__";
 
 const INITIAL_STATE: CreateBillState = { error: null };
 
@@ -108,6 +114,9 @@ export function NewBillForm({
     blankLine(vendors[0]?.defaultExpenseAccountId ?? ""),
   ]);
   const [recipient, setRecipient] = useState<Recipient>("none");
+  // Chargeback client picker: a real client id, or SPLIT_CLIENT_VALUE for
+  // per-line billing (the [Split] option).
+  const [cbClientId, setCbClientId] = useState<string>("");
   const [cbMethod, setCbMethod] = useState<CbMethod>("cost");
   const [markupPct, setMarkupPct] = useState<string>("");
   const [rebillAmount, setRebillAmount] = useState<string>("");
@@ -278,6 +287,7 @@ export function NewBillForm({
                 : li.total != null && li.quantity
                   ? (li.total / li.quantity).toFixed(2)
                   : "",
+            clientId: "",
             dimensions: {},
           })),
         );
@@ -335,6 +345,20 @@ export function NewBillForm({
     () => customers.map((c) => ({ value: c.id, label: c.name, search: c.code })),
     [customers],
   );
+  // Rebill picker: [Split] first, then every client. Picking a client bills
+  // the whole bill to them; [Split] reveals a per-line client column.
+  const cbClientOptions = useMemo<SmartSelectOption[]>(
+    () => [
+      {
+        value: SPLIT_CLIENT_VALUE,
+        label: "[Split] — choose a client per line",
+        search: "split",
+      },
+      ...clientOptions,
+    ],
+    [clientOptions],
+  );
+  const splitBilling = recipient === "client" && cbClientId === SPLIT_CLIENT_VALUE;
   const entityOptionsForClient = useMemo<SmartSelectOption[]>(
     () =>
       entitiesForClient.map((e) => {
@@ -381,6 +405,35 @@ export function NewBillForm({
 
   const previewRebill = useMemo<string | null>(() => {
     if (recipient === "none") return null;
+    if (recipient === "client" && cbClientId === SPLIT_CLIENT_VALUE) {
+      if (cbMethod === "included") {
+        return "Included in annual fee — no separate invoice will be generated.";
+      }
+      const pct = cbMethod === "markup" ? parseAmount(markupPct) : 0;
+      const byClient = new Map<string, number>();
+      let unassigned = 0;
+      for (const l of lines) {
+        const amt = parseAmount(l.quantity) * parseAmount(l.unitPrice);
+        if (l.clientId) {
+          byClient.set(l.clientId, (byClient.get(l.clientId) ?? 0) + amt);
+        } else {
+          unassigned += amt;
+        }
+      }
+      if (byClient.size === 0) {
+        return "Split: no lines assigned to a client yet — pick a client on each line to rebill.";
+      }
+      const parts = [...byClient.entries()].map(([cid, amt]) => {
+        const rebill = Math.round(amt * (1 + pct / 100) * 100) / 100;
+        return `${customerById.get(cid)?.name ?? "?"}: ${formatMoney(rebill, currencyCode, { paren: true })}`;
+      });
+      if (unassigned > 0) {
+        parts.push(
+          `not rebilled: ${formatMoney(unassigned, currencyCode, { paren: true })}`,
+        );
+      }
+      return `Split ${pct ? `with ${pct}% markup` : "at cost"} — ${parts.join(" · ")}`;
+    }
     switch (cbMethod) {
       case "cost":
         return `At cost: ${formatMoney(subtotal, currencyCode, { paren: true })}`;
@@ -398,7 +451,7 @@ export function NewBillForm({
       default:
         return null;
     }
-  }, [recipient, cbMethod, subtotal, markupPct, rebillAmount, currencyCode]);
+  }, [recipient, cbMethod, subtotal, markupPct, rebillAmount, currencyCode, cbClientId, lines, customerById]);
 
   function updateLine(i: number, patch: Partial<Line>) {
     setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -691,6 +744,10 @@ export function NewBillForm({
               <TH>#</TH>
               <TH>Description</TH>
               <TH>Expense account</TH>
+              {dimensionsWithValues.map(({ dimension }) => (
+                <TH key={dimension.id}>{dimension.label}</TH>
+              ))}
+              {splitBilling && <TH>Bill to client</TH>}
               <TH num>Qty</TH>
               <TH num>Unit price</TH>
               <TH num>Amount</TH>
@@ -724,36 +781,48 @@ export function NewBillForm({
                     />
                   </TD>
                   <TD>
-                    <div className="flex flex-col gap-1">
-                      <SmartSelect
-                        name={`lines[${i}][accountId]`}
-                        value={line.accountId}
-                        onChange={(v) => updateLine(i, { accountId: v })}
-                        options={expenseAccountOptions}
-                        emptyLabel="— Select account —"
-                        ariaLabel="Expense account"
-                      />
-                      {dimensionsWithValues.map(({ dimension }) => (
-                        <SmartSelect
-                          key={dimension.id}
-                          name={`lines[${i}][dim][${dimension.key}]`}
-                          value={line.dimensions[dimension.key] ?? ""}
-                          onChange={(v) =>
-                            updateLine(i, {
-                              dimensions: {
-                                ...line.dimensions,
-                                [dimension.key]: v,
-                              },
-                            })
-                          }
-                          options={dimensionOptions.get(dimension.key) ?? []}
-                          emptyLabel={`— ${dimension.label} —`}
-                          clearable
-                          ariaLabel={dimension.label}
-                        />
-                      ))}
-                    </div>
+                    <SmartSelect
+                      name={`lines[${i}][accountId]`}
+                      value={line.accountId}
+                      onChange={(v) => updateLine(i, { accountId: v })}
+                      options={expenseAccountOptions}
+                      emptyLabel="— Select account —"
+                      ariaLabel="Expense account"
+                    />
                   </TD>
+                  {dimensionsWithValues.map(({ dimension }) => (
+                    <TD key={dimension.id}>
+                      <SmartSelect
+                        name={`lines[${i}][dim][${dimension.key}]`}
+                        value={line.dimensions[dimension.key] ?? ""}
+                        onChange={(v) =>
+                          updateLine(i, {
+                            dimensions: {
+                              ...line.dimensions,
+                              [dimension.key]: v,
+                            },
+                          })
+                        }
+                        options={dimensionOptions.get(dimension.key) ?? []}
+                        emptyLabel={`— ${dimension.label} —`}
+                        clearable
+                        ariaLabel={dimension.label}
+                      />
+                    </TD>
+                  ))}
+                  {splitBilling && (
+                    <TD>
+                      <SmartSelect
+                        name={`lines[${i}][clientId]`}
+                        value={line.clientId}
+                        onChange={(v) => updateLine(i, { clientId: v })}
+                        options={clientOptions}
+                        emptyLabel="— Not rebilled —"
+                        clearable
+                        ariaLabel={`Bill line ${i + 1} to client`}
+                      />
+                    </TD>
+                  )}
                   <TD num>
                     <input
                       type="number"
@@ -823,54 +892,52 @@ export function NewBillForm({
                 </TR>
               );
             })}
-            <TR total hover={false}>
-              <TD>{""}</TD>
-              <TD>{""}</TD>
-              <TD>{""}</TD>
-              <TD>{""}</TD>
-              <TD>Subtotal</TD>
-              <TD num mono>
-                {formatMoney(subtotal, currencyCode, { paren: true })}
-              </TD>
-              <TD>{""}</TD>
-            </TR>
             {(() => {
+              // Columns before "Unit price": #, Description, Account,
+              // one per dimension, optional Bill-to-client, Qty.
+              const leadCols =
+                4 + dimensionsWithValues.length + (splitBilling ? 1 : 0);
               const fxRateNum = parseFloat(fxRate);
               const showBaseTotal =
                 isForeignCurrency &&
                 Number.isFinite(fxRateNum) &&
                 fxRateNum > 0 &&
                 subtotal > 0;
-              if (!showBaseTotal) return null;
-              const baseTotal = subtotal / fxRateNum;
+              const baseTotal = showBaseTotal ? subtotal / fxRateNum : 0;
               return (
                 <>
-                  <TR hover={false}>
-                    <TD>{""}</TD>
-                    <TD>{""}</TD>
-                    <TD>{""}</TD>
-                    <TD>{""}</TD>
-                    <TD style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
-                      ≈ in {baseCode}
-                    </TD>
-                    <TD num style={{ color: "var(--ink-3)" }}>
-                      {formatMoney(baseTotal, baseCode)}
+                  <TR total hover={false}>
+                    <TD colSpan={leadCols}>{""}</TD>
+                    <TD>Subtotal</TD>
+                    <TD num mono>
+                      {formatMoney(subtotal, currencyCode, { paren: true })}
                     </TD>
                     <TD>{""}</TD>
                   </TR>
-                  <TR hover={false}>
-                    <TD>{""}</TD>
-                    <TD>{""}</TD>
-                    <TD>{""}</TD>
-                    <TD>{""}</TD>
-                    <TD
-                      colSpan={2}
-                      style={{ color: "var(--ink-4)", fontSize: 11 }}
-                    >
-                      at 1 {baseCode} = {fxRateNum} {currencyCode}
-                    </TD>
-                    <TD>{""}</TD>
-                  </TR>
+                  {showBaseTotal && (
+                    <>
+                      <TR hover={false}>
+                        <TD colSpan={leadCols}>{""}</TD>
+                        <TD style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                          ≈ in {baseCode}
+                        </TD>
+                        <TD num style={{ color: "var(--ink-3)" }}>
+                          {formatMoney(baseTotal, baseCode)}
+                        </TD>
+                        <TD>{""}</TD>
+                      </TR>
+                      <TR hover={false}>
+                        <TD colSpan={leadCols}>{""}</TD>
+                        <TD
+                          colSpan={2}
+                          style={{ color: "var(--ink-4)", fontSize: 11 }}
+                        >
+                          at 1 {baseCode} = {fxRateNum} {currencyCode}
+                        </TD>
+                        <TD>{""}</TD>
+                      </TR>
+                    </>
+                  )}
                 </>
               );
             })()}
@@ -916,14 +983,38 @@ export function NewBillForm({
           {recipient === "client" && (
             <Row>
               <SmartSelectField
-                label="Client"
+                label="Bill to client"
                 name="chargebackClientId"
                 required
-                options={clientOptions}
+                value={cbClientId}
+                onChange={(v) => {
+                  setCbClientId(v);
+                  // Fixed amounts can't be split across clients.
+                  if (v === SPLIT_CLIENT_VALUE && cbMethod === "fixed") {
+                    setCbMethod("cost");
+                  }
+                }}
+                options={cbClientOptions}
                 emptyLabel="— Select client —"
               />
               <div />
             </Row>
+          )}
+          {splitBilling && (
+            <>
+              <input type="hidden" name="chargebackSplit" value="1" />
+              <div
+                className="text-[12px] rounded-md px-3 py-2"
+                style={{
+                  background: "var(--rail)",
+                  color: "var(--ink-3)",
+                  border: "1px solid var(--line)",
+                }}
+              >
+                Pick a client on each line above (Bill to client column).
+                Lines left blank are not rebilled.
+              </div>
+            </>
           )}
 
           {recipient === "entity" && (
@@ -956,7 +1047,9 @@ export function NewBillForm({
                       ["fixed", "Fixed amount"],
                       ["included", "Included in annual fee"],
                     ] as const
-                  ).map(([val, label]) => (
+                  )
+                    .filter(([val]) => !(splitBilling && val === "fixed"))
+                    .map(([val, label]) => (
                     <label
                       key={val}
                       className="flex items-center gap-1.5 text-[12.5px] cursor-pointer"

@@ -27,7 +27,20 @@ import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
 import { PendingChargebacksCard } from "./PendingChargebacksCard";
 
-function computeRebill(bill: Bill): number | null {
+function computeRebill(bill: Bill, clientId: string): number | null {
+  // Split bills rebill only this client's unbilled line share.
+  if (bill.chargebackSplit) {
+    if (bill.chargebackType === "included" || bill.chargebackType == null) return null;
+    const share = bill.lines
+      .filter((l) => l.clientId === clientId && !l.chargebackInvoiceId)
+      .reduce((s, l) => s + parseAmount(l.amount), 0);
+    if (share <= 0) return null;
+    const pct =
+      bill.chargebackType === "markup" && bill.markupPct
+        ? parseFloat(bill.markupPct)
+        : 0;
+    return Math.round(share * (1 + pct) * 100) / 100;
+  }
   const total = parseAmount(bill.total);
   switch (bill.chargebackType) {
     case "cost":
@@ -46,17 +59,18 @@ function computeRebill(bill: Bill): number | null {
 }
 
 function methodLabel(bill: Bill): string {
+  const split = bill.chargebackSplit ? " · split" : "";
   switch (bill.chargebackType) {
     case "cost":
-      return "At cost";
+      return `At cost${split}`;
     case "markup": {
       const pct = bill.markupPct ? parseFloat(bill.markupPct) * 100 : 0;
-      return `Markup ${pct}%`;
+      return `Markup ${pct}%${split}`;
     }
     case "fixed":
       return "Fixed";
     case "included":
-      return "Included";
+      return `Included${split}`;
     default:
       return "—";
   }
@@ -140,7 +154,7 @@ export default async function Page({
       vendorName: vendorById.get(b.vendorId)?.name ?? "—",
       chargebackType: b.chargebackType,
       methodLabel: methodLabel(b),
-      rebillAmount: computeRebill(b),
+      rebillAmount: computeRebill(b, customer.id),
     }));
   const userById = new Map(users.map((u) => [u.id, u] as const));
   const assignedUserIds = new Set(assignments.map((a) => a.userId));

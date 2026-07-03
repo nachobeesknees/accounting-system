@@ -11,6 +11,14 @@ import { withSentryConfig } from "@sentry/nextjs";
  * docs/eu-migration-steps.md for details and the cutover runbook.
  */
 
+// Dev mode needs 'unsafe-eval' for react-refresh — without it React never
+// hydrates locally and every client component silently renders inert.
+// Production keeps the strict policy.
+const SCRIPT_SRC =
+  process.env.NODE_ENV === "development"
+    ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+    : "script-src 'self' 'unsafe-inline'; ";
+
 const SECURITY_HEADERS = [
   { key: "X-Frame-Options", value: "DENY" },
   { key: "X-Content-Type-Options", value: "nosniff" },
@@ -27,7 +35,7 @@ const SECURITY_HEADERS = [
     key: "Content-Security-Policy",
     value:
       "default-src 'self'; " +
-      "script-src 'self' 'unsafe-inline'; " +
+      SCRIPT_SRC +
       "style-src 'self' 'unsafe-inline'; " +
       "img-src 'self' data: blob:; " +
       "font-src 'self'; " +

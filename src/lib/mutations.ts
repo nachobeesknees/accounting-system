@@ -12,7 +12,7 @@
 
 import "server-only";
 
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumCredits, sumDebits, toDecimalString } from "./money";
@@ -3275,6 +3275,13 @@ export type CreateBillInput = {
   // invoice via `generateChargebackInvoice`.
   chargebackClientId?: string | null;
   chargebackEntityId?: string | null;
+  /**
+   * Split rebill: each line's clientId decides who pays for it (lines with
+   * no client aren't rebilled). Requires chargebackType cost/markup/included
+   * — "fixed" is ambiguous across clients. Mutually exclusive with
+   * chargebackClientId / chargebackEntityId.
+   */
+  chargebackSplit?: boolean;
   chargebackType?: "cost" | "markup" | "fixed" | "included" | null;
   markupPct?: number | null;
   rebillAmount?: number | null;
@@ -3296,6 +3303,18 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
     if (l.quantity <= 0) throw new Error(`Line ${i + 1}: quantity must be > 0.`);
     if (l.unitPrice < 0) throw new Error(`Line ${i + 1}: unit price must be >= 0.`);
     if (!l.description.trim()) throw new Error(`Line ${i + 1}: description is required.`);
+  }
+
+  if (input.chargebackSplit) {
+    if (input.chargebackClientId || input.chargebackEntityId) {
+      throw new Error("Split chargeback can't also have a single rebill recipient.");
+    }
+    if (input.chargebackType === "fixed") {
+      throw new Error("Fixed-amount rebill can't be split across clients.");
+    }
+    if (!input.lines.some((l) => l.clientId)) {
+      throw new Error("Split chargeback needs at least one line with a client.");
+    }
   }
 
   // Period close enforcement on the bill date.
@@ -3339,6 +3358,7 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
       entityId: input.entityId ?? null,
       chargebackClientId: input.chargebackClientId ?? null,
       chargebackEntityId: input.chargebackEntityId ?? null,
+      chargebackSplit: input.chargebackSplit ?? false,
       chargebackType: input.chargebackType ?? null,
       markupPct:
         input.markupPct != null ? input.markupPct.toFixed(4) : null,
@@ -3359,7 +3379,11 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
         unitPrice: toDecimalString(l.unitPrice),
         amount: toDecimalString(l.quantity * l.unitPrice),
         accountId: l.accountId,
-        clientId: l.clientId ?? input.clientId ?? null,
+        // Split rebills: a line with no client is deliberately not billed —
+        // don't let the header on-behalf-of client leak in as its payer.
+        clientId: input.chargebackSplit
+          ? (l.clientId ?? null)
+          : (l.clientId ?? input.clientId ?? null),
         entityId: l.entityId ?? input.entityId ?? null,
         dimensions: l.dimensions ?? {},
         createdAt: now,
@@ -3630,6 +3654,25 @@ export async function setBillChargeback(
       "This bill has already been billed back. Void the chargeback invoice to change it.",
     );
   }
+  if (bill.chargebackSplit) {
+    // A split bill may already have some clients' shares invoiced at the
+    // line level — reconfiguring underneath those would corrupt the trail.
+    const [stamped] = await db
+      .select({ id: schema.billLines.id })
+      .from(schema.billLines)
+      .where(
+        and(
+          eq(schema.billLines.billId, input.billId),
+          isNotNull(schema.billLines.chargebackInvoiceId),
+        ),
+      )
+      .limit(1);
+    if (stamped) {
+      throw new Error(
+        "Parts of this split chargeback are already invoiced. Void those invoices before changing it.",
+      );
+    }
+  }
 
   if (input.type === null) {
     await db
@@ -3637,6 +3680,7 @@ export async function setBillChargeback(
       .set({
         chargebackClientId: null,
         chargebackEntityId: null,
+        chargebackSplit: false,
         chargebackType: null,
         markupPct: null,
         rebillAmount: null,
@@ -3662,6 +3706,8 @@ export async function setBillChargeback(
     .set({
       chargebackClientId: input.clientId ?? null,
       chargebackEntityId: input.entityId ?? null,
+      // Single-recipient config replaces any (un-invoiced) split setup.
+      chargebackSplit: false,
       chargebackType: input.type,
       markupPct:
         input.type === "markup" && input.markupPct != null
@@ -3733,21 +3779,58 @@ export async function generateChargebackInvoice(
     throw new Error("Some bills not found.");
   }
 
+  // For split bills only this client's unbilled lines are rebilled; their
+  // ids get stamped with the new invoice below.
+  const splitLineIds: string[] = [];
+  const wholeBillIds: string[] = [];
+
   const lines: DraftInvoiceLine[] = [];
   for (const b of bills) {
+    if (b.chargebackType === "included" || b.chargebackType == null) {
+      throw new Error(`Bill ${b.billNumber} isn't set to rebill.`);
+    }
+    if (b.chargebackSplit) {
+      const billLines = await db
+        .select()
+        .from(schema.billLines)
+        .where(
+          and(
+            eq(schema.billLines.billId, b.id),
+            eq(schema.billLines.clientId, input.clientId),
+            isNull(schema.billLines.chargebackInvoiceId),
+          ),
+        );
+      if (billLines.length === 0) {
+        throw new Error(
+          `Bill ${b.billNumber} has no unbilled lines for this client.`,
+        );
+      }
+      const share = billLines.reduce((s, l) => s + parseFloat(l.amount), 0);
+      const pct = b.chargebackType === "markup" && b.markupPct ? parseFloat(b.markupPct) : 0;
+      const amt = Math.round(share * (1 + pct) * 100) / 100;
+      if (amt <= 0) {
+        throw new Error(`Bill ${b.billNumber} has no rebillable amount for this client.`);
+      }
+      splitLineIds.push(...billLines.map((l) => l.id));
+      lines.push({
+        description: `Reimbursable — ${b.billNumber} (client's share)`,
+        quantity: 1,
+        unitPrice: amt,
+        accountId: SERVICE_REVENUE_ACCOUNT_ID,
+      });
+      continue;
+    }
     if (b.chargebackInvoiceId) {
       throw new Error(`Bill ${b.billNumber} is already billed back.`);
     }
     if (b.chargebackClientId !== input.clientId) {
       throw new Error(`Bill ${b.billNumber} isn't tagged to this client.`);
     }
-    if (b.chargebackType === "included" || b.chargebackType == null) {
-      throw new Error(`Bill ${b.billNumber} isn't set to rebill.`);
-    }
     const amt = computeRebillAmount(b);
     if (amt == null || amt <= 0) {
       throw new Error(`Bill ${b.billNumber} has no rebillable amount.`);
     }
+    wholeBillIds.push(b.id);
     lines.push({
       description: `Reimbursable — ${b.billNumber}`,
       quantity: 1,
@@ -3774,10 +3857,21 @@ export async function generateChargebackInvoice(
     lines,
   });
 
-  await db
-    .update(schema.bills)
-    .set({ chargebackInvoiceId: created.id, updatedAt: new Date() })
-    .where(inArray(schema.bills.id, input.billIds));
+  // Whole-bill chargebacks stamp the bill; split bills stamp only this
+  // client's lines (bill-level stays NULL so other clients' shares remain
+  // pending). A split bill is fully billed once every client line is stamped.
+  if (wholeBillIds.length > 0) {
+    await db
+      .update(schema.bills)
+      .set({ chargebackInvoiceId: created.id, updatedAt: new Date() })
+      .where(inArray(schema.bills.id, wholeBillIds));
+  }
+  if (splitLineIds.length > 0) {
+    await db
+      .update(schema.billLines)
+      .set({ chargebackInvoiceId: created.id })
+      .where(inArray(schema.billLines.id, splitLineIds));
+  }
 
   return created;
 }

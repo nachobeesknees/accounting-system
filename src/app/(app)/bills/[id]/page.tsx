@@ -32,6 +32,7 @@ import type { Bill } from "@/lib/types";
 import {
   approveBillAction,
   recordBillPaymentAction,
+  setBillChargebackAction,
   voidBillAction,
 } from "./actions";
 import { duplicateBillAction } from "../../duplicate-actions";
@@ -152,6 +153,9 @@ export default async function Page({
   const billTotal = parseAmount(bill.total);
   const rebillPreview = computeRebill(bill);
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
+  const customerNameById = new Map(customers.map((c) => [c.id, c.name] as const));
+  // Split chargebacks show a per-line "Billed to" column.
+  const showLineClients = bill.chargebackSplit === true;
   const activeBankAccounts = bankAccounts
     .filter((b) => b.isActive)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -483,6 +487,7 @@ export default async function Page({
                 <TH>#</TH>
                 <TH>Description</TH>
                 <TH>Expense account</TH>
+                {showLineClients && <TH>Billed to</TH>}
                 <TH num>Qty</TH>
                 <TH num>Unit price</TH>
                 <TH num>Amount</TH>
@@ -527,6 +532,27 @@ export default async function Page({
                         </span>
                       )}
                     </TD>
+                    {showLineClients && (
+                      <TD>
+                        {line.clientId ? (
+                          <span>
+                            {customerNameById.get(line.clientId) ?? "—"}
+                            {line.chargebackInvoiceId && (
+                              <span
+                                className="ml-1.5"
+                                style={{ color: "var(--ink-4)", fontSize: 11 }}
+                              >
+                                · invoiced
+                              </span>
+                            )}
+                          </span>
+                        ) : (
+                          <span style={{ color: "var(--ink-4)" }}>
+                            not rebilled
+                          </span>
+                        )}
+                      </TD>
+                    )}
                     <TD num>{line.quantity}</TD>
                     <TD num>{formatMoney(line.unitPrice, bill.currencyCode, { compact: true, paren: true })}</TD>
                     <TD num>{formatMoney(line.amount, bill.currencyCode, { compact: true, paren: true })}</TD>
@@ -537,6 +563,7 @@ export default async function Page({
                 <TD>{""}</TD>
                 <TD>{""}</TD>
                 <TD>Subtotal</TD>
+                {showLineClients && <TD>{""}</TD>}
                 <TD>{""}</TD>
                 <TD>{""}</TD>
                 <TD num>{formatMoney(bill.subtotal, bill.currencyCode, { compact: true, paren: true })}</TD>
@@ -545,6 +572,7 @@ export default async function Page({
                 <TD>{""}</TD>
                 <TD>{""}</TD>
                 <TD>Tax</TD>
+                {showLineClients && <TD>{""}</TD>}
                 <TD>{""}</TD>
                 <TD>{""}</TD>
                 <TD num>{formatMoney(bill.taxAmount, bill.currencyCode, { compact: true, paren: true })}</TD>
@@ -553,6 +581,7 @@ export default async function Page({
                 <TD>{""}</TD>
                 <TD>{""}</TD>
                 <TD>Total</TD>
+                {showLineClients && <TD>{""}</TD>}
                 <TD>{""}</TD>
                 <TD>{""}</TD>
                 <TD num>{formatMoney(bill.total, bill.currencyCode, { compact: true, paren: true })}</TD>
@@ -562,7 +591,7 @@ export default async function Page({
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD
-                    colSpan={3}
+                    colSpan={showLineClients ? 4 : 3}
                     style={{ color: "var(--ink-3)", fontSize: 11.5 }}
                   >
                     Booked at 1 {baseCode} = {fxRateNum} {bill.currencyCode}
@@ -602,7 +631,104 @@ export default async function Page({
             </div>
           )}
 
-          {bill.chargebackInvoiceId && chargebackInvoice ? (
+          {bill.chargebackSplit ? (
+            (() => {
+              // Per-client breakdown from the line allocations. A client is
+              // fully invoiced when every one of their lines is stamped.
+              const pct =
+                bill.chargebackType === "markup" && bill.markupPct
+                  ? parseFloat(bill.markupPct)
+                  : 0;
+              const byClient = new Map<
+                string,
+                { share: number; billed: number; invoiceIds: Set<string> }
+              >();
+              let unassigned = 0;
+              for (const l of bill.lines) {
+                const amt = parseAmount(l.amount);
+                if (!l.clientId) {
+                  unassigned += amt;
+                  continue;
+                }
+                const agg =
+                  byClient.get(l.clientId) ??
+                  { share: 0, billed: 0, invoiceIds: new Set<string>() };
+                agg.share += amt;
+                if (l.chargebackInvoiceId) {
+                  agg.billed += amt;
+                  agg.invoiceIds.add(l.chargebackInvoiceId);
+                }
+                byClient.set(l.clientId, agg);
+              }
+              const anyInvoiced = [...byClient.values()].some(
+                (a) => a.invoiceIds.size > 0,
+              );
+              return (
+                <div className="p-3.5 flex flex-col gap-3">
+                  <div className="text-[12.5px]" style={{ color: "var(--ink-2)" }}>
+                    Split chargeback —{" "}
+                    {bill.chargebackType === "markup"
+                      ? `markup ${(pct * 100).toString()}%`
+                      : bill.chargebackType === "included"
+                        ? "included in annual fee"
+                        : "at cost"}
+                    , per-line clients.
+                  </div>
+                  <KVGrid>
+                    {[...byClient.entries()].map(([cid, agg]) => {
+                      const rebill =
+                        Math.round(agg.share * (1 + pct) * 100) / 100;
+                      const fullyBilled =
+                        agg.billed >= agg.share && agg.invoiceIds.size > 0;
+                      return (
+                        <KV
+                          key={cid}
+                          k={customerNameById.get(cid) ?? "—"}
+                          v={`${formatMoney(rebill, bill.currencyCode, { paren: true, compact: true })}${
+                            bill.chargebackType === "included"
+                              ? ""
+                              : fullyBilled
+                                ? " · invoiced"
+                                : " · pending"
+                          }`}
+                          mono
+                        />
+                      );
+                    })}
+                    {unassigned > 0 && (
+                      <KV
+                        k="Not rebilled"
+                        v={formatMoney(unassigned, bill.currencyCode, {
+                          paren: true,
+                          compact: true,
+                        })}
+                        mono
+                      />
+                    )}
+                    {bill.chargebackNotes && (
+                      <KV k="Notes" v={bill.chargebackNotes} />
+                    )}
+                  </KVGrid>
+                  <div
+                    className="text-[11.5px]"
+                    style={{ color: "var(--ink-4)" }}
+                  >
+                    Pending shares are invoiced from each client&apos;s page
+                    (Pending chargebacks).
+                  </div>
+                  {!anyInvoiced && (
+                    <form action={setBillChargebackAction}>
+                      <input type="hidden" name="billId" value={bill.id} />
+                      <input type="hidden" name="intent" value="clear" />
+                      <Button type="submit" variant="secondary">
+                        Clear chargeback
+                      </Button>
+                    </form>
+                  )}
+                </div>
+              );
+            })()
+          ) : bill.chargebackInvoiceId && chargebackInvoice ? (
             <div className="p-3.5 flex flex-col gap-2">
               <div className="text-[12.5px]" style={{ color: "var(--ink-2)" }}>
                 Rebilled on invoice{" "}

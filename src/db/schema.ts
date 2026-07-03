@@ -938,6 +938,10 @@ export const bills = pgTable("bills", {
   // Chargeback (rebill to client / entity) — see scripts/sync-schema.ts.
   chargebackClientId: text("chargeback_client_id"),
   chargebackEntityId: text("chargeback_entity_id"),
+  /** True when the rebill splits per line: each line's client_id says who
+   *  pays for it (lines with NULL client aren't rebilled). Mutually
+   *  exclusive with chargeback_client_id / chargeback_entity_id. */
+  chargebackSplit: boolean("chargeback_split").notNull().default(false),
   chargebackType: text("chargeback_type"),
   markupPct: numeric("markup_pct", { precision: 7, scale: 4 }),
   rebillAmount: numeric("rebill_amount", { precision: 15, scale: 2 }),
@@ -967,6 +971,9 @@ export const billLines = pgTable("bill_lines", {
   clientId: text("client_id"),
   /** Optional per-line entity allocation. */
   entityId: text("entity_id"),
+  /** For split chargebacks: the invoice that rebilled THIS line. A split
+   *  bill is fully billed back once every client-assigned line is stamped. */
+  chargebackInvoiceId: text("chargeback_invoice_id"),
   dimensions: jsonb("dimensions").notNull().default(sql`'{}'::jsonb`),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

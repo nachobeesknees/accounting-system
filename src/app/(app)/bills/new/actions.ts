@@ -74,6 +74,7 @@ type ParsedLine = {
   accountId: string;
   quantity: number;
   unitPrice: number;
+  clientId: string | null;
   dimensions: Record<string, string>;
 };
 
@@ -110,11 +111,16 @@ function parseLines(formData: FormData): ParsedLine[] {
       break;
     }
 
+    const lineClientId = formData.get(`lines[${i}][clientId]`);
     lines.push({
       description: typeof description === "string" ? description : "",
       accountId: typeof accountId === "string" ? accountId : "",
       quantity: parseAmount(typeof quantity === "string" ? quantity : ""),
       unitPrice: parseAmount(typeof unitPrice === "string" ? unitPrice : ""),
+      clientId:
+        typeof lineClientId === "string" && lineClientId.trim() !== ""
+          ? lineClientId.trim()
+          : null,
       dimensions: parseDimensionsForLine(formData, i),
     });
   }
@@ -188,6 +194,7 @@ export async function createBillAction(
       accountId: l.accountId,
       quantity: l.quantity,
       unitPrice: l.unitPrice,
+      clientId: l.clientId,
       dimensions: l.dimensions,
     }));
 
@@ -211,8 +218,23 @@ export async function createBillAction(
       if (!chargebackClientId) {
         return { error: "Pick a client to rebill to." };
       }
-      chargeback.chargebackClientId = chargebackClientId;
-      chargeback.chargebackEntityId = null;
+      if (chargebackClientId === "__split__") {
+        // [Split]: each line's clientId decides who pays for it.
+        if (chargebackType === "fixed") {
+          return { error: "Fixed-amount rebill can't be used with split billing." };
+        }
+        if (!lines.some((l) => l.clientId)) {
+          return {
+            error: "Split billing needs at least one line with a client picked.",
+          };
+        }
+        chargeback.chargebackSplit = true;
+        chargeback.chargebackClientId = null;
+        chargeback.chargebackEntityId = null;
+      } else {
+        chargeback.chargebackClientId = chargebackClientId;
+        chargeback.chargebackEntityId = null;
+      }
     } else if (recipient === "entity") {
       if (!chargebackEntityId) {
         return { error: "Pick an entity to rebill to." };

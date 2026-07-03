@@ -12,6 +12,10 @@ const NULLABLE_TEXT = "text";
 type ColumnSpec = { table: string; column: string; type: string; notNull?: boolean; default?: string };
 
 const COLUMNS: ColumnSpec[] = [
+  // Split chargebacks: per-line client billing on vendor bills
+  { table: "bills", column: "chargeback_split", type: "boolean", notNull: true, default: "false" },
+  { table: "bill_lines", column: "chargeback_invoice_id", type: "text" },
+
   // entities additions
   { table: "entities", column: "currency_code", type: "text", notNull: true, default: "'USD'" },
 

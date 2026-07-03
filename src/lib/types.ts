@@ -652,6 +652,8 @@ export type BillLine = {
   accountId: string;
   clientId?: string | null;
   entityId?: string | null;
+  /** Split chargebacks: invoice that rebilled this line (null = unbilled). */
+  chargebackInvoiceId?: string | null;
   /** Read side always populates from DB JSONB (defaults to {}). */
   dimensions?: DimensionMap;
 };
@@ -690,6 +692,8 @@ export type Bill = {
   // bill is an internal expense, not rebilled.
   chargebackClientId?: string | null;
   chargebackEntityId?: string | null;
+  /** True = rebill splits per line by each line's clientId. */
+  chargebackSplit?: boolean;
   chargebackType?: BillChargebackType | null;
   markupPct?: string | null;
   rebillAmount?: string | null;

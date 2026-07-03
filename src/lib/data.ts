@@ -10,7 +10,7 @@
 
 import "server-only";
 
-import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, asc, desc, eq, exists, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumDebits, sumCredits } from "./money";
@@ -649,6 +649,7 @@ function mapBillLine(r: typeof schema.billLines.$inferSelect): BillLine {
     accountId: r.accountId,
     clientId: r.clientId ?? null,
     entityId: r.entityId ?? null,
+    chargebackInvoiceId: r.chargebackInvoiceId ?? null,
     dimensions: asDimensionMap(r.dimensions),
   };
 }
@@ -764,6 +765,7 @@ function mapBill(r: typeof schema.bills.$inferSelect, lines: BillLine[]): Bill {
     entityId: r.entityId ?? null,
     chargebackClientId: r.chargebackClientId ?? null,
     chargebackEntityId: r.chargebackEntityId ?? null,
+    chargebackSplit: r.chargebackSplit ?? false,
     chargebackType: (r.chargebackType ?? null) as Bill["chargebackType"],
     markupPct: r.markupPct ?? null,
     rebillAmount: r.rebillAmount ?? null,
@@ -1743,13 +1745,32 @@ export async function getPendingChargebacksForClient(
   clientId: string,
 ): Promise<Bill[]> {
   const db = getDb();
+  // Whole-bill chargebacks tagged to this client, plus split bills that
+  // still have unbilled lines allocated to this client.
   const heads = await db
     .select()
     .from(schema.bills)
     .where(
-      and(
-        eq(schema.bills.chargebackClientId, clientId),
-        isNull(schema.bills.chargebackInvoiceId),
+      or(
+        and(
+          eq(schema.bills.chargebackClientId, clientId),
+          isNull(schema.bills.chargebackInvoiceId),
+        ),
+        and(
+          eq(schema.bills.chargebackSplit, true),
+          exists(
+            db
+              .select({ id: schema.billLines.id })
+              .from(schema.billLines)
+              .where(
+                and(
+                  eq(schema.billLines.billId, schema.bills.id),
+                  eq(schema.billLines.clientId, clientId),
+                  isNull(schema.billLines.chargebackInvoiceId),
+                ),
+              ),
+          ),
+        ),
       ),
     )
     .orderBy(desc(schema.bills.billDate));
