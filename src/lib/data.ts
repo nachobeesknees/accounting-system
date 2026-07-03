@@ -2371,6 +2371,89 @@ export async function getEntityPlRollup(
   }));
 }
 
+/**
+ * Business KPIs for the dashboard — fee-book and client metrics (as opposed
+ * to the ledger KPIs in getKpis):
+ *  - ARR: sum of recurring entity-service commitments for the billing year
+ *    (status counts once committed: active/billed/paid; draft + void don't).
+ *  - One-time fees: same, frequency = one_time.
+ *  - Attendances charged: invoiced billable time (hours × rate) YTD — the
+ *    time charges billed on top of fixed fees.
+ *  - Clients: active client count + net new this year.
+ */
+export type BusinessKpis = {
+  arr: number;
+  arrPrior: number;
+  oneTimeFees: number;
+  attendancesCharged: number;
+  clientCount: number;
+  newClientsYtd: number;
+};
+
+export async function getBusinessKpis(year: number): Promise<BusinessKpis> {
+  const db = getDb();
+  const yearStart = `${year}-01-01`;
+
+  const feeRows = await db
+    .select({
+      billingYear: schema.entityFees.billingYear,
+      frequency: schema.entityFees.frequency,
+      status: schema.entityFees.status,
+      annualFee: schema.entityFees.annualFee,
+    })
+    .from(schema.entityFees)
+    .where(inArray(schema.entityFees.billingYear, [year, year - 1]));
+
+  let arr = 0;
+  let arrPrior = 0;
+  let oneTimeFees = 0;
+  for (const f of feeRows) {
+    if (f.status === "void" || f.status === "draft") continue;
+    const amt = parseAmount(f.annualFee);
+    if (f.frequency === "one_time") {
+      if (f.billingYear === year) oneTimeFees += amt;
+    } else if (f.billingYear === year) {
+      arr += amt;
+    } else {
+      arrPrior += amt;
+    }
+  }
+
+  const timeRows = await db
+    .select({
+      durationHours: schema.timeEntries.durationHours,
+      rateAtLog: schema.timeEntries.rateAtLog,
+    })
+    .from(schema.timeEntries)
+    .where(
+      and(
+        eq(schema.timeEntries.isBillable, true),
+        isNotNull(schema.timeEntries.invoiceId),
+        gte(schema.timeEntries.entryDate, yearStart),
+      ),
+    );
+  const attendancesCharged = timeRows.reduce(
+    (s, t) => s + parseAmount(t.durationHours) * parseAmount(t.rateAtLog ?? "0"),
+    0,
+  );
+
+  const clients = await db
+    .select({ createdAt: schema.customers.createdAt })
+    .from(schema.customers)
+    .where(eq(schema.customers.isActive, true));
+  const jan1 = new Date(`${year}-01-01T00:00:00Z`);
+  const newClientsYtd = clients.filter((c) => c.createdAt >= jan1).length;
+
+  return {
+    arr,
+    arrPrior,
+    oneTimeFees,
+    attendancesCharged,
+    clientCount: clients.length,
+    newClientsYtd,
+  };
+}
+
 export async function getKpis() {
   const scope = await resolveEntityScope();
   // Chart of Accounts is firm-level (shared across entities), so we always

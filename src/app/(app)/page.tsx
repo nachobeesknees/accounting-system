@@ -18,6 +18,7 @@ import {
   getInvoices,
   getInvoicesAwaitingApproval,
   getJournalEntries,
+  getBusinessKpis,
   getKpis,
   getLatestFxRates,
   getVendors,
@@ -59,12 +60,23 @@ function Tile({
   value,
   sub,
   href,
+  delta,
 }: {
   label: string;
   value: string;
   sub?: string;
   href?: string;
+  /** +/- indicator rendered next to the value. */
+  delta?: { text: string; tone: "up" | "down" | "flat" };
 }) {
+  const deltaColor =
+    delta?.tone === "up"
+      ? "var(--p-active-fg)"
+      : delta?.tone === "down"
+        ? "var(--p-review-fg)"
+        : "var(--ink-3)";
+  const deltaArrow =
+    delta?.tone === "up" ? "\u25b2" : delta?.tone === "down" ? "\u25bc" : "\u2014";
   const body = (
     <div
       className="rounded-lg p-3.5 kpi-tile"
@@ -96,6 +108,14 @@ function Tile({
         }}
       >
         {value}
+        {delta && (
+          <span
+            className="ml-2"
+            style={{ fontSize: 12, color: deltaColor, fontFamily: "var(--font-sans)" }}
+          >
+            {deltaArrow} {delta.text}
+          </span>
+        )}
       </div>
       {sub && (
         <div
@@ -168,6 +188,7 @@ export default async function Page() {
   const demoTodayIso = today.toISOString().slice(0, 10);
   const [
     kpis,
+    bizKpis,
     ar,
     ap,
     allEntries,
@@ -185,6 +206,7 @@ export default async function Page() {
     dueTemplateCount,
   ] = await Promise.all([
     getKpis(),
+    getBusinessKpis(new Date().getUTCFullYear()),
     getArAging(today),
     getApAging(today),
     getJournalEntries(),
@@ -259,6 +281,19 @@ export default async function Page() {
   const elimNet = plRollup.eliminations.netIncome;
   const totalNetBase =
     entityPlRows.reduce((s, r) => s + r.netBase, 0) + firmLevelNet + elimNet;
+
+  const currentYear = new Date().getUTCFullYear();
+  // ARR indicator vs the prior billing year's recurring commitments.
+  const arrDelta = (() => {
+    if (bizKpis.arrPrior === 0) {
+      return bizKpis.arr > 0
+        ? { text: "new", tone: "up" as const }
+        : { text: "\u2014", tone: "flat" as const };
+    }
+    const pct = ((bizKpis.arr - bizKpis.arrPrior) / bizKpis.arrPrior) * 100;
+    const tone = pct > 0.05 ? ("up" as const) : pct < -0.05 ? ("down" as const) : ("flat" as const);
+    return { text: `${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% vs ${currentYear - 1}`, tone };
+  })();
 
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
   const vendorById = new Map(vendors.map((v) => [v.id, v] as const));
@@ -417,6 +452,39 @@ export default async function Page() {
           </Card>
         </div>
       )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 px-6 my-3.5">
+        <Tile
+          label={`Annual Recurring Revenue (${baseCode})`}
+          value={formatMoney(bizKpis.arr, baseCode, { paren: true, compact: true, hideCurrency: true })}
+          delta={arrDelta}
+          sub={`Committed recurring services, billing year ${currentYear}`}
+          href="/fees"
+        />
+        <Tile
+          label={`One-Time Fees (${baseCode})`}
+          value={formatMoney(bizKpis.oneTimeFees, baseCode, { paren: true, compact: true, hideCurrency: true })}
+          sub={`One-time services, billing year ${currentYear}`}
+          href="/fees"
+        />
+        <Tile
+          label={`Other Attendances Charged (${baseCode})`}
+          value={formatMoney(bizKpis.attendancesCharged, baseCode, { paren: true, compact: true, hideCurrency: true })}
+          sub="Invoiced billable time, YTD"
+          href="/time"
+        />
+        <Tile
+          label="Clients"
+          value={String(bizKpis.clientCount)}
+          delta={
+            bizKpis.newClientsYtd > 0
+              ? { text: `+${bizKpis.newClientsYtd} YTD`, tone: "up" }
+              : { text: "+0 YTD", tone: "flat" }
+          }
+          sub="Active client relationships"
+          href="/customers"
+        />
+      </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 px-6 my-3.5">
         <Tile
