@@ -2656,6 +2656,254 @@ export async function getIntercompanyPairBalances(): Promise<
   return Array.from(map.values());
 }
 
+/**
+ * Intercompany lines enriched for the reconciliation matrix + drill-down:
+ * account code/name, line + entry descriptions, and the parent JE's FX
+ * snapshot so per-line amounts can be converted to base
+ * (base = native / fxRate; NULL fxRate = already base).
+ */
+export type IntercompanyLineDetail = {
+  entryId: string;
+  entryNumber: string;
+  entryDate: string;
+  entryDescription: string | null;
+  lineDescription: string | null;
+  fromEntityId: string | null;
+  toEntityId: string;
+  accountId: string;
+  accountCode: string;
+  accountName: string;
+  debit: number;
+  credit: number;
+  /** "1 base currency = fxRate native units". null = entry is in base. */
+  fxRate: number | null;
+};
+
+export async function getIntercompanyLinesDetailed(): Promise<
+  IntercompanyLineDetail[]
+> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      entryId: schema.journalEntries.id,
+      entryNumber: schema.journalEntries.entryNumber,
+      entryDate: schema.journalEntries.entryDate,
+      entryDescription: schema.journalEntries.description,
+      lineDescription: schema.journalLines.description,
+      fromEntityId: schema.journalEntries.firmEntityId,
+      toEntityId: schema.journalLines.intercompanyCounterpartEntityId,
+      accountId: schema.journalLines.accountId,
+      accountCode: schema.accounts.code,
+      accountName: schema.accounts.name,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+      fxRate: schema.journalEntries.fxRate,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .innerJoin(
+      schema.accounts,
+      eq(schema.journalLines.accountId, schema.accounts.id),
+    )
+    .where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        isNull(schema.journalEntries.eliminationEntryId),
+        isNotNull(schema.journalLines.intercompanyCounterpartEntityId),
+      ),
+    )
+    .orderBy(
+      asc(schema.journalEntries.entryDate),
+      asc(schema.journalEntries.entryNumber),
+    );
+
+  return rows
+    .filter((r): r is typeof r & { toEntityId: string } => r.toEntityId != null)
+    .map((r) => {
+      const fx = r.fxRate == null ? null : parseAmount(r.fxRate);
+      return {
+        entryId: r.entryId,
+        entryNumber: r.entryNumber,
+        entryDate: r.entryDate,
+        entryDescription: r.entryDescription,
+        lineDescription: r.lineDescription,
+        fromEntityId: r.fromEntityId,
+        toEntityId: r.toEntityId,
+        accountId: r.accountId,
+        accountCode: r.accountCode,
+        accountName: r.accountName,
+        debit: parseAmount(r.debit),
+        credit: parseAmount(r.credit),
+        fxRate: fx != null && fx > 0 ? fx : null,
+      };
+    });
+}
+
+/**
+ * Data-quality check: posted lines sitting on intercompany-ish accounts
+ * (name matches /due (from|to)/i, or an intercompany-flavored subType)
+ * that are MISSING the counterpart tag. These escape the pair-wise
+ * auto-reconciliation entirely, so the report lists them as warnings.
+ * Elimination entries are excluded — their lines legitimately reverse
+ * due-from/due-to balances without carrying counterpart tags.
+ */
+export type UntaggedIntercompanyLine = {
+  entryId: string;
+  entryNumber: string;
+  entryDate: string;
+  firmEntityId: string | null;
+  accountCode: string;
+  accountName: string;
+  lineDescription: string | null;
+  entryDescription: string | null;
+  debit: number;
+  credit: number;
+};
+
+const IC_ACCOUNT_NAME_RE = /due (from|to)/i;
+const IC_ACCOUNT_SUBTYPE_RE = /intercompany|due.?(from|to)/i;
+
+export async function getUntaggedIntercompanyLines(): Promise<
+  UntaggedIntercompanyLine[]
+> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      entryId: schema.journalEntries.id,
+      entryNumber: schema.journalEntries.entryNumber,
+      entryDate: schema.journalEntries.entryDate,
+      entryDescription: schema.journalEntries.description,
+      lineDescription: schema.journalLines.description,
+      firmEntityId: schema.journalEntries.firmEntityId,
+      accountCode: schema.accounts.code,
+      accountName: schema.accounts.name,
+      accountSubType: schema.accounts.subType,
+      debit: schema.journalLines.debit,
+      credit: schema.journalLines.credit,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .innerJoin(
+      schema.accounts,
+      eq(schema.journalLines.accountId, schema.accounts.id),
+    )
+    .where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        isNull(schema.journalEntries.eliminationEntryId),
+        isNull(schema.journalLines.intercompanyCounterpartEntityId),
+      ),
+    )
+    .orderBy(
+      asc(schema.journalEntries.entryDate),
+      asc(schema.journalEntries.entryNumber),
+    );
+
+  return rows
+    .filter(
+      (r) =>
+        IC_ACCOUNT_NAME_RE.test(r.accountName) ||
+        (r.accountSubType != null && IC_ACCOUNT_SUBTYPE_RE.test(r.accountSubType)),
+    )
+    .map((r) => ({
+      entryId: r.entryId,
+      entryNumber: r.entryNumber,
+      entryDate: r.entryDate,
+      firmEntityId: r.firmEntityId,
+      accountCode: r.accountCode,
+      accountName: r.accountName,
+      lineDescription: r.lineDescription,
+      entryDescription: r.entryDescription,
+      debit: parseAmount(r.debit),
+      credit: parseAmount(r.credit),
+    }));
+}
+
+/**
+ * Which unordered firm-entity pairs already have a posted elimination
+ * entry covering them. Keys are `${minId}|${maxId}`.
+ *
+ * The pair is read off the elimination JE itself: the mutation persists
+ * it in `reference` ("ELIM a|b") and embeds it in the description
+ * ("Intercompany elimination · A ↔ B"). Deriving the pair from the
+ * SOURCE JE's counterpart-tagged lines is unsafe — a source JE can tag
+ * lines to several counterparts (e.g. one allocation entry with Due-from
+ * lines to B and C), which would badge never-eliminated pairs as
+ * eliminated. That derivation is kept only as a last-resort fallback for
+ * elimination rows that carry neither marker.
+ */
+export async function getEliminatedPairKeys(): Promise<Set<string>> {
+  const db = getDb();
+  const elims = await db
+    .select({
+      sourceId: schema.journalEntries.eliminationEntryId,
+      reference: schema.journalEntries.reference,
+      description: schema.journalEntries.description,
+    })
+    .from(schema.journalEntries)
+    .where(
+      and(
+        eq(schema.journalEntries.status, "posted"),
+        isNotNull(schema.journalEntries.eliminationEntryId),
+      ),
+    );
+
+  const keys = new Set<string>();
+  const addPair = (x: string, y: string) => {
+    if (!x || !y || x === y) return;
+    keys.add(x < y ? `${x}|${y}` : `${y}|${x}`);
+  };
+
+  const unresolvedSourceIds = new Set<string>();
+  for (const e of elims) {
+    const ref = e.reference?.match(/^ELIM (\S+)\|(\S+)$/);
+    if (ref) {
+      addPair(ref[1], ref[2]);
+      continue;
+    }
+    const desc = e.description?.match(
+      /^Intercompany elimination · (\S+) ↔ (\S+)$/,
+    );
+    if (desc) {
+      addPair(desc[1], desc[2]);
+      continue;
+    }
+    if (e.sourceId) unresolvedSourceIds.add(e.sourceId);
+  }
+  if (unresolvedSourceIds.size === 0) return keys;
+
+  // Legacy fallback (no pair marker on the elimination JE): derive from
+  // the source JE's tagged lines. Can over-mark when the source tags
+  // multiple counterparts — unavoidable without the persisted pair.
+  const rows = await db
+    .select({
+      fromEntityId: schema.journalEntries.firmEntityId,
+      toEntityId: schema.journalLines.intercompanyCounterpartEntityId,
+    })
+    .from(schema.journalLines)
+    .innerJoin(
+      schema.journalEntries,
+      eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+    )
+    .where(
+      and(
+        inArray(schema.journalEntries.id, Array.from(unresolvedSourceIds)),
+        isNotNull(schema.journalLines.intercompanyCounterpartEntityId),
+      ),
+    );
+  for (const r of rows) {
+    if (!r.fromEntityId || !r.toEntityId) continue;
+    addPair(r.fromEntityId, r.toEntityId);
+  }
+  return keys;
+}
+
 // --------- Derived: aging ---------
 
 export async function getArAging(today: Date) {
@@ -2692,6 +2940,333 @@ export async function getApAging(today: Date) {
     else buckets.d90 += bal;
   }
   return buckets;
+}
+
+// --------- Derived: subledger ↔ GL tie-out (aging reports) ---------
+
+/**
+ * Control accounts the invoice/bill pipeline posts to. Same hard ids the
+ * mutations use (postInvoice debits a-1200 / code 1200; approveBill
+ * credits a-2000 / code 2000); we fall back to a code lookup in case a
+ * deployment re-seeded with different ids.
+ */
+const AR_CONTROL_ACCOUNT_ID = "a-1200";
+const AR_CONTROL_ACCOUNT_CODE = "1200";
+const AP_CONTROL_ACCOUNT_ID = "a-2000";
+const AP_CONTROL_ACCOUNT_CODE = "2000";
+
+export type AgingCurrencySubtotal = {
+  currencyCode: string;
+  /** Sum of open balanceDue in the document currency. */
+  native: number;
+  /** Converted to base per document: native / fxRate (NULL fx = base). */
+  base: number;
+  docCount: number;
+};
+
+export type ReconcilingItem = {
+  entryId: string;
+  entryNumber: string;
+  entryDate: string;
+  description: string | null;
+  /**
+   * Signed effect on the DISPLAYED control balance:
+   *   AR (debit-normal): debit − credit
+   *   AP (credit-normal): credit − debit
+   */
+  amount: number;
+};
+
+export type SubledgerReconciliation = {
+  kind: "ar" | "ap";
+  asOf: string;
+  baseCurrencyCode: string;
+  controlAccountId: string | null;
+  controlAccountCode: string | null;
+  controlAccountName: string | null;
+  /**
+   * Control balance as displayed (AR debit-positive, AP credit-positive).
+   * RAW GL units: journal lines are booked in each document's NATIVE
+   * currency (the JE's fxRate is only an annotation, and payment JEs
+   * carry none), so this is a native-units sum — mixed currencies at
+   * "all" scope.
+   */
+  controlBalance: number;
+  /** Open, POSTED documents converted to base per-document fx snapshot. */
+  subledgerTotalBase: number;
+  /**
+   * Open, POSTED documents summed in RAW native units — the same units
+   * the control account is booked in (posting and payment legs are both
+   * native). This is the side the tie-out compares against.
+   */
+  subledgerTotalNative: number;
+  subledgerByCurrency: AgingCurrencySubtotal[];
+  /** Open documents with no posting JE (drafts / pending) — not in the GL. */
+  unpostedCount: number;
+  /** controlBalance − subledgerTotalNative, both in raw GL (native) units. */
+  difference: number;
+  /** Posted control-account lines that did NOT come from the doc pipeline. */
+  reconcilingItems: ReconcilingItem[];
+  reconcilingTotal: number;
+  /** difference − reconcilingTotal; nonzero = investigate. */
+  unexplainedDifference: number;
+};
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * GL tie-out for the AR / AP aging reports:
+ *   1. subledger total — open balanceDue on posted invoices/bills, both
+ *      raw native (used for the tie-out math) and converted to base with
+ *      each document's fxRate snapshot (display only),
+ *   2. control account balance as of `asOf` at the current firm scope,
+ *   3. reconciling items — posted journal lines hitting the control
+ *      account whose parent JE is not referenced by the invoice / bill /
+ *      payment pipeline (direct manual postings, eliminations, ...).
+ *
+ * UNITS (critical): the GL books journal lines in each document's NATIVE
+ * currency — postInvoice/approveBill post the native total (fxRate is a
+ * JE-level annotation only) and payment JEs apply native amounts with no
+ * fxRate at all. So the control account is a raw native sum, and the only
+ * apples-to-apples comparison is control vs Σ raw balanceDue. Reconciling
+ * items are likewise raw (debit − credit) per line. The base-converted
+ * subledger totals are for display only and must NOT be compared to the
+ * control balance.
+ *
+ * Scope follows the topbar entity-scope cookie (same behavior as the
+ * balance helpers): eliminations included only at "all" scope.
+ */
+export async function getSubledgerReconciliation(
+  kind: "ar" | "ap",
+  asOf: string,
+): Promise<SubledgerReconciliation> {
+  const db = getDb();
+  const scope = await resolveEntityScope();
+  const n = normalizeFirmScope(scope);
+
+  const base = await getBaseCurrency();
+  const baseCurrencyCode = base?.code ?? "USD";
+
+  const control =
+    (await getAccountById(
+      kind === "ar" ? AR_CONTROL_ACCOUNT_ID : AP_CONTROL_ACCOUNT_ID,
+    )) ??
+    (await getAccountByCode(
+      kind === "ar" ? AR_CONTROL_ACCOUNT_CODE : AP_CONTROL_ACCOUNT_CODE,
+    ));
+
+  const inScope = (firmEntityId: string | null): boolean => {
+    if (n.kind === "all") return true;
+    if (n.kind === "firm-level-null") return firmEntityId == null;
+    if (n.kind === "office") return firmEntityId === n.officeId;
+    return firmEntityId != null && n.officeIds.includes(firmEntityId);
+  };
+
+  // ---- 1. Subledger total (posted open documents, per-currency) ----
+  type DocRow = {
+    balanceDue: string;
+    currencyCode: string;
+    fxRate: string | null;
+    journalEntryId: string | null;
+    status: string;
+    firmEntityId: string | null;
+  };
+  let docRows: DocRow[];
+  if (kind === "ar") {
+    docRows = await db
+      .select({
+        balanceDue: schema.invoices.balanceDue,
+        currencyCode: schema.invoices.currencyCode,
+        fxRate: schema.invoices.fxRate,
+        journalEntryId: schema.invoices.journalEntryId,
+        status: schema.invoices.status,
+        firmEntityId: schema.invoices.firmEntityId,
+      })
+      .from(schema.invoices)
+      .where(eq(schema.invoices.isTemplate, false));
+  } else {
+    // Bills carry no firm_entity_id column — read it off the posting JE.
+    const rows = await db
+      .select({
+        balanceDue: schema.bills.balanceDue,
+        currencyCode: schema.bills.currencyCode,
+        fxRate: schema.bills.fxRate,
+        journalEntryId: schema.bills.journalEntryId,
+        status: schema.bills.status,
+        firmEntityId: schema.journalEntries.firmEntityId,
+      })
+      .from(schema.bills)
+      .leftJoin(
+        schema.journalEntries,
+        eq(schema.bills.journalEntryId, schema.journalEntries.id),
+      );
+    docRows = rows.map((r) => ({ ...r, firmEntityId: r.firmEntityId ?? null }));
+  }
+
+  const closedStatuses = new Set(["void", "paid", "written_off"]);
+  const byCurrency = new Map<string, AgingCurrencySubtotal>();
+  let subledgerTotalBase = 0;
+  let subledgerTotalNative = 0;
+  let unpostedCount = 0;
+  for (const d of docRows) {
+    if (closedStatuses.has(d.status)) continue;
+    const bal = parseAmount(d.balanceDue);
+    if (Math.abs(bal) < 0.005) continue;
+    if (!d.journalEntryId) {
+      // Draft / pending-approval documents never hit the GL — flag, skip.
+      if (inScope(d.firmEntityId)) unpostedCount += 1;
+      continue;
+    }
+    if (!inScope(d.firmEntityId)) continue;
+    const fx = d.fxRate == null ? null : parseAmount(d.fxRate);
+    const balBase = fx != null && fx > 0 ? bal / fx : bal;
+    const cur =
+      byCurrency.get(d.currencyCode) ??
+      ({
+        currencyCode: d.currencyCode,
+        native: 0,
+        base: 0,
+        docCount: 0,
+      } as AgingCurrencySubtotal);
+    cur.native += bal;
+    cur.base += balBase;
+    cur.docCount += 1;
+    byCurrency.set(d.currencyCode, cur);
+    subledgerTotalBase += balBase;
+    subledgerTotalNative += bal;
+  }
+  subledgerTotalBase = round2(subledgerTotalBase);
+  subledgerTotalNative = round2(subledgerTotalNative);
+  const subledgerByCurrency = Array.from(byCurrency.values())
+    .map((c) => ({ ...c, native: round2(c.native), base: round2(c.base) }))
+    .sort((a, b) => a.currencyCode.localeCompare(b.currencyCode));
+
+  // ---- 2. Control account balance at scope ----
+  let controlBalance = 0;
+  if (control) {
+    const balances = await getSignedBalancesAsOf(asOf, scope);
+    const signed = balances.get(control.id) ?? 0;
+    controlBalance = round2(kind === "ar" ? signed : -signed);
+  }
+
+  // ---- 3. Reconciling items (non-pipeline lines on the control acct) ----
+  const reconcilingItems: ReconcilingItem[] = [];
+  if (control) {
+    // Every JE the document pipeline references. Payment JEs created by
+    // the quick record-payment flows aren't referenced by any table, but
+    // they carry source "invoice"/"bill" — treated as pipeline below.
+    const [invRefs, billRefs, payRefs, runRefs] = await Promise.all([
+      db
+        .select({
+          journalEntryId: schema.invoices.journalEntryId,
+          writeoffJournalEntryId: schema.invoices.writeoffJournalEntryId,
+        })
+        .from(schema.invoices),
+      db.select({ journalEntryId: schema.bills.journalEntryId }).from(schema.bills),
+      db
+        .select({ journalEntryId: schema.payments.journalEntryId })
+        .from(schema.payments),
+      db
+        .select({ journalEntryId: schema.paymentRunItems.journalEntryId })
+        .from(schema.paymentRunItems),
+    ]);
+    const pipelineIds = new Set<string>();
+    for (const r of invRefs) {
+      if (r.journalEntryId) pipelineIds.add(r.journalEntryId);
+      if (r.writeoffJournalEntryId) pipelineIds.add(r.writeoffJournalEntryId);
+    }
+    for (const r of billRefs) if (r.journalEntryId) pipelineIds.add(r.journalEntryId);
+    for (const r of payRefs) if (r.journalEntryId) pipelineIds.add(r.journalEntryId);
+    for (const r of runRefs) if (r.journalEntryId) pipelineIds.add(r.journalEntryId);
+
+    const lineRows = await db
+      .select({
+        entryId: schema.journalEntries.id,
+        entryNumber: schema.journalEntries.entryNumber,
+        entryDate: schema.journalEntries.entryDate,
+        description: schema.journalEntries.description,
+        source: schema.journalEntries.source,
+        firmEntityId: schema.journalEntries.firmEntityId,
+        eliminationEntryId: schema.journalEntries.eliminationEntryId,
+        debit: schema.journalLines.debit,
+        credit: schema.journalLines.credit,
+      })
+      .from(schema.journalLines)
+      .innerJoin(
+        schema.journalEntries,
+        eq(schema.journalLines.journalEntryId, schema.journalEntries.id),
+      )
+      .where(
+        and(
+          eq(schema.journalLines.accountId, control.id),
+          eq(schema.journalEntries.status, "posted"),
+          lte(schema.journalEntries.entryDate, asOf),
+        ),
+      )
+      .orderBy(
+        asc(schema.journalEntries.entryDate),
+        asc(schema.journalEntries.entryNumber),
+      );
+
+    const byEntry = new Map<string, ReconcilingItem>();
+    for (const r of lineRows) {
+      // Match the elimination visibility rule of the balance helpers:
+      // included at "all" scope, excluded when drilling into an office.
+      if (n.kind !== "all") {
+        if (r.eliminationEntryId != null) continue;
+        if (!inScope(r.firmEntityId)) continue;
+      }
+      if (pipelineIds.has(r.entryId)) continue;
+      if (r.source === "invoice" || r.source === "bill") continue;
+      const effect =
+        kind === "ar"
+          ? parseAmount(r.debit) - parseAmount(r.credit)
+          : parseAmount(r.credit) - parseAmount(r.debit);
+      const cur =
+        byEntry.get(r.entryId) ??
+        ({
+          entryId: r.entryId,
+          entryNumber: r.entryNumber,
+          entryDate: r.entryDate,
+          description: r.description,
+          amount: 0,
+        } as ReconcilingItem);
+      cur.amount += effect;
+      byEntry.set(r.entryId, cur);
+    }
+    for (const item of byEntry.values()) {
+      item.amount = round2(item.amount);
+      if (Math.abs(item.amount) < 0.005) continue;
+      reconcilingItems.push(item);
+    }
+  }
+
+  const reconcilingTotal = round2(
+    reconcilingItems.reduce((s, i) => s + i.amount, 0),
+  );
+  // Compare in RAW native GL units — see the units note in the docstring.
+  const difference = round2(controlBalance - subledgerTotalNative);
+  const unexplainedDifference = round2(difference - reconcilingTotal);
+
+  return {
+    kind,
+    asOf,
+    baseCurrencyCode,
+    controlAccountId: control?.id ?? null,
+    controlAccountCode: control?.code ?? null,
+    controlAccountName: control?.name ?? null,
+    controlBalance,
+    subledgerTotalBase,
+    subledgerTotalNative,
+    subledgerByCurrency,
+    unpostedCount,
+    difference,
+    reconcilingItems,
+    reconcilingTotal,
+    unexplainedDifference,
+  };
 }
 
 // --------- Reporting v2: dated balances + monthly P&L ---------

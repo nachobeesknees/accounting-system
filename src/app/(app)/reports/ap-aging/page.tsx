@@ -4,12 +4,16 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { DrillNumber } from "@/components/DrillNumber";
+import { PrintButton } from "@/components/PrintButton";
+import { GlTieOut, ReconcilingItemsCard } from "@/components/AgingTieOut";
 import {
   getBankAccounts,
+  getBaseCurrency,
   getBills,
   getCustomers,
   getEntities,
   getKpis,
+  getSubledgerReconciliation,
   getVendors,
 } from "@/lib/data";
 import { formatMoney, parseAmount } from "@/lib/money";
@@ -26,6 +30,14 @@ const BUCKET_HEADERS: Array<{ key: Bucket; label: string }> = [
   { key: "d90p", label: "90+ days" },
 ];
 
+const EMPTY_BUCKETS = (): Record<Bucket, number> => ({
+  current: 0,
+  d30: 0,
+  d60: 0,
+  d90: 0,
+  d90p: 0,
+});
+
 function bucketFor(daysOverdue: number): Bucket {
   if (daysOverdue <= 0) return "current";
   if (daysOverdue <= 30) return "d30";
@@ -41,8 +53,9 @@ function daysBetween(from: Date, to: Date): number {
 
 export default async function Page() {
   const today = new Date();
+  const asOf = today.toISOString().slice(0, 10);
 
-  const [bills, vendors, customers, entities, kpis, bankAccounts] =
+  const [bills, vendors, customers, entities, kpis, bankAccounts, base, recon] =
     await Promise.all([
       getBills(),
       getVendors(),
@@ -50,7 +63,10 @@ export default async function Page() {
       getEntities(),
       getKpis(),
       getBankAccounts(),
+      getBaseCurrency(),
+      getSubledgerReconciliation("ap", new Date().toISOString().slice(0, 10)),
     ]);
+  const baseCode = base?.code ?? "USD";
 
   const vendorsById = new Map(vendors.map((v) => [v.id, v] as const));
   const customersById = new Map(customers.map((c) => [c.id, c] as const));
@@ -86,17 +102,32 @@ export default async function Page() {
     return fallbackBank;
   }
 
-  // Per-vendor bucket totals + a flat list of selectable rows.
+  // Per vendor × CURRENCY bucket totals — bills come in NZD/HKD/USD, so
+  // each row aggregates a single currency and the totals block shows one
+  // native row per currency plus a base-converted grand total using each
+  // bill's fxRate snapshot (base = native / fxRate; NULL = already base).
   type VendorAgingRow = {
     vendorId: string;
     vendorName: string;
+    currencyCode: string;
     buckets: Record<Bucket, number>;
     total: number;
+    totalBase: number;
   };
-  const byVendor = new Map<string, VendorAgingRow>();
+  const byVendorCurrency = new Map<string, VendorAgingRow>();
 
   const flatRows: SelectableBillRow[] = [];
-  let totalPayable = 0;
+  let totalPayableBase = 0;
+  // Raw native sum — same units as the raw-GL cash figure below (journal
+  // lines are booked native), so the funds-in-hand ratio compares like
+  // with like. Mixed currencies at "all" scope, office currency at office
+  // scope — exactly mirroring the GL.
+  let totalPayableNative = 0;
+  const totalsByCurrency = new Map<
+    string,
+    { buckets: Record<Bucket, number>; total: number }
+  >();
+  const totalsBase: Record<Bucket, number> = EMPTY_BUCKETS();
 
   for (const bill of bills) {
     const balance = parseAmount(bill.balanceDue);
@@ -111,19 +142,35 @@ export default async function Page() {
     const client = bill.clientId ? customersById.get(bill.clientId) : null;
     const entity = bill.entityId ? entitiesById.get(bill.entityId) : null;
 
+    const fx = bill.fxRate == null ? null : parseAmount(bill.fxRate);
+    const balanceBase = fx != null && fx > 0 ? balance / fx : balance;
+
+    const rowKey = `${bill.vendorId}|${bill.currencyCode}`;
     const existing =
-      byVendor.get(bill.vendorId) ??
+      byVendorCurrency.get(rowKey) ??
       ({
         vendorId: bill.vendorId,
         vendorName: vendor?.name ?? "—",
-        buckets: { current: 0, d30: 0, d60: 0, d90: 0, d90p: 0 },
+        currencyCode: bill.currencyCode,
+        buckets: EMPTY_BUCKETS(),
         total: 0,
+        totalBase: 0,
       } as VendorAgingRow);
     existing.buckets[bucket] += balance;
     existing.total += balance;
-    byVendor.set(bill.vendorId, existing);
+    existing.totalBase += balanceBase;
+    byVendorCurrency.set(rowKey, existing);
 
-    totalPayable += balance;
+    const curTotals =
+      totalsByCurrency.get(bill.currencyCode) ??
+      ({ buckets: EMPTY_BUCKETS(), total: 0 });
+    curTotals.buckets[bucket] += balance;
+    curTotals.total += balance;
+    totalsByCurrency.set(bill.currencyCode, curTotals);
+
+    totalsBase[bucket] += balanceBase;
+    totalPayableBase += balanceBase;
+    totalPayableNative += balance;
 
     const bank = pickBank(bill);
     flatRows.push({
@@ -139,27 +186,22 @@ export default async function Page() {
       daysOverdue,
       bucket,
       balanceDue: balance,
+      currencyCode: bill.currencyCode,
+      balanceDueBase: balanceBase,
       status: bill.status,
     });
   }
 
   // Sort vendors most-overdue-first (90+ buckets descending) then total.
-  const vendorRows = Array.from(byVendor.values()).sort((a, b) => {
+  const vendorRows = Array.from(byVendorCurrency.values()).sort((a, b) => {
     if (b.buckets.d90p !== a.buckets.d90p) return b.buckets.d90p - a.buckets.d90p;
     if (b.buckets.d90 !== a.buckets.d90) return b.buckets.d90 - a.buckets.d90;
-    return b.total - a.total;
+    return b.totalBase - a.totalBase;
   });
 
-  const totals: Record<Bucket, number> = {
-    current: 0,
-    d30: 0,
-    d60: 0,
-    d90: 0,
-    d90p: 0,
-  };
-  for (const r of vendorRows) {
-    for (const k of Object.keys(totals) as Bucket[]) totals[k] += r.buckets[k];
-  }
+  const currencyTotalRows = Array.from(totalsByCurrency.entries()).sort(
+    ([a], [b]) => a.localeCompare(b),
+  );
 
   // Sort flat rows for the selectable table: most overdue at top.
   flatRows.sort((a, b) => {
@@ -167,12 +209,15 @@ export default async function Page() {
     return a.dueDate.localeCompare(b.dueDate);
   });
 
-  // Funds-in-hand light:
+  // Funds-in-hand light — cash vs payables. kpis.cash is a RAW GL sum of
+  // account 1000 (journal lines are booked in native units, payment JEs
+  // carry no fx snapshot), so the only unit-consistent comparison is
+  // against the raw NATIVE payables total, not the base equivalent:
   //   green  → cash >= 1.5x payables
   //   yellow → 0.75x–1.5x
   //   red    → < 0.75x or cash <= 0
   const cash = kpis.cash;
-  const ratio = totalPayable === 0 ? Infinity : cash / totalPayable;
+  const ratio = totalPayableNative === 0 ? Infinity : cash / totalPayableNative;
   let status: "green" | "yellow" | "red";
   if (cash <= 0 || ratio < 0.75) status = "red";
   else if (ratio < 1.5) status = "yellow";
@@ -194,14 +239,23 @@ export default async function Page() {
     red: "Cash crunch",
   };
 
+  const distinctVendors = new Set(vendorRows.map((r) => r.vendorId)).size;
+
   return (
     <>
       <PageHeader
         title="AP Aging"
-        meta={`As of ${today.toISOString().slice(0, 10)} · ${vendorRows.length} vendors with open payables`}
+        meta={`As of ${asOf} · ${distinctVendors} vendors with open payables · totals per currency + ${baseCode} equivalent`}
+        actions={<PrintButton />}
       />
 
       <div className="px-6 py-3.5 pb-8 flex flex-col gap-3.5">
+        <GlTieOut
+          recon={recon}
+          subledgerLabel="AP subledger (open posted bills)"
+        />
+        <ReconcilingItemsCard recon={recon} />
+
         <Card title="Funds in hand vs. payables" bodyPadding>
           <div className="flex flex-col md:flex-row md:items-stretch gap-4">
             <div
@@ -222,7 +276,14 @@ export default async function Page() {
                   color: cash >= 0 ? "var(--ink)" : "var(--p-review-fg)",
                 }}
               >
-                {formatMoney(cash, "USD", { compact: true, paren: true })}
+                {formatMoney(cash, null, {
+                  compact: true,
+                  paren: true,
+                  hideCurrency: true,
+                })}
+              </div>
+              <div className="text-[11.5px] mt-1" style={{ color: "var(--ink-3)" }}>
+                Raw GL balance at the current scope (native units)
               </div>
             </div>
             <div
@@ -233,7 +294,7 @@ export default async function Page() {
               }}
             >
               <div className="text-[11.5px]" style={{ color: "var(--ink-3)" }}>
-                Total payables (open balance)
+                Total payables ({baseCode} equivalent of open balances)
               </div>
               <div
                 className="text-[22px] font-semibold mt-1"
@@ -243,7 +304,10 @@ export default async function Page() {
                   color: "var(--ink)",
                 }}
               >
-                {formatMoney(totalPayable, "USD", { compact: true, paren: true })}
+                {formatMoney(totalPayableBase, baseCode, {
+                  compact: true,
+                  paren: true,
+                })}
               </div>
             </div>
             <div
@@ -271,28 +335,30 @@ export default async function Page() {
                   color: statusColor[status],
                 }}
               >
-                {formatMoney(cash - totalPayable, "USD", {
+                {formatMoney(cash - totalPayableNative, null, {
                   compact: true,
                   paren: true,
+                  hideCurrency: true,
                 })}
               </div>
               <div
                 className="text-[11.5px] mt-1"
                 style={{ color: statusColor[status] }}
               >
-                {totalPayable === 0
+                {totalPayableNative === 0
                   ? "No open payables"
-                  : `Cash covers ${(ratio * 100).toFixed(0)}% of open AP`}
+                  : `Cash covers ${(ratio * 100).toFixed(0)}% of open AP (native GL units)`}
               </div>
             </div>
           </div>
         </Card>
 
-        <Card title="Aging by vendor">
+        <Card title="Aging by vendor · one row per vendor and currency">
           <Table>
             <THead>
               <TR hover={false}>
                 <TH>Vendor</TH>
+                <TH>Currency</TH>
                 {BUCKET_HEADERS.map((h) => (
                   <TH key={h.key} num>
                     {h.label}
@@ -304,7 +370,7 @@ export default async function Page() {
             <TBody>
               {vendorRows.length === 0 && (
                 <TR hover={false}>
-                  <TD colSpan={7} style={{ color: "var(--ink-3)" }}>
+                  <TD colSpan={8} style={{ color: "var(--ink-3)" }}>
                     No open vendor payables.
                   </TD>
                 </TR>
@@ -312,7 +378,7 @@ export default async function Page() {
               {vendorRows.map((r) => {
                 const vendorBillsHref = `/bills?vendor=${encodeURIComponent(r.vendorId)}`;
                 return (
-                  <TR key={r.vendorId} hover={false}>
+                  <TR key={`${r.vendorId}|${r.currencyCode}`} hover={false}>
                     <TD>
                       <Link
                         href={vendorBillsHref}
@@ -322,6 +388,7 @@ export default async function Page() {
                         {r.vendorName}
                       </Link>
                     </TD>
+                    <TD mono>{r.currencyCode}</TD>
                     {BUCKET_HEADERS.map((h) => {
                       const v = r.buckets[h.key];
                       const href = `/bills?vendor=${encodeURIComponent(r.vendorId)}&bucket=${h.key}`;
@@ -351,29 +418,61 @@ export default async function Page() {
                         href={vendorBillsHref}
                         currencyCode={null}
                         compact
+                        title={`≈ ${formatMoney(r.totalBase, baseCode, { compact: true, paren: true })}`}
                       />
                     </TD>
                   </TR>
                 );
               })}
+              {currencyTotalRows.map(([code, t]) => (
+                <TR key={`total-${code}`} total hover={false}>
+                  <TD>Totals ({code})</TD>
+                  <TD mono>{code}</TD>
+                  {BUCKET_HEADERS.map((h) => (
+                    <TD key={h.key} num>
+                      {t.buckets[h.key] === 0 ? (
+                        "—"
+                      ) : (
+                        <DrillNumber
+                          value={t.buckets[h.key]}
+                          href={`/bills?bucket=${h.key}`}
+                          currencyCode={null}
+                          compact
+                        />
+                      )}
+                    </TD>
+                  ))}
+                  <TD num>
+                    <DrillNumber
+                      value={t.total}
+                      href="/bills"
+                      currencyCode={null}
+                      compact
+                    />
+                  </TD>
+                </TR>
+              ))}
               <TR total hover={false}>
-                <TD>Totals</TD>
+                <TD>Total ({baseCode} equivalent)</TD>
+                <TD mono>{baseCode}</TD>
                 {BUCKET_HEADERS.map((h) => (
                   <TD key={h.key} num>
                     <DrillNumber
-                      value={totals[h.key]}
+                      value={totalsBase[h.key]}
                       href={`/bills?bucket=${h.key}`}
                       currencyCode={null}
                       compact
+                      title="Converted per bill with its fxRate snapshot"
                     />
                   </TD>
                 ))}
                 <TD num>
                   <DrillNumber
-                    value={totalPayable}
+                    value={totalPayableBase}
                     href="/bills"
                     currencyCode={null}
                     compact
+                    title="Converted per bill with its fxRate snapshot"
                   />
                 </TD>
               </TR>
@@ -382,7 +481,11 @@ export default async function Page() {
         </Card>
 
         <Card title="Bills to pay">
-          <SelectableBillsTable rows={flatRows} cashOnHand={cash} />
+          <SelectableBillsTable
+            rows={flatRows}
+            cashOnHand={cash}
+            baseCurrencyCode={baseCode}
+          />
         </Card>
       </div>
     </>
