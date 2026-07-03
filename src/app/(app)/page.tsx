@@ -14,6 +14,7 @@ import {
   getDashboardPrefs,
   getDueRecurringTemplateCount,
   getEntities,
+  getEntityFilings,
   getFirmPlRollup,
   getOffices,
   getInvoices,
@@ -30,6 +31,7 @@ import { formatAmount, formatMoney } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
 import { parseAmount } from "@/lib/money";
 import { resolveEntityScope } from "@/lib/entity-scope";
+import { getAllowedEntityIds } from "@/lib/entity-access";
 import { getSessionUser } from "@/lib/session";
 import { hasPermission } from "@/lib/permissions";
 import { DashboardCustomize } from "@/components/DashboardCustomize";
@@ -210,6 +212,8 @@ export default async function Page() {
     awaitingApproval,
     accountingPeriods,
     dueTemplateCount,
+    allFilings,
+    allowedEntityIds,
   ] = await Promise.all([
     getKpis(),
     getBusinessKpis(new Date().getUTCFullYear()),
@@ -232,6 +236,8 @@ export default async function Page() {
       : Promise.resolve([]),
     getAccountingPeriods(),
     getDueRecurringTemplateCount(demoTodayIso),
+    getEntityFilings(),
+    getAllowedEntityIds(user),
   ]);
 
   // Widget data: pick the current period plus the two preceding ones so the
@@ -337,6 +343,26 @@ export default async function Page() {
     })
     .slice()
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+
+  // Compliance calendar widget: overdue count + the next 5 upcoming open
+  // filings. "Open" = pending / in_progress; overdue derives from due_date.
+  // user_entity_access scoping — same filter /filings applies.
+  const entityById = new Map(entities.map((e) => [e.id, e] as const));
+  const scopedFilings =
+    allowedEntityIds === null
+      ? allFilings
+      : allFilings.filter((f) => allowedEntityIds.has(f.entityId));
+  const openFilings = scopedFilings.filter(
+    (f) => f.status === "pending" || f.status === "in_progress",
+  );
+  const overdueFilingsCount = openFilings.filter(
+    (f) => f.dueDate < todayIso,
+  ).length;
+  const upcomingFilings = openFilings
+    .filter((f) => f.dueDate >= todayIso)
+    .slice()
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .slice(0, 5);
 
   return (
     <>
@@ -940,6 +966,72 @@ export default async function Page() {
                 })}
               </TBody>
             </Table>
+          </Card>
+        </div>
+      )}
+
+      {show("filingsDue") && (overdueFilingsCount > 0 || upcomingFilings.length > 0) && (
+        <div className="px-6 mb-8">
+          <Card
+            title="Filings due"
+            actions={
+              <span className="flex items-center gap-2">
+                {overdueFilingsCount > 0 && (
+                  <Pill variant="review">{overdueFilingsCount} overdue</Pill>
+                )}
+                <Link
+                  href="/filings"
+                  style={{ color: "var(--ink-3)", textDecoration: "none" }}
+                >
+                  Filings calendar →
+                </Link>
+              </span>
+            }
+          >
+            {upcomingFilings.length === 0 ? (
+              <div
+                className="px-3.5 py-2.5 text-[12.5px]"
+                style={{ color: "var(--ink-3)" }}
+              >
+                No upcoming filings — but {overdueFilingsCount} overdue.{" "}
+                <Link href="/filings" style={{ color: "var(--ink-2)" }}>
+                  Review the calendar →
+                </Link>
+              </div>
+            ) : (
+              <Table>
+                <THead>
+                  <TR hover={false}>
+                    <TH>Entity</TH>
+                    <TH>Filing</TH>
+                    <TH>Jurisdiction</TH>
+                    <TH>Due</TH>
+                  </TR>
+                </THead>
+                <TBody>
+                  {upcomingFilings.map((f) => {
+                    const ent = entityById.get(f.entityId);
+                    return (
+                      <TR key={f.id} href={`/entities/${f.entityId}`}>
+                        <TD mono>
+                          <Link
+                            href={`/entities/${f.entityId}`}
+                            style={{ color: "var(--ink)", textDecoration: "none" }}
+                          >
+                            {ent ? ent.code : f.entityId}
+                          </Link>
+                        </TD>
+                        <TD wrap>{f.title}</TD>
+                        <TD style={{ color: "var(--ink-3)" }}>
+                          {f.jurisdiction ?? "—"}
+                        </TD>
+                        <TD>{formatShortDate(f.dueDate)}</TD>
+                      </TR>
+                    );
+                  })}
+                </TBody>
+              </Table>
+            )}
           </Card>
         </div>
       )}

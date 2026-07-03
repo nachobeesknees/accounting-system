@@ -56,6 +56,14 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    heading: "Compliance",
+    items: [
+      { href: "/filings", label: "Filings Calendar" },
+      { href: "/kyc", label: "KYC Reviews" },
+      { href: "/distributions", label: "Distributions" },
+    ],
+  },
+  {
     heading: "Reporting",
     items: [
       { href: "/reports", label: "Financial Statements" },

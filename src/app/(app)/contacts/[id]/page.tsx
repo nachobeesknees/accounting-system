@@ -128,6 +128,7 @@ export default async function Page({
                 {contact.isVendor && <Pill variant="formation">Vendor</Pill>}
                 {contact.isEmployee && <Pill variant="pending">Employee</Pill>}
                 {contact.isIntermediary && <Pill variant="neutral">Intermediary</Pill>}
+                {contact.isBeneficiary && <Pill variant="formation">Beneficiary</Pill>}
               </div>
             }
           >
@@ -173,6 +174,14 @@ export default async function Page({
                       defaultChecked={contact.isIntermediary}
                     />
                     <span style={{ color: "var(--ink-2)" }}>Intermediary</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      name="isBeneficiary"
+                      defaultChecked={contact.isBeneficiary}
+                    />
+                    <span style={{ color: "var(--ink-2)" }}>Beneficiary</span>
                   </label>
                   <label className="flex items-center gap-2">
                     <input type="checkbox" name="isActive" defaultChecked={contact.isActive} />

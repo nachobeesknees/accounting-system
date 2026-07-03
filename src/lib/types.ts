@@ -139,6 +139,15 @@ export type Entity = {
   /** Client's beneficial ownership of the entity as a percent (0–100).
    *  Stored as a numeric string; null = unspecified (treat as 100%). */
   ownershipPercent?: string | null;
+  /** KYC / AML due-diligence fields — same vocabulary as Customer. */
+  kycStatus?: KycStatus;
+  riskRating?: RiskRating | null;
+  pepFlag?: boolean;
+  /** ISO timestamp of the last sanctions-screening run. */
+  sanctionsCheckedAt?: string | null;
+  /** yyyy-mm-dd. Review is DERIVED overdue when this date < today. */
+  kycNextReviewDate?: string | null;
+  kycNotes?: string | null;
 };
 
 export type Currency = {
@@ -441,6 +450,10 @@ export type Contact = {
   isVendor: boolean;
   isEmployee: boolean;
   isIntermediary: boolean;
+  /** Beneficiary register: eligible recipient of entity distributions.
+   *  Optional so legacy literals (seed) stay valid; read side always
+   *  populates it. */
+  isBeneficiary?: boolean;
   customerId: string | null;
   vendorId: string | null;
   userId: string | null;
@@ -525,6 +538,16 @@ export type Customer = {
   taxRate?: string;
   /** Hard exemption — every invoice for this client gets tax=0. */
   taxExempt?: boolean;
+  /** KYC / AML due-diligence fields. Overdue is DERIVED:
+   *  kycNextReviewDate < today (regardless of status). */
+  kycStatus?: KycStatus;
+  riskRating?: RiskRating | null;
+  pepFlag?: boolean;
+  /** ISO timestamp of the last sanctions-screening run. */
+  sanctionsCheckedAt?: string | null;
+  /** yyyy-mm-dd next periodic-review date. */
+  kycNextReviewDate?: string | null;
+  kycNotes?: string | null;
   isActive: boolean;
   notes: string | null;
 };
@@ -849,4 +872,99 @@ export type SessionUser = {
   fullName: string;
   role: string;
   isSuperuser: boolean;
+};
+
+// ---- Compliance chain: filings / KYC / distributions ----
+
+export type FilingKind =
+  | "annual_return"
+  | "license_renewal"
+  | "agent_renewal"
+  | "fatca"
+  | "crs"
+  | "tax_return"
+  | "economic_substance"
+  | "other";
+
+export type FilingRecurrence =
+  | "none"
+  | "monthly"
+  | "quarterly"
+  | "annual"
+  | "biennial";
+
+/** "Overdue" is derived: dueDate < today while pending / in_progress. */
+export type FilingStatus = "pending" | "in_progress" | "filed" | "waived";
+
+export type EntityFiling = {
+  id: string;
+  entityId: string;
+  kind: FilingKind;
+  title: string;
+  jurisdiction: string | null;
+  dueDate: string;
+  recurrence: FilingRecurrence;
+  status: FilingStatus;
+  completedAt: string | null;
+  completedBy: string | null;
+  ownerUserId: string | null;
+  notes: string | null;
+};
+
+export type KycStatus = "not_started" | "in_progress" | "verified";
+
+export type RiskRating = "low" | "medium" | "high";
+
+export type KycSubjectType = "customer" | "entity";
+
+export type KycReviewOutcome = "cleared" | "escalated" | "refreshed";
+
+export type KycReview = {
+  id: string;
+  subjectType: KycSubjectType;
+  subjectId: string;
+  reviewDate: string;
+  outcome: KycReviewOutcome;
+  riskRatingAfter: RiskRating | null;
+  reviewerUserId: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
+/**
+ * Distribution to a beneficiary from a client entity. Dual approval:
+ *   requested → first_approved → approved → paid
+ * with rejection possible at any pre-paid stage. journalEntryId is set
+ * only when the funding bank account is GL-linked (firm account).
+ */
+export type DistributionStatus =
+  | "requested"
+  | "first_approved"
+  | "approved"
+  | "paid"
+  | "rejected"
+  | "void";
+
+export type Distribution = {
+  id: string;
+  distributionNumber: string;
+  entityId: string;
+  beneficiaryContactId: string;
+  amount: string;
+  currencyCode: string;
+  bankAccountId: string | null;
+  status: DistributionStatus;
+  requestedBy: string | null;
+  requestedAt: string;
+  firstApprovedBy: string | null;
+  firstApprovedAt: string | null;
+  secondApprovedBy: string | null;
+  secondApprovedAt: string | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  rejectionReason: string | null;
+  paidAt: string | null;
+  journalEntryId: string | null;
+  resolutionReference: string | null;
+  notes: string | null;
 };

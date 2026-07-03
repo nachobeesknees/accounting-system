@@ -15,6 +15,11 @@ import {
   getRegions,
 } from "@/lib/data";
 import { formatMoney, parseAmount } from "@/lib/money";
+import {
+  KYC_STATUS_LABELS,
+  isKycOverdue,
+  kycStatusVariant,
+} from "@/lib/compliance";
 import type { Customer } from "@/lib/types";
 
 function filterCustomers(
@@ -176,6 +181,7 @@ export default async function Page({
                   <TH>Email</TH>
                   <TH>Phone</TH>
                   <TH>Region</TH>
+                  <TH>KYC</TH>
                   <TH num>Terms</TH>
                   <TH num>Balance (USD)</TH>
                   <TH>Status</TH>
@@ -211,6 +217,15 @@ export default async function Page({
                         {c.phone ?? "—"}
                       </TD>
                       <TD style={{ color: "var(--ink-3)" }}>{regionName}</TD>
+                      <TD>
+                        {isKycOverdue(c.kycNextReviewDate) ? (
+                          <Pill variant="review">Overdue</Pill>
+                        ) : (
+                          <Pill variant={kycStatusVariant(c.kycStatus ?? "not_started")}>
+                            {KYC_STATUS_LABELS[c.kycStatus ?? "not_started"]}
+                          </Pill>
+                        )}
+                      </TD>
                       <TD num>{`Net ${c.paymentTerms}`}</TD>
                       <TD num>{formatMoney(balance, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
                       <TD>
@@ -223,6 +238,7 @@ export default async function Page({
                 })}
                 <TR total hover={false}>
                   <TD>Total</TD>
+                  <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD>{""}</TD>

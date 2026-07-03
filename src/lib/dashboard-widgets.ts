@@ -14,6 +14,7 @@ export const DASHBOARD_WIDGETS = [
   { key: "periodStatus", label: "Period status" },
   { key: "activity", label: "Recent journal entries & upcoming bills" },
   { key: "overdueInvoices", label: "Overdue invoices" },
+  { key: "filingsDue", label: "Filings due" },
 ] as const;
 
 export type DashboardWidgetKey = (typeof DASHBOARD_WIDGETS)[number]["key"];

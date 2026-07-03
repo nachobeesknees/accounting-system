@@ -12,21 +12,33 @@ import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAssetsByEntityId,
+  getContacts,
   getCurrencies,
   getCustomers,
+  getDistributionsByEntityId,
   getEntityById,
   getEntityFeesByEntityId,
+  getEntityFilingsByEntityId,
+  getKycReviewsForSubject,
   getLatestSnapshotByAsset,
   getRegionGroups,
   getRegions,
+  getUsers,
 } from "@/lib/data";
 import { getSessionUser } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 import { getAllowedEntityIds } from "@/lib/entity-access";
 import { CustomFields } from "@/components/CustomFields";
 import { Attachments } from "@/components/Attachments";
+import { FilingsTable } from "@/components/compliance/FilingsTable";
+import { KycCard } from "@/components/compliance/KycCard";
 import type { AssetKind, EntityKind } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
+import {
+  DISTRIBUTION_STATUS_LABELS,
+  distributionStatusVariant,
+} from "@/lib/compliance";
 import { deleteEntityAction, updateEntityAction } from "./actions";
 
 function periodCount(freq: string | null | undefined): number {
@@ -103,6 +115,11 @@ export default async function Page({
     allowedEntityIds,
     assets,
     latestByAsset,
+    filings,
+    kycReviews,
+    distributions,
+    users,
+    contacts,
   ] = await Promise.all([
     getEntityById(id),
     getCustomers(),
@@ -113,6 +130,11 @@ export default async function Page({
     getAllowedEntityIds(user),
     getAssetsByEntityId(id),
     getLatestSnapshotByAsset(),
+    getEntityFilingsByEntityId(id),
+    getKycReviewsForSubject("entity", id),
+    getDistributionsByEntityId(id),
+    getUsers(),
+    getContacts(),
   ]);
   if (!entity) notFound();
   // user_entity_access — restricted users see 404 on entities they can't reach.
@@ -132,6 +154,17 @@ export default async function Page({
     const order = { active: 0, draft: 1, billed: 2, paid: 3, void: 4 } as Record<string, number>;
     return (order[a.status] ?? 99) - (order[b.status] ?? 99);
   });
+
+  // Compliance chain context for the cards below.
+  const canWriteFilings = hasPermission(user, "filing.write");
+  const canWriteKyc = hasPermission(user, "kyc.write");
+  const canCreateDistribution = hasPermission(user, "distribution.create");
+  const userNameById = new Map(users.map((u) => [u.id, u.fullName] as const));
+  const contactNameById = new Map(contacts.map((c) => [c.id, c.name] as const));
+  const entityLabelById = new Map([
+    [entity.id, `${entity.code} — ${entity.name}`] as const,
+  ]);
+  const recentDistributions = distributions.slice(0, 5);
 
   return (
     <>
@@ -455,6 +488,136 @@ export default async function Page({
                     </TR>
                   );
                 })}
+              </TBody>
+            </Table>
+          )}
+        </Card>
+
+        <Card
+          title="Compliance"
+          actions={
+            <span className="flex items-center gap-3">
+              {canWriteFilings && (
+                <Link
+                  href={`/filings/new?entity=${entity.id}&returnTo=${encodeURIComponent(
+                    `/entities/${entity.id}`,
+                  )}`}
+                  style={{ color: "var(--ink-3)", textDecoration: "none" }}
+                >
+                  + Add filing →
+                </Link>
+              )}
+              <Link
+                href="/filings"
+                style={{ color: "var(--ink-3)", textDecoration: "none" }}
+              >
+                Filings calendar →
+              </Link>
+            </span>
+          }
+        >
+          {filings.length === 0 ? (
+            <Empty
+              title="No filings tracked for this entity"
+              body="Track annual returns, license/agent renewals, FATCA/CRS, tax returns, and economic-substance filings here."
+            />
+          ) : (
+            <FilingsTable
+              filings={filings}
+              entityLabelById={entityLabelById}
+              userNameById={userNameById}
+              canWrite={canWriteFilings}
+              returnTo={`/entities/${entity.id}`}
+              showEntity={false}
+            />
+          )}
+        </Card>
+
+        <KycCard
+          subjectType="entity"
+          subjectId={entity.id}
+          profile={{
+            kycStatus: entity.kycStatus ?? "not_started",
+            riskRating: entity.riskRating ?? null,
+            pepFlag: !!entity.pepFlag,
+            sanctionsCheckedAt: entity.sanctionsCheckedAt ?? null,
+            kycNextReviewDate: entity.kycNextReviewDate ?? null,
+            kycNotes: entity.kycNotes ?? null,
+          }}
+          reviews={kycReviews}
+          userNameById={userNameById}
+          canWrite={canWriteKyc}
+          returnTo={`/entities/${entity.id}`}
+        />
+
+        <Card
+          title="Distributions"
+          actions={
+            <span className="flex items-center gap-3">
+              {canCreateDistribution && (
+                <Link
+                  href={`/distributions/new?entity=${entity.id}`}
+                  style={{ color: "var(--ink-3)", textDecoration: "none" }}
+                >
+                  + New distribution →
+                </Link>
+              )}
+              <Link
+                href="/distributions"
+                style={{ color: "var(--ink-3)", textDecoration: "none" }}
+              >
+                All distributions →
+              </Link>
+            </span>
+          }
+        >
+          {recentDistributions.length === 0 ? (
+            <Empty
+              title="No distributions from this entity"
+              body="Beneficiary payouts pass dual approval before payment. Client-account payouts never touch the firm ledger."
+            />
+          ) : (
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Number</TH>
+                  <TH>Beneficiary</TH>
+                  <TH num>Amount</TH>
+                  <TH>Requested</TH>
+                  <TH>Status</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {recentDistributions.map((d) => (
+                  <TR key={d.id} href={`/distributions/${d.id}`}>
+                    <TD mono>
+                      <Link
+                        href={`/distributions/${d.id}`}
+                        style={{ color: "var(--ink)", textDecoration: "none" }}
+                      >
+                        {d.distributionNumber}
+                      </Link>
+                    </TD>
+                    <TD>
+                      {contactNameById.get(d.beneficiaryContactId) ??
+                        d.beneficiaryContactId}
+                    </TD>
+                    <TD num>
+                      {formatMoney(d.amount, d.currencyCode, {
+                        paren: true,
+                        compact: true,
+                      })}
+                    </TD>
+                    <TD style={{ color: "var(--ink-3)" }}>
+                      {formatDate(d.requestedAt.slice(0, 10))}
+                    </TD>
+                    <TD>
+                      <Pill variant={distributionStatusVariant(d.status)}>
+                        {DISTRIBUTION_STATUS_LABELS[d.status] ?? d.status}
+                      </Pill>
+                    </TD>
+                  </TR>
+                ))}
               </TBody>
             </Table>
           )}
