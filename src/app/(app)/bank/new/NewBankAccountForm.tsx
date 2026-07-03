@@ -75,12 +75,22 @@ export function NewBankAccountForm({
                 placeholder="JPMorgan Private Bank"
               />
               <Field
-                label="Last 4 of account number"
-                name="lastFour"
+                label="ABA routing number"
+                name="routingNumber"
                 mono
-                maxLength={4}
-                placeholder="0000"
+                maxLength={9}
+                placeholder="021000021"
               />
+            </Row>
+            <Row>
+              <Field
+                label="Account number"
+                name="accountNumber"
+                mono
+                placeholder="Full account number"
+                help="Stored in full; always displayed masked (····1234)."
+              />
+              <div />
             </Row>
             <Row>
               <Field

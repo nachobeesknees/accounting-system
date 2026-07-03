@@ -1280,6 +1280,7 @@ export type CreateAssetInput = {
     | "real_estate"
     | "securities"
     | "cash"
+    | "bank_account"
     | "private_equity"
     | "art"
     | "vehicle"
@@ -1292,6 +1293,10 @@ export type CreateAssetInput = {
   externalRef?: string | null;
   acquiredDate?: string | null;
   valuationDate?: string | null;
+  /** Kind-specific fields (see src/lib/asset-fields.ts). */
+  details?: Record<string, string>;
+  /** kind = bank_account → linked bank_accounts row. */
+  bankAccountId?: string | null;
   notes?: string | null;
 };
 
@@ -1315,6 +1320,8 @@ export async function createAsset(user: SessionUser, input: CreateAssetInput) {
       externalRef: input.externalRef ?? null,
       acquiredDate: input.acquiredDate ?? null,
       valuationDate: input.valuationDate ?? null,
+      details: input.details ?? {},
+      bankAccountId: input.bankAccountId ?? null,
       notes: input.notes ?? null,
     })
     .returning();
@@ -1341,6 +1348,8 @@ export async function updateAsset(
       ...(input.externalRef !== undefined && { externalRef: input.externalRef }),
       ...(input.acquiredDate !== undefined && { acquiredDate: input.acquiredDate }),
       ...(input.valuationDate !== undefined && { valuationDate: input.valuationDate }),
+      ...(input.details !== undefined && { details: input.details }),
+      ...(input.bankAccountId !== undefined && { bankAccountId: input.bankAccountId }),
       ...(input.notes !== undefined && { notes: input.notes }),
       updatedAt: new Date(),
     })
@@ -3878,10 +3887,20 @@ export async function generateChargebackInvoice(
 
 // --------- Bank accounts + signers ---------
 
+/** Last four characters of an account number, for masked list display. */
+function deriveLastFour(accountNumber: string | null | undefined): string | null {
+  const cleaned = (accountNumber ?? "").replace(/[^0-9A-Za-z]/g, "");
+  return cleaned.length >= 4 ? cleaned.slice(-4) : cleaned || null;
+}
+
 export type CreateBankAccountInput = {
   name: string;
   accountId: string; // GL account
   institution?: string | null;
+  /** Full account number — stored whole, always DISPLAYED masked. */
+  accountNumber?: string | null;
+  /** ABA routing number. */
+  routingNumber?: string | null;
   lastFour?: string | null;
   currencyCode?: string;
   entityId?: string | null;
@@ -3906,7 +3925,13 @@ export async function createBankAccount(
       name: input.name,
       accountId: input.accountId,
       institution: input.institution ?? null,
-      lastFour: input.lastFour ?? null,
+      accountNumber: input.accountNumber ?? null,
+      routingNumber: input.routingNumber ?? null,
+      // last_four stays derived from the full number when we have one so
+      // masked list display never disagrees with the number on file.
+      lastFour: input.accountNumber
+        ? deriveLastFour(input.accountNumber)
+        : (input.lastFour ?? null),
       currencyCode: input.currencyCode ?? "USD",
       isActive: true,
       entityId: input.entityId ?? null,
@@ -3940,7 +3965,15 @@ export async function updateBankAccount(
       ...(input.name !== undefined && { name: input.name }),
       ...(input.accountId !== undefined && { accountId: input.accountId }),
       ...(input.institution !== undefined && { institution: input.institution }),
-      ...(input.lastFour !== undefined && { lastFour: input.lastFour }),
+      // A new full number re-derives last_four; otherwise honor an explicit
+      // lastFour edit (legacy rows that only ever stored the last four).
+      ...(input.accountNumber !== undefined && {
+        accountNumber: input.accountNumber,
+        lastFour: deriveLastFour(input.accountNumber),
+      }),
+      ...(input.routingNumber !== undefined && { routingNumber: input.routingNumber }),
+      ...(input.accountNumber === undefined &&
+        input.lastFour !== undefined && { lastFour: input.lastFour }),
       ...(input.currencyCode !== undefined && { currencyCode: input.currencyCode }),
       ...(input.isActive !== undefined && { isActive: input.isActive }),
       ...(input.entityId !== undefined && { entityId: input.entityId }),

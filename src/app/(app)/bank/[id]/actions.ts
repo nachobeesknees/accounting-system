@@ -33,7 +33,10 @@ export async function updateBankAccountAction(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const accountId = String(formData.get("accountId") ?? "").trim();
   const institution = String(formData.get("institution") ?? "").trim();
-  const lastFour = String(formData.get("lastFour") ?? "").trim();
+  // Blank = keep the number on file (the form never echoes the full
+  // number back, so an untouched field must not clear it).
+  const accountNumber = String(formData.get("accountNumber") ?? "").trim();
+  const routingNumber = String(formData.get("routingNumber") ?? "").trim();
   const currencyCode = String(formData.get("currencyCode") ?? "").trim();
   const entityId = String(formData.get("entityId") ?? "").trim();
   const clientId = String(formData.get("clientId") ?? "").trim();
@@ -51,7 +54,8 @@ export async function updateBankAccountAction(formData: FormData) {
       name: name || undefined,
       accountId: accountId || undefined,
       institution: institution || null,
-      lastFour: lastFour || null,
+      ...(accountNumber !== "" && { accountNumber }),
+      routingNumber: routingNumber || null,
       currencyCode: currencyCode || undefined,
       entityId: entityId || null,
       clientId: clientId || null,

@@ -460,6 +460,7 @@ export type AssetKind =
   | "real_estate"
   | "securities"
   | "cash"
+  | "bank_account"
   | "private_equity"
   | "art"
   | "vehicle"
@@ -484,6 +485,11 @@ export type Asset = {
   /** Date the asset's current carrying value is as-of. Drives the AUA
    *  report's "as of date" filter. Null = no explicit valuation date. */
   valuationDate?: string | null;
+  /** Kind-specific fields keyed by src/lib/asset-fields.ts catalogs.
+   *  Read side always populates ({} when empty). */
+  details?: Record<string, string>;
+  /** kind = bank_account → linked bank_accounts row (number/ABA/signers). */
+  bankAccountId?: string | null;
   notes: string | null;
 };
 
@@ -713,6 +719,11 @@ export type BankAccount = {
   name: string;
   accountId: string;
   institution: string | null;
+  /** Full account number. Never render raw — use maskAccountNumber().
+   *  Read side always populates (null when not on file). */
+  accountNumber?: string | null;
+  /** ABA routing number. */
+  routingNumber?: string | null;
   lastFour: string | null;
   currencyCode: string;
   isActive: boolean;

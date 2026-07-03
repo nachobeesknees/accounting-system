@@ -189,8 +189,22 @@ function mapAsset(r: typeof schema.assets.$inferSelect): Asset {
     externalRef: r.externalRef,
     acquiredDate: r.acquiredDate,
     valuationDate: (r as { valuationDate?: string | null }).valuationDate ?? null,
+    details: asAssetDetails((r as { details?: unknown }).details),
+    bankAccountId: (r as { bankAccountId?: string | null }).bankAccountId ?? null,
     notes: r.notes,
   };
+}
+
+/** Coerce the details jsonb into a flat string map (values render into
+ *  form inputs; anything non-string is stringified). */
+function asAssetDetails(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (v == null) continue;
+    out[k] = typeof v === "string" ? v : String(v);
+  }
+  return out;
 }
 
 function mapSnapshot(
@@ -556,6 +570,8 @@ function mapBankAccount(r: typeof schema.bankAccounts.$inferSelect): BankAccount
     name: r.name,
     accountId: r.accountId,
     institution: r.institution,
+    accountNumber: r.accountNumber ?? null,
+    routingNumber: r.routingNumber ?? null,
     lastFour: r.lastFour,
     currencyCode: r.currencyCode,
     isActive: r.isActive,

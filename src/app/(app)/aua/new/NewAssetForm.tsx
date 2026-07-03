@@ -1,39 +1,44 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { SmartSelectField } from "@/components/ui/SmartSelect";
+import { AssetDetailRows } from "@/components/AssetDetailFields";
+import {
+  ASSET_KIND_FIELDS,
+  ASSET_KIND_LABEL,
+  ASSET_KINDS,
+} from "@/lib/asset-fields";
+import { maskAccountNumber } from "@/lib/format";
 import { createAssetAction, type CreateAssetState } from "./actions";
-import type { Customer, Entity } from "@/lib/types";
+import type { Account, AssetKind, BankAccount, Customer, Entity } from "@/lib/types";
 
 const initial: CreateAssetState = { error: null };
-
-const KIND_OPTIONS = [
-  { value: "real_estate", label: "Real Estate" },
-  { value: "securities", label: "Securities" },
-  { value: "cash", label: "Cash" },
-  { value: "private_equity", label: "Private Equity" },
-  { value: "art", label: "Art" },
-  { value: "vehicle", label: "Vehicle" },
-  { value: "business_interest", label: "Business Interest" },
-  { value: "intellectual_property", label: "Intellectual Property" },
-  { value: "other", label: "Other" },
-];
 
 export function NewAssetForm({
   entities,
   customers,
+  bankAccounts,
+  glAccounts,
   defaultEntityId,
 }: {
   entities: Entity[];
   customers: Customer[];
+  bankAccounts: BankAccount[];
+  glAccounts: Account[];
   defaultEntityId?: string;
 }) {
   const [state, action] = useActionState(createAssetAction, initial);
+  const [kind, setKind] = useState<AssetKind>("real_estate");
+  // bank_account kind: link an existing bank account or create one inline.
+  const [bankMode, setBankMode] = useState<"existing" | "new">("existing");
   const customerById = new Map(customers.map((c) => [c.id, c] as const));
+  const cashGlAccounts = glAccounts.filter(
+    (a) => a.accountType === "asset" && a.code.startsWith("1"),
+  );
   // When the user arrived from an entity page (?entity=...), the entity is
   // mandatory and locked — assets are entity-scoped. Without that param the
   // selector is shown but still required.
@@ -85,10 +90,16 @@ export function NewAssetForm({
                 required
                 placeholder="401 Pine Tower (Seattle)"
               />
-              <SelectField label="Kind" name="kind" required defaultValue="real_estate">
-                {KIND_OPTIONS.map((k) => (
-                  <option key={k.value} value={k.value}>
-                    {k.label}
+              <SelectField
+                label="Kind"
+                name="kind"
+                required
+                value={kind}
+                onChange={(e) => setKind(e.target.value as AssetKind)}
+              >
+                {ASSET_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {ASSET_KIND_LABEL[k]}
                   </option>
                 ))}
               </SelectField>
@@ -165,6 +176,88 @@ export function NewAssetForm({
             <TextareaField label="Notes" name="notes" placeholder="Optional notes" />
           </div>
         </Card>
+
+        {ASSET_KIND_FIELDS[kind].length > 0 && (
+          <Card title={`${ASSET_KIND_LABEL[kind]} details`}>
+            <div className="flex flex-col gap-3">
+              <AssetDetailRows kind={kind} />
+            </div>
+          </Card>
+        )}
+
+        {kind === "bank_account" && (
+          <Card title="Bank account details">
+            <div className="flex flex-col gap-3">
+              <Row>
+                <SelectField
+                  label="Bank account"
+                  value={bankMode}
+                  onChange={(e) =>
+                    setBankMode(e.target.value as "existing" | "new")
+                  }
+                >
+                  <option value="existing">Link an existing bank account</option>
+                  <option value="new">Create a new bank account</option>
+                </SelectField>
+                <div />
+              </Row>
+              {bankMode === "existing" ? (
+                <Row>
+                  <SmartSelectField
+                    label="Existing bank account"
+                    name="bankAccountId"
+                    required
+                    options={bankAccounts.map((b) => ({
+                      value: b.id,
+                      label: `${b.name}${b.institution ? ` · ${b.institution}` : ""} ${maskAccountNumber(b.accountNumber, b.lastFour)}`,
+                      search: b.lastFour ?? "",
+                    }))}
+                    emptyLabel="Select bank account…"
+                    help="Signers, routing, and the account number live on the bank account record."
+                  />
+                  <div />
+                </Row>
+              ) : (
+                <>
+                  <Row>
+                    <Field
+                      label="Institution"
+                      name="bankNew[institution]"
+                      placeholder="JPMorgan Private Bank"
+                    />
+                    <SmartSelectField
+                      label="GL account"
+                      name="bankNew[accountId]"
+                      required
+                      options={cashGlAccounts.map((a) => ({
+                        value: a.id,
+                        label: `${a.code} — ${a.name}`,
+                        search: a.code,
+                      }))}
+                      emptyLabel="Select GL account…"
+                    />
+                  </Row>
+                  <Row>
+                    <Field
+                      label="ABA routing number"
+                      name="bankNew[routingNumber]"
+                      mono
+                      maxLength={9}
+                      placeholder="021000021"
+                    />
+                    <Field
+                      label="Account number"
+                      name="bankNew[accountNumber]"
+                      mono
+                      placeholder="Full account number"
+                      help="Stored in full; always displayed masked (····1234). Add signers on the bank account page after creating."
+                    />
+                  </Row>
+                </>
+              )}
+            </div>
+          </Card>
+        )}
 
         <div className="flex justify-end gap-2">
           <Link

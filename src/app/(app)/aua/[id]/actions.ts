@@ -9,19 +9,10 @@ import {
   updateAsset,
 } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
+import { ASSET_KINDS, parseAssetDetails } from "@/lib/asset-fields";
 import type { AssetKind } from "@/lib/types";
 
-const VALID_KINDS: AssetKind[] = [
-  "real_estate",
-  "securities",
-  "cash",
-  "private_equity",
-  "art",
-  "vehicle",
-  "business_interest",
-  "intellectual_property",
-  "other",
-];
+const VALID_KINDS: AssetKind[] = ASSET_KINDS;
 
 function isRedirect(err: unknown): boolean {
   return (
@@ -48,19 +39,23 @@ export async function updateAssetAction(formData: FormData) {
   const acquiredDate = String(formData.get("acquiredDate") ?? "").trim();
   const valuationDate = String(formData.get("valuationDate") ?? "").trim();
   const notes = String(formData.get("notes") ?? "").trim();
+  const kind = (VALID_KINDS as readonly string[]).includes(kindRaw)
+    ? (kindRaw as AssetKind)
+    : undefined;
 
   try {
     await updateAsset(user, id, {
       name: name || undefined,
-      kind: (VALID_KINDS as readonly string[]).includes(kindRaw)
-        ? (kindRaw as AssetKind)
-        : undefined,
+      kind,
       entityId: entityId || null,
       clientId: clientId || null,
       currencyCode: currencyCode || undefined,
       externalRef: externalRef || null,
       acquiredDate: acquiredDate || null,
       valuationDate: valuationDate || null,
+      // The form renders the submitted kind's field set, so this parse is
+      // the complete new value. Changing kind intentionally resets details.
+      ...(kind !== undefined && { details: parseAssetDetails(formData, kind) }),
       notes: notes || null,
     });
   } catch (err) {

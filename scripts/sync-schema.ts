@@ -11,7 +11,21 @@ const NULLABLE_TEXT = "text";
 
 type ColumnSpec = { table: string; column: string; type: string; notNull?: boolean; default?: string };
 
+// Enum values added after the type was first created. Applied with
+// ALTER TYPE ... ADD VALUE IF NOT EXISTS (idempotent, additive only).
+const ENUM_VALUES: Array<{ enumName: string; value: string }> = [
+  { enumName: "asset_kind", value: "bank_account" },
+];
+
 const COLUMNS: ColumnSpec[] = [
+  // Typed asset details + bank-account-as-asset link
+  { table: "assets", column: "details", type: "jsonb", notNull: true, default: "'{}'::jsonb" },
+  { table: "assets", column: "bank_account_id", type: "text" },
+
+  // Full (maskable) account number + ABA routing on bank accounts
+  { table: "bank_accounts", column: "account_number", type: "text" },
+  { table: "bank_accounts", column: "routing_number", type: "text" },
+
   // Split chargebacks: per-line client billing on vendor bills
   { table: "bills", column: "chargeback_split", type: "boolean", notNull: true, default: "false" },
   { table: "bill_lines", column: "chargeback_invoice_id", type: "text" },
@@ -612,6 +626,11 @@ async function main() {
       console.log(`+ CREATE TABLE ${t.name}`);
       await sql.unsafe(t.ddl);
     }
+  }
+  for (const ev of ENUM_VALUES) {
+    const stmt = `ALTER TYPE ${ev.enumName} ADD VALUE IF NOT EXISTS '${ev.value}'`;
+    console.log(`~ ${stmt}`);
+    await sql.unsafe(stmt);
   }
   for (const c of COLUMNS) {
     const exists = await sql<{ exists: boolean }[]>`

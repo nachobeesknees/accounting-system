@@ -18,7 +18,7 @@ import {
   getEntities,
   getSignersByBankAccountId,
 } from "@/lib/data";
-import { formatDate } from "@/lib/format";
+import { formatDate, maskAccountNumber } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
 import type { SigningAuthority } from "@/lib/types";
 import { CustomFields } from "@/components/CustomFields";
@@ -79,8 +79,8 @@ export default async function Page({
         title={bank.name}
         meta={
           bank.institution
-            ? `${bank.institution}${bank.lastFour ? ` ····${bank.lastFour}` : ""}`
-            : "Bank account"
+            ? `${bank.institution} ${maskAccountNumber(bank.accountNumber, bank.lastFour)}`
+            : `Bank account ${maskAccountNumber(bank.accountNumber, bank.lastFour)}`
         }
         actions={
           <>
@@ -147,12 +147,22 @@ export default async function Page({
                       defaultValue={bank.institution ?? ""}
                     />
                     <Field
-                      label="Last 4"
-                      name="lastFour"
+                      label="ABA routing number"
+                      name="routingNumber"
                       mono
-                      maxLength={4}
-                      defaultValue={bank.lastFour ?? ""}
+                      maxLength={9}
+                      defaultValue={bank.routingNumber ?? ""}
                     />
+                  </Row>
+                  <Row>
+                    <Field
+                      label={`Account number (on file: ${maskAccountNumber(bank.accountNumber, bank.lastFour)})`}
+                      name="accountNumber"
+                      mono
+                      placeholder="Leave blank to keep the current number"
+                      help="The full number is stored but never displayed — only the last four digits show anywhere in the app."
+                    />
+                    <div />
                   </Row>
                   <Row>
                     <Field

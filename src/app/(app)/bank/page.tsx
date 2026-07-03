@@ -14,7 +14,7 @@ import {
   getEntities,
   getLatestFxRates,
 } from "@/lib/data";
-import { formatDate } from "@/lib/format";
+import { formatDate, maskAccountNumber } from "@/lib/format";
 import { formatAmount, parseAmount } from "@/lib/money";
 
 export default async function Page() {
@@ -106,7 +106,7 @@ export default async function Page() {
                         {b.institution ?? "—"}
                       </TD>
                       <TD mono style={{ color: "var(--ink-3)" }}>
-                        {b.lastFour ? `····${b.lastFour}` : "—"}
+                        {maskAccountNumber(b.accountNumber, b.lastFour)}
                       </TD>
                       <TD style={{ color: "var(--ink-3)" }}>
                         {ent ? `${ent.code} · ` : ""}

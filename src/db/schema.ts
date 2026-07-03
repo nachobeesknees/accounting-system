@@ -62,6 +62,7 @@ export const assetKindEnum = pgEnum("asset_kind", [
   "real_estate",
   "securities",
   "cash",
+  "bank_account",
   "private_equity",
   "art",
   "vehicle",
@@ -770,6 +771,12 @@ export const assets = pgTable("assets", {
    *  date. Independent from asset_value_snapshots.snapshot_date so an
    *  asset can carry a default valuation date without a snapshot row. */
   valuationDate: date("valuation_date"),
+  /** Kind-specific fields (address/APN for real estate, VIN for vehicles,
+   *  …) keyed by src/lib/asset-fields.ts. Defaults to {}. */
+  details: jsonb("details").notNull().default(sql`'{}'::jsonb`),
+  /** For kind = bank_account: the bank_accounts row this asset wraps —
+   *  account number, ABA, and signers live there. Soft FK. */
+  bankAccountId: text("bank_account_id"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -983,6 +990,11 @@ export const bankAccounts = pgTable("bank_accounts", {
   name: text("name").notNull(),
   accountId: text("account_id").notNull(),
   institution: text("institution"),
+  /** Full account number. NEVER render this raw — display via
+   *  maskAccountNumber() (····1234). last_four stays derived for lists. */
+  accountNumber: text("account_number"),
+  /** ABA routing number (not secret — banks print it on every check). */
+  routingNumber: text("routing_number"),
   lastFour: text("last_four"),
   currencyCode: text("currency_code").notNull().default("USD"),
   isActive: boolean("is_active").notNull().default(true),

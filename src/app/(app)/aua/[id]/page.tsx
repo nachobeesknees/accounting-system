@@ -12,33 +12,26 @@ import { MoneyInput } from "@/components/ui/MoneyInput";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAssetById,
+  getBankAccountById,
   getCustomers,
   getEntities,
+  getSignersByBankAccountId,
   getSnapshotsByAssetId,
   getUserById,
 } from "@/lib/data";
-import { formatDate } from "@/lib/format";
+import { formatDate, maskAccountNumber } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
-import type { AssetKind } from "@/lib/types";
 import { CustomFields } from "@/components/CustomFields";
 import { Attachments } from "@/components/Attachments";
+import { AssetDetailRows } from "@/components/AssetDetailFields";
+import { ASSET_KIND_FIELDS, ASSET_KIND_LABEL } from "@/lib/asset-fields";
 import {
   addSnapshotAction,
   deleteAssetAction,
   updateAssetAction,
 } from "./actions";
 
-const KIND_LABEL: Record<AssetKind, string> = {
-  real_estate: "Real Estate",
-  securities: "Securities",
-  cash: "Cash",
-  private_equity: "Private Equity",
-  art: "Art",
-  vehicle: "Vehicle",
-  business_interest: "Business Interest",
-  intellectual_property: "IP",
-  other: "Other",
-};
+const KIND_LABEL = ASSET_KIND_LABEL;
 
 export default async function Page({
   params,
@@ -57,6 +50,13 @@ export default async function Page({
     getEntities(),
     getCustomers(),
   ]);
+  // kind = bank_account → the linked bank record carries number/ABA/signers.
+  const linkedBank = asset.bankAccountId
+    ? await getBankAccountById(asset.bankAccountId)
+    : undefined;
+  const linkedSigners = linkedBank
+    ? await getSignersByBankAccountId(linkedBank.id)
+    : [];
   const entity = asset.entityId
     ? entities.find((e) => e.id === asset.entityId)
     : undefined;
@@ -200,6 +200,17 @@ export default async function Page({
                     />
                     <div />
                   </Row>
+                  {ASSET_KIND_FIELDS[asset.kind].length > 0 && (
+                    <>
+                      <div
+                        className="text-[11px] uppercase font-medium mt-1"
+                        style={{ color: "var(--ink-3)", letterSpacing: "0.04em" }}
+                      >
+                        {KIND_LABEL[asset.kind]} details
+                      </div>
+                      <AssetDetailRows kind={asset.kind} details={asset.details} />
+                    </>
+                  )}
                   <TextareaField
                     label="Notes"
                     name="notes"
@@ -252,6 +263,92 @@ export default async function Page({
             )}
           </Card>
         </div>
+
+        {asset.kind === "bank_account" && (
+          <Card
+            title="Bank account"
+            actions={
+              linkedBank ? (
+                <Link
+                  href={`/bank/${linkedBank.id}`}
+                  style={{ color: "var(--ink-3)", fontSize: 11.5 }}
+                >
+                  Manage on bank page →
+                </Link>
+              ) : undefined
+            }
+          >
+            {!linkedBank ? (
+              <Empty
+                title="No bank account linked"
+                body="This asset is kind Bank Account but has no linked bank record."
+              />
+            ) : (
+              <div className="flex flex-col gap-3 text-[12.5px]">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <div style={{ color: "var(--ink-3)", fontSize: 11.5 }}>Institution</div>
+                    <div>{linkedBank.institution ?? "—"}</div>
+                  </div>
+                  <div>
+                    <div style={{ color: "var(--ink-3)", fontSize: 11.5 }}>Account number</div>
+                    <div style={{ fontFamily: "var(--font-mono)" }}>
+                      {maskAccountNumber(linkedBank.accountNumber, linkedBank.lastFour)}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ color: "var(--ink-3)", fontSize: 11.5 }}>ABA routing</div>
+                    <div style={{ fontFamily: "var(--font-mono)" }}>
+                      {linkedBank.routingNumber ?? "—"}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ color: "var(--ink-3)", fontSize: 11.5 }}>Balance</div>
+                    <div style={{ fontFamily: "var(--font-mono)" }}>
+                      {linkedBank.currentBalance != null
+                        ? formatMoney(
+                            parseAmount(linkedBank.currentBalance),
+                            linkedBank.currencyCode,
+                            { compact: true, paren: true },
+                          )
+                        : "—"}
+                      {linkedBank.balanceAsOf
+                        ? ` · ${formatDate(linkedBank.balanceAsOf)}`
+                        : ""}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div
+                    className="text-[11px] uppercase font-medium"
+                    style={{ color: "var(--ink-3)", letterSpacing: "0.04em" }}
+                  >
+                    Signers ({linkedSigners.length})
+                  </div>
+                  {linkedSigners.length === 0 ? (
+                    <div style={{ color: "var(--ink-4)", marginTop: 4 }}>
+                      No signers on file — add them on the bank page.
+                    </div>
+                  ) : (
+                    <ul className="mt-1 flex flex-col gap-0.5">
+                      {linkedSigners.map((s) => (
+                        <li key={s.id}>
+                          {s.name}
+                          {s.title ? ` — ${s.title}` : ""}
+                          <span style={{ color: "var(--ink-3)" }}>
+                            {" "}
+                            · {s.authority.replace("_", " ")}
+                            {s.isPrimary ? " · primary" : ""}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+          </Card>
+        )}
 
         <form action={addSnapshotAction}>
           <input type="hidden" name="assetId" value={asset.id} />

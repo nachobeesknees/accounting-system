@@ -18,7 +18,8 @@ export async function createBankAccountAction(
   const name = String(formData.get("name") ?? "").trim();
   const accountId = String(formData.get("accountId") ?? "").trim();
   const institution = String(formData.get("institution") ?? "").trim();
-  const lastFour = String(formData.get("lastFour") ?? "").trim();
+  const accountNumber = String(formData.get("accountNumber") ?? "").trim();
+  const routingNumber = String(formData.get("routingNumber") ?? "").trim();
   const currencyCode = String(formData.get("currencyCode") ?? "USD").trim();
   const entityId = String(formData.get("entityId") ?? "").trim();
   const clientId = String(formData.get("clientId") ?? "").trim();
@@ -38,7 +39,8 @@ export async function createBankAccountAction(
       name,
       accountId,
       institution: institution || null,
-      lastFour: lastFour || null,
+      accountNumber: accountNumber || null,
+      routingNumber: routingNumber || null,
       currencyCode: currencyCode || "USD",
       entityId: entityId || null,
       clientId: clientId || null,

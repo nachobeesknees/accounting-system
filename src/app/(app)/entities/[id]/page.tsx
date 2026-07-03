@@ -74,6 +74,7 @@ const ASSET_KIND_LABEL: Record<AssetKind, string> = {
   real_estate: "Real Estate",
   securities: "Securities",
   cash: "Cash",
+  bank_account: "Bank Account",
   private_equity: "Private Equity",
   art: "Art",
   vehicle: "Vehicle",
