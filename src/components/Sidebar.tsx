@@ -81,6 +81,15 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    heading: "Close",
+    items: [
+      { href: "/close", label: "Month-End Checklist" },
+      { href: "/close/year-end", label: "Year-End Close" },
+      { href: "/close/fx-revaluation", label: "FX Revaluation" },
+      { href: "/schedules", label: "Amortization / Depreciation" },
+    ],
+  },
+  {
     heading: "Admin",
     items: [
       { href: "/offices", label: "Offices" },

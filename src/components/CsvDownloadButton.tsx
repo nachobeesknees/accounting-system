@@ -18,6 +18,7 @@ export function CsvDownloadButton({
     | "balance-sheet"
     | "income-statement"
     | "income-statement-monthly"
+    | "cash-flows"
     | "ar-aging"
     | "ap-aging";
   label?: string;

@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/session";
 import {
   accountsByType,
   getBudgetByAccount,
+  getCashFlowStatement,
   getIncomeStatementForPeriod,
   getKpisAsOf,
   getMonthlyIncomeStatement,
@@ -25,12 +26,14 @@ type ReportKey =
   | "trial-balance"
   | "balance-sheet"
   | "income-statement"
+  | "cash-flows"
   | "income-statement-monthly";
 
 const VALID: ReportKey[] = [
   "trial-balance",
   "balance-sheet",
   "income-statement",
+  "cash-flows",
   "income-statement-monthly",
 ];
 
@@ -152,6 +155,13 @@ export async function GET(
       : ["Section", "Code", "Account", `As of ${asOf}`];
     const rows: Array<Record<string, unknown>> = [];
 
+    // Equity total uses inception-to-date net income so the sheet balances in
+    // every close state (assets = liabilities + equity + netIncome_ITD holds by
+    // construction). currentYearEarnings alone drops un-closed prior years.
+    const cye = kpis.currentYearEarnings;
+    const cmpCye = cmpKpis?.currentYearEarnings ?? 0;
+    const priorUnclosed = kpis.netIncome - cye;
+    const cmpPriorUnclosed = (cmpKpis?.netIncome ?? 0) - cmpCye;
     const sectionTotals: Record<string, { curr: number; prev: number }> = {
       Assets: { curr: kpis.assets, prev: cmpKpis?.assets ?? 0 },
       Liabilities: { curr: kpis.liabilities, prev: cmpKpis?.liabilities ?? 0 },
@@ -168,6 +178,16 @@ export async function GET(
     rows.push({ Section: "Total Liabilities", Code: "", Account: "",
       [`As of ${asOf}`]: money(sectionTotals.Liabilities.curr),
       ...(cmpKpis ? { [cmpLabel]: money(sectionTotals.Liabilities.prev), "Δ": money(sectionTotals.Liabilities.curr - sectionTotals.Liabilities.prev) } : {}),
+    });
+    if (priorUnclosed !== 0 || cmpPriorUnclosed !== 0) {
+      rows.push({ Section: "Prior-Year Earnings (Unclosed)", Code: "", Account: "",
+        [`As of ${asOf}`]: money(priorUnclosed),
+        ...(cmpKpis ? { [cmpLabel]: money(cmpPriorUnclosed), "Δ": money(priorUnclosed - cmpPriorUnclosed) } : {}),
+      });
+    }
+    rows.push({ Section: "Current Year Earnings", Code: "", Account: "",
+      [`As of ${asOf}`]: money(cye),
+      ...(cmpKpis ? { [cmpLabel]: money(cmpCye), "Δ": money(cye - cmpCye) } : {}),
     });
     rows.push({ Section: "Total Equity", Code: "", Account: "",
       [`As of ${asOf}`]: money(sectionTotals.Equity.curr),
@@ -250,6 +270,35 @@ export async function GET(
     const body = serializeCsv(headers, rows);
     return csvResponse(
       `income-statement-${period.start}-to-${period.end}.csv`,
+      body,
+    );
+  }
+
+  if (key === "cash-flows") {
+    const cf = await getCashFlowStatement(period.start, period.end, scope);
+    const periodCol = `${period.start} → ${period.end}`;
+    const headers = ["Section", "Line", periodCol];
+    const rows: Array<Record<string, unknown>> = [];
+    const row = (Section: string, Line: string, amount: number | null) =>
+      rows.push({ Section, Line, [periodCol]: amount == null ? "" : money(amount) });
+
+    row("Operating", "Net income", cf.netIncome);
+    for (const l of cf.operatingAdjustments) row("Operating", l.label, l.amount);
+    for (const l of cf.workingCapital) row("Operating", l.label, l.amount);
+    row("Operating", "Cash from operating activities", cf.operatingTotal);
+    for (const l of cf.investing) row("Investing", l.label, l.amount);
+    row("Investing", "Cash from investing activities", cf.investingTotal);
+    for (const l of cf.financing) row("Financing", l.label, l.amount);
+    row("Financing", "Cash from financing activities", cf.financingTotal);
+    row("Summary", "Net change in cash (computed)", cf.netChangeComputed);
+    row("Summary", "Beginning cash", cf.beginningCash);
+    row("Summary", "Ending cash", cf.endingCash);
+    row("Summary", "Actual movement in cash", cf.netChangeActual);
+    row("Summary", "Reconciliation difference", cf.reconciliationDifference);
+
+    const body = serializeCsv(headers, rows);
+    return csvResponse(
+      `cash-flows-${period.start}-to-${period.end}.csv`,
       body,
     );
   }

@@ -287,6 +287,25 @@ export async function closePeriod(
   if (existing.status === "locked") {
     throw new Error("Locked periods can't be closed (already past close).");
   }
+
+  // Month-end close checklist gate: every task must be done or n/a before a
+  // period can be closed. Tasks are seeded on first view of the checklist;
+  // if none exist yet we don't block (nothing to enforce).
+  const tasks = await db
+    .select({
+      label: schema.periodCloseTasks.label,
+      status: schema.periodCloseTasks.status,
+    })
+    .from(schema.periodCloseTasks)
+    .where(eq(schema.periodCloseTasks.accountingPeriodId, periodId));
+  const incomplete = tasks.filter((t) => t.status !== "done" && t.status !== "na");
+  if (incomplete.length > 0) {
+    throw new Error(
+      `Cannot close ${existing.name} — ${incomplete.length} checklist task${
+        incomplete.length === 1 ? "" : "s"
+      } still open: ${incomplete.map((t) => t.label).join(", ")}.`,
+    );
+  }
   const [updated] = await db
     .update(schema.accountingPeriods)
     .set({
