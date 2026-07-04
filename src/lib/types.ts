@@ -36,7 +36,13 @@ export type AccountingPeriod = {
   notes: string | null;
 };
 
-export type JournalEntryStatus = "draft" | "posted" | "void" | "template";
+export type JournalEntryStatus =
+  | "draft"
+  | "pending_approval"
+  | "approved"
+  | "posted"
+  | "void"
+  | "template";
 
 export type RecurringFrequency = "monthly" | "quarterly" | "annually" | "custom";
 
@@ -68,13 +74,32 @@ export type JournalEntry = {
   fiscalPeriodId: string | null;
   description: string | null;
   reference: string | null;
-  source: "manual" | "invoice" | "bill" | "reconciliation";
+  source: "manual" | "invoice" | "bill" | "reconciliation" | "auto_reverse";
   status: JournalEntryStatus;
   postedAt: string | null;
   postedBy: string | null;
   voidedAt: string | null;
   voidReason: string | null;
   createdBy: string | null;
+  /**
+   * Maker-checker approval trail (manual JEs only). Machine:
+   *   draft → pending_approval → approved → posted.
+   * The approver must differ from both the submitter and the creator.
+   */
+  submittedAt?: string | null;
+  submittedBy?: string | null;
+  approvedAt?: string | null;
+  approvedBy?: string | null;
+  approvalRejectionReason?: string | null;
+  /**
+   * Auto-reversing accrual. When true, posting spawns a mirrored posted
+   * entry dated day 1 of the next open period; reversalEntryId links to it.
+   * The reversal itself is auto_reverse=false so it never recurses.
+   */
+  autoReverse?: boolean;
+  reversalEntryId?: string | null;
+  /** Year-end closing entry flag (excluded from income-statement queries). */
+  isClosingEntry?: boolean;
   createdAt: string;
   updatedAt: string;
   /** null = firm-level journal; non-null = entity-scoped. */

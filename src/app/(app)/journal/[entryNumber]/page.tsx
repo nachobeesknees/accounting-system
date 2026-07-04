@@ -14,6 +14,7 @@ import {
   getBaseCurrency,
   getDimensionsWithValues,
   getFirmEntities,
+  getJournalEntryById,
   getJournalEntryByNumber,
   getPeriods,
   getUserById,
@@ -23,10 +24,19 @@ import {
 } from "@/lib/data";
 import { getSessionUser } from "@/lib/session";
 import { getAllowedEntityIds } from "@/lib/entity-access";
+import { hasPermission } from "@/lib/permissions";
+import { journalEntryRequiresApproval } from "@/lib/mutations";
 import { formatMoney, parseAmount } from "@/lib/money";
-import { postEntry, voidEntry } from "./actions";
+import {
+  approveEntry,
+  postEntry,
+  rejectEntry,
+  submitEntry,
+  voidEntry,
+} from "./actions";
 import { duplicateJournalEntryAction } from "../../duplicate-actions";
 import { Attachments } from "@/components/Attachments";
+import { Field } from "@/components/ui/Field";
 
 function formatLongDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -72,16 +82,50 @@ export default async function Page({
     notFound();
   }
 
-  const [periods, accounts, postedByUser, dimensionsWithValues, firmEntities, base] =
-    await Promise.all([
-      getPeriods(),
-      getAccounts(),
-      entry.postedBy ? getUserById(entry.postedBy) : Promise.resolve(null),
-      getDimensionsWithValues(),
-      getFirmEntities(),
-      getBaseCurrency(),
-    ]);
+  const [
+    periods,
+    accounts,
+    postedByUser,
+    submittedByUser,
+    approvedByUser,
+    dimensionsWithValues,
+    firmEntities,
+    base,
+    reversalEntry,
+    originalEntry,
+  ] = await Promise.all([
+    getPeriods(),
+    getAccounts(),
+    entry.postedBy ? getUserById(entry.postedBy) : Promise.resolve(null),
+    entry.submittedBy ? getUserById(entry.submittedBy) : Promise.resolve(null),
+    entry.approvedBy ? getUserById(entry.approvedBy) : Promise.resolve(null),
+    getDimensionsWithValues(),
+    getFirmEntities(),
+    getBaseCurrency(),
+    // This entry's auto-reversal, if it spawned one.
+    entry.reversalEntryId
+      ? getJournalEntryById(entry.reversalEntryId)
+      : Promise.resolve(undefined),
+    // If this IS a reversal, find the original it reverses (source
+    // auto_reverse entries carry the original's number in `reference`).
+    entry.source === "auto_reverse" && entry.reference
+      ? getJournalEntryByNumber(entry.reference)
+      : Promise.resolve(undefined),
+  ]);
   const baseCode = base?.code ?? "USD";
+
+  // Maker-checker: does this entry route through approval, and what can the
+  // viewer do about it right now?
+  const requiresApproval = journalEntryRequiresApproval(entry);
+  const canCreate = hasPermission(sessionUser, "journal_entry.create");
+  const canApprove = hasPermission(sessionUser, "journal_entry.approve");
+  const canPost = hasPermission(sessionUser, "journal_entry.post");
+  const viewerId = sessionUser?.userId ?? null;
+  // SoD: the approver may be neither the submitter nor the creator.
+  const viewerIsSubmitter =
+    viewerId != null && entry.submittedBy === viewerId;
+  const viewerIsCreator = viewerId != null && entry.createdBy === viewerId;
+  const viewerBlockedBySoD = viewerIsSubmitter || viewerIsCreator;
   // FX snapshot on a JE is informational — the lines themselves are in
   // base currency. Treat "1.00000000" the same as absent.
   const fxRateStr = (entry as { fxRate?: string | null }).fxRate ?? null;
@@ -151,25 +195,30 @@ export default async function Page({
           Duplicate
         </Button>
       </form>
-      {entry.status === "draft" && (
-        <>
-          <form action={postEntry}>
-            <input type="hidden" name="entryId" value={entry.id} />
-            <Button variant="primary" type="submit">
-              Post
-            </Button>
-          </form>
-          <form action={voidEntry}>
-            <input type="hidden" name="entryId" value={entry.id} />
-            <input type="hidden" name="reason" value="Voided from detail" />
-            <ConfirmButton
-              label="Void"
-              title={`Void ${entry.entryNumber}?`}
-              message="Voiding a draft entry hides it from the ledger but keeps an audit record. This action cannot be undone."
-              confirmText="Void entry"
-            />
-          </form>
-        </>
+      {/* Non-approval entries (system/duplicated drafts) can still post
+          directly from the header. Manual entries route through the
+          approval panel below instead. */}
+      {entry.status === "draft" && !requiresApproval && (
+        <form action={postEntry}>
+          <input type="hidden" name="entryId" value={entry.id} />
+          <Button variant="primary" type="submit">
+            Post
+          </Button>
+        </form>
+      )}
+      {(entry.status === "draft" ||
+        entry.status === "pending_approval" ||
+        entry.status === "approved") && (
+        <form action={voidEntry}>
+          <input type="hidden" name="entryId" value={entry.id} />
+          <input type="hidden" name="reason" value="Voided from detail" />
+          <ConfirmButton
+            label="Void"
+            title={`Void ${entry.entryNumber}?`}
+            message="Voiding this entry hides it from the ledger but keeps an audit record. This action cannot be undone."
+            confirmText="Void entry"
+          />
+        </form>
       )}
       {entry.status === "posted" && (
         <form action={voidEntry}>
@@ -230,6 +279,198 @@ export default async function Page({
           >
             {error}
           </div>
+        )}
+
+        {/* Maker-checker approval panel — only for manual entries that route
+            through approval, and only while they're pre-post. */}
+        {requiresApproval &&
+          (entry.status === "draft" ||
+            entry.status === "pending_approval" ||
+            entry.status === "approved") && (
+            <Card
+              title="Approval"
+              actions={
+                <Pill variant={statusVariant(entry.status)}>
+                  {statusLabel(entry.status)}
+                </Pill>
+              }
+            >
+              <div className="p-3.5 flex flex-col gap-3">
+                {entry.approvalRejectionReason && (
+                  <div
+                    className="rounded-md px-3 py-2 text-[12px]"
+                    style={{
+                      background: "var(--p-review-bg)",
+                      color: "var(--p-review-fg)",
+                      border: "1px solid var(--p-review-fg)",
+                    }}
+                  >
+                    Previously rejected: {entry.approvalRejectionReason}
+                  </div>
+                )}
+
+                <div className="text-[12px]" style={{ color: "var(--ink-3)" }}>
+                  {entry.status === "draft" &&
+                    "Segregation of duties: a manual entry must be submitted for approval and approved by a different user before it can be posted."}
+                  {entry.status === "pending_approval" &&
+                    "Awaiting approval. A user other than the creator and the submitter must approve before this entry can be posted."}
+                  {entry.status === "approved" &&
+                    "Approved. This entry is cleared to post."}
+                </div>
+
+                {(submittedByUser || approvedByUser) && (
+                  <div
+                    className="flex flex-wrap gap-x-6 gap-y-1 text-[11.5px]"
+                    style={{ color: "var(--ink-3)" }}
+                  >
+                    {submittedByUser && (
+                      <span>
+                        Submitted by{" "}
+                        <span style={{ color: "var(--ink-2)" }}>
+                          {submittedByUser.fullName}
+                        </span>
+                        {entry.submittedAt
+                          ? ` · ${formatDateTime(entry.submittedAt)}`
+                          : ""}
+                      </span>
+                    )}
+                    {approvedByUser && (
+                      <span>
+                        Approved by{" "}
+                        <span style={{ color: "var(--ink-2)" }}>
+                          {approvedByUser.fullName}
+                        </span>
+                        {entry.approvedAt
+                          ? ` · ${formatDateTime(entry.approvedAt)}`
+                          : ""}
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2 items-center">
+                  {/* Submit for approval — author/updater, on a draft. */}
+                  {entry.status === "draft" && canCreate && (
+                    <form action={submitEntry}>
+                      <input type="hidden" name="entryId" value={entry.id} />
+                      <Button variant="primary" type="submit">
+                        Submit for approval
+                      </Button>
+                    </form>
+                  )}
+
+                  {/* Approve / Reject — approver, on a pending entry. */}
+                  {entry.status === "pending_approval" && canApprove && (
+                    <>
+                      {viewerBlockedBySoD ? (
+                        <div
+                          className="rounded-md px-3 py-2 text-[12px]"
+                          style={{
+                            background: "var(--p-pending-bg)",
+                            color: "var(--p-pending-fg)",
+                            border: "1px solid var(--p-pending-fg)",
+                          }}
+                        >
+                          You{" "}
+                          {viewerIsCreator ? "created" : "submitted"} this entry,
+                          so segregation of duties bars you from approving it. A
+                          different user must approve.
+                        </div>
+                      ) : (
+                        <form action={approveEntry}>
+                          <input
+                            type="hidden"
+                            name="entryId"
+                            value={entry.id}
+                          />
+                          <Button variant="primary" type="submit">
+                            Approve
+                          </Button>
+                        </form>
+                      )}
+                      <form
+                        action={rejectEntry}
+                        className="flex items-end gap-2"
+                      >
+                        <input type="hidden" name="entryId" value={entry.id} />
+                        <Field
+                          label="Rejection reason"
+                          name="reason"
+                          placeholder="Optional reason"
+                        />
+                        <Button variant="secondary" type="submit">
+                          Reject
+                        </Button>
+                      </form>
+                    </>
+                  )}
+
+                  {/* Post — once approved, anyone with post rights. */}
+                  {entry.status === "approved" && canPost && (
+                    <form action={postEntry}>
+                      <input type="hidden" name="entryId" value={entry.id} />
+                      <Button variant="primary" type="submit">
+                        Post
+                      </Button>
+                    </form>
+                  )}
+                  {entry.status === "approved" && !canPost && (
+                    <div className="text-[12px]" style={{ color: "var(--ink-3)" }}>
+                      Approved — a user with posting rights can now post this
+                      entry.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+
+        {/* Auto-reversal links (both directions). */}
+        {(entry.autoReverse ||
+          reversalEntry ||
+          entry.source === "auto_reverse") && (
+          <Card title="Auto-reversal">
+            <div
+              className="p-3.5 text-[12.5px] flex flex-col gap-1.5"
+              style={{ color: "var(--ink-3)" }}
+            >
+              {entry.source === "auto_reverse" ? (
+                <div>
+                  This is an auto-reversal
+                  {originalEntry ? (
+                    <>
+                      {" "}of{" "}
+                      <ButtonLink
+                        variant="ghost"
+                        href={`/journal/${originalEntry.entryNumber}`}
+                      >
+                        {originalEntry.entryNumber}
+                      </ButtonLink>
+                    </>
+                  ) : entry.reference ? (
+                    <> of {entry.reference}</>
+                  ) : null}
+                  .
+                </div>
+              ) : reversalEntry ? (
+                <div>
+                  Auto-reversed by{" "}
+                  <ButtonLink
+                    variant="ghost"
+                    href={`/journal/${reversalEntry.entryNumber}`}
+                  >
+                    {reversalEntry.entryNumber}
+                  </ButtonLink>{" "}
+                  (dated {formatLongDate(reversalEntry.entryDate)}).
+                </div>
+              ) : entry.autoReverse ? (
+                <div>
+                  Marked for auto-reversal. A mirrored reversal is generated on
+                  day 1 of the next open period when this entry is posted.
+                </div>
+              ) : null}
+            </div>
+          </Card>
         )}
 
         <Card

@@ -248,7 +248,6 @@ export function NewEntryForm({
 
   const [firmEntityId, setFirmEntityId] = useState<string>("");
   const [fiscalPeriodId, setFiscalPeriodId] = useState<string>(periods[0]?.id ?? "");
-  const [source, setSource] = useState<string>("manual");
   const [isRecurring, setIsRecurring] = useState(false);
   const [recurringFrequency, setRecurringFrequency] = useState<string>("monthly");
   const [recurringDayOfMonth, setRecurringDayOfMonth] = useState<string>("1");
@@ -288,8 +287,11 @@ export function NewEntryForm({
 
   const formRef = useRef<HTMLFormElement>(null);
   const [pendingPost, setPendingPost] = useState(false);
+  const [autoReverse, setAutoReverse] = useState(false);
 
-  function confirmPostAndSubmit() {
+  // Manual JEs no longer post directly from this form — they submit for
+  // approval. This confirms past a controlled-account warning, then submits.
+  function confirmSubmitForApproval() {
     setPendingPost(false);
     const fd = formRef.current;
     if (!fd) return;
@@ -298,7 +300,7 @@ export function NewEntryForm({
     );
     if (bypass) bypass.value = "1";
     const action = fd.querySelector<HTMLInputElement>("input[name=action]");
-    if (action) action.value = "post";
+    if (action) action.value = "submit";
     fd.requestSubmit();
   }
 
@@ -375,7 +377,7 @@ export function NewEntryForm({
           className="grid gap-3 px-3 py-2.5"
           style={{
             gridTemplateColumns:
-              "minmax(130px,140px) minmax(160px,180px) minmax(180px,1fr) minmax(180px,1fr) minmax(160px,200px) minmax(120px,140px)",
+              "minmax(130px,140px) minmax(160px,180px) minmax(180px,1fr) minmax(180px,1fr) minmax(160px,200px)",
           }}
         >
           <label className="flex flex-col gap-1">
@@ -438,22 +440,11 @@ export function NewEntryForm({
               ariaLabel="Fiscal period"
             />
           </div>
-          <div className="flex flex-col gap-1">
-            <span style={HEADER_LABEL}>Source</span>
-            <SmartSelect
-              name="source"
-              value={source}
-              onChange={setSource}
-              options={[
-                { value: "manual", label: "Manual" },
-                { value: "invoice", label: "Invoice" },
-                { value: "bill", label: "Bill" },
-                { value: "reconciliation", label: "Reconciliation" },
-              ]}
-              triggerStyle={HEADER_INPUT}
-              ariaLabel="Source"
-            />
-          </div>
+          {/* No Source selector: a hand-keyed entry is always `source:
+              "manual"` (enforced server-side in createEntry). System sources
+              — invoice / bill / reconciliation — are set only by their own
+              posting flows. Exposing them here let a single user create a
+              draft that skipped maker-checker approval and post it directly. */}
           {/* Header-level dimensions (currently just Department). Applied
               to every line at submit time so the spreadsheet rows can
               stay narrow. */}
@@ -861,6 +852,39 @@ export function NewEntryForm({
         )}
       </div>
 
+      {/* Auto-reversing accrual. Applies to a one-off accrual JE, not a
+          template — hidden while Recurring is on. When on and the entry is
+          later POSTED (after approval), a mirrored reversal is generated
+          dated day 1 of the next open period. */}
+      {!isRecurring && (
+        <div
+          className="rounded-md"
+          style={{
+            background: "var(--paper)",
+            border: "1px solid var(--line)",
+          }}
+        >
+          <label
+            className="flex items-center gap-2 px-3 py-2.5 cursor-pointer"
+            style={{ fontSize: 12.5, color: "var(--ink)" }}
+          >
+            <input
+              type="checkbox"
+              name="autoReverse"
+              value="1"
+              checked={autoReverse}
+              onChange={(e) => setAutoReverse(e.target.checked)}
+              style={{ accentColor: "var(--ink)" }}
+            />
+            <span style={{ fontWeight: 500 }}>Auto-reverse</span>
+            <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+              Automatically reverse on day 1 of next period. When this entry
+              is posted, a mirrored reversal is generated and posted.
+            </span>
+          </label>
+        </div>
+      )}
+
       {/* Optional FX-rate snapshot. Tucked into a <details> so the common
           base-currency JE has zero extra chrome. The rate is sent only
           when the user picks a non-base currency and types a number; the
@@ -973,14 +997,14 @@ export function NewEntryForm({
                 const a = formRef.current?.querySelector<HTMLInputElement>(
                   "input[name=action]",
                 );
-                if (a) a.value = "post";
+                if (a) a.value = "submit";
                 if (controlSummary.length > 0) {
                   e.preventDefault();
                   setPendingPost(true);
                 }
               }}
             >
-              Save & post
+              Submit for approval
             </Button>
           </>
         )}
@@ -988,6 +1012,14 @@ export function NewEntryForm({
           Cancel
         </ButtonLink>
       </div>
+
+      {!isRecurring && (
+        <div className="text-[11.5px]" style={{ color: "var(--ink-3)" }}>
+          Manual entries can't be posted in one step — a different user must
+          approve before posting. Submitting sends this entry to the approval
+          queue; posting happens on the entry page once it's approved.
+        </div>
+      )}
 
       {pendingPost && controlSummary.length > 0 && (
         <div
@@ -1001,22 +1033,22 @@ export function NewEntryForm({
           role="alertdialog"
         >
           <div style={{ fontWeight: 600 }}>
-            This entry posts directly to{" "}
-            {controlSummary.map(controlClassLabel).join(" / ")} accounts. Are you
-            sure?
+            This entry touches{" "}
+            {controlSummary.map(controlClassLabel).join(" / ")} accounts. Submit
+            for approval anyway?
           </div>
           <div style={{ fontSize: 11.5, opacity: 0.85 }}>
             These accounts are normally updated by invoices, bills, or bank
-            transactions. Posting directly is recorded as an audit-trail
+            transactions. A direct entry is recorded as an audit-trail
             override (bypassControlWarning = true).
           </div>
           <div className="flex gap-2 items-center mt-1">
             <Button
               variant="primary"
               type="button"
-              onClick={confirmPostAndSubmit}
+              onClick={confirmSubmitForApproval}
             >
-              Yes, post anyway
+              Yes, submit for approval
             </Button>
             <Button
               variant="secondary"

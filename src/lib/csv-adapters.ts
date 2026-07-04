@@ -242,6 +242,151 @@ export function parseBankStatementCsv(text: string): BankStatementParseResult {
   return { rows, errors, headerError: null };
 }
 
+// --------- Journal-entry CSV (multi-line grouped import at /journal/import) ---------
+//
+// Rows are grouped into entries by a shared key column (Reference or Group).
+// Each group becomes one balanced DRAFT journal entry. Follows the flexible
+// header-matching style of parseBankStatementCsv above.
+//   Columns: Date, Reference/Group, Account (code or name), Description,
+//            Debit, Credit [, Firm Entity]
+// The parser is pure (no DB) — it normalizes dates/amounts and does the
+// per-group balance check. Account/period resolution happens later in the
+// staging mutation, which has DB access.
+
+const GROUP_HEADERS = ["reference", "ref", "group", "groupid", "entry", "entryref", "entryreference", "batch"];
+const ACCOUNT_HEADERS = ["account", "accountcode", "accountname", "accountid", "glaccount", "gl"];
+const FIRM_ENTITY_HEADERS = ["firmentity", "entity", "firm", "office", "firmentitycode"];
+
+export type JournalCsvRow = {
+  /** 1-based row number in the file (incl. header), for error messages. */
+  rowNo: number;
+  /** Normalized YYYY-MM-DD. */
+  date: string;
+  /** Account token as typed (code or name) — resolved later. */
+  accountToken: string;
+  description: string | null;
+  debit: number;
+  credit: number;
+  /** Firm-entity token as typed (code, name, or id) — resolved later. */
+  firmEntityToken: string | null;
+};
+
+export type JournalCsvGroup = {
+  /** The shared key that grouped these rows (Reference / Group value). */
+  key: string;
+  /** Entry date taken from the first valid row. */
+  date: string;
+  rows: JournalCsvRow[];
+  /** Row-level problems within this group (bad date/amount/account cell). */
+  errors: string[];
+};
+
+export type JournalCsvParseResult = {
+  groups: JournalCsvGroup[];
+  /** Set when the file is unusable as a whole (missing headers / empty). */
+  headerError: string | null;
+};
+
+/**
+ * Parse a journal-entry CSV into per-entry groups. Grouping key is the
+ * Reference / Group column. Rows with an unparseable date or a bad
+ * debit/credit shape are recorded in their group's `errors` and excluded
+ * from the group's `rows`, but the group is still emitted so the caller can
+ * report it. A group with no groupable key column at all → headerError.
+ */
+export function parseJournalEntriesCsv(text: string): JournalCsvParseResult {
+  const parsed = parseCsv(text);
+  if (parsed.headers.length === 0 || parsed.rows.length === 0) {
+    return { groups: [], headerError: "The CSV has no data rows." };
+  }
+
+  const dateCol = findHeader(parsed.headers, DATE_HEADERS);
+  const groupCol = findHeader(parsed.headers, GROUP_HEADERS);
+  const accountCol = findHeader(parsed.headers, ACCOUNT_HEADERS);
+  const descCol = findHeader(parsed.headers, DESC_HEADERS);
+  const debitCol = findHeader(parsed.headers, DEBIT_HEADERS);
+  const creditCol = findHeader(parsed.headers, CREDIT_HEADERS);
+  const firmCol = findHeader(parsed.headers, FIRM_ENTITY_HEADERS);
+
+  if (!dateCol) {
+    return { groups: [], headerError: "No Date column found." };
+  }
+  if (!groupCol) {
+    return {
+      groups: [],
+      headerError:
+        "No grouping column found. Provide a Reference or Group column that shares a value across the lines of one entry.",
+    };
+  }
+  if (!accountCol) {
+    return { groups: [], headerError: "No Account column found (code or name)." };
+  }
+  if (!debitCol || !creditCol) {
+    return {
+      groups: [],
+      headerError: "Both a Debit and a Credit column are required.",
+    };
+  }
+
+  // Preserve first-seen group order.
+  const order: string[] = [];
+  const byKey = new Map<string, JournalCsvGroup>();
+
+  for (let i = 0; i < parsed.rows.length; i++) {
+    const row = parsed.rows[i];
+    const rowNo = i + 2; // 1-based + header row
+    const key = (row[groupCol] ?? "").trim();
+    if (key === "") {
+      // A row with no group key can't be attached to any entry — surface it
+      // under a synthetic "(no reference)" group so it isn't silently lost.
+      const orphanKey = "(no reference)";
+      if (!byKey.has(orphanKey)) {
+        order.push(orphanKey);
+        byKey.set(orphanKey, { key: orphanKey, date: "", rows: [], errors: [] });
+      }
+      byKey.get(orphanKey)!.errors.push(`Row ${rowNo}: missing Reference/Group value.`);
+      continue;
+    }
+    if (!byKey.has(key)) {
+      order.push(key);
+      byKey.set(key, { key, date: "", rows: [], errors: [] });
+    }
+    const group = byKey.get(key)!;
+
+    const date = parseStatementDate(row[dateCol]);
+    if (!date) {
+      group.errors.push(`Row ${rowNo}: unparseable date "${row[dateCol] ?? ""}".`);
+      continue;
+    }
+    const accountToken = (row[accountCol] ?? "").trim();
+    if (accountToken === "") {
+      group.errors.push(`Row ${rowNo}: account is empty.`);
+      continue;
+    }
+    const debit = Math.abs(parseStatementAmount(row[debitCol]) ?? 0);
+    const credit = Math.abs(parseStatementAmount(row[creditCol]) ?? 0);
+    if ((debit > 0 && credit > 0) || (debit === 0 && credit === 0)) {
+      group.errors.push(
+        `Row ${rowNo}: exactly one of Debit or Credit must be > 0.`,
+      );
+      continue;
+    }
+
+    if (group.date === "") group.date = date;
+    group.rows.push({
+      rowNo,
+      date,
+      accountToken,
+      description: descCol ? (row[descCol] ?? "").trim() || null : null,
+      debit,
+      credit,
+      firmEntityToken: firmCol ? (row[firmCol] ?? "").trim() || null : null,
+    });
+  }
+
+  return { groups: order.map((k) => byKey.get(k)!), headerError: null };
+}
+
 export const ADAPTERS: Record<CsvTypeKey, CsvAdapter> = {
   contacts: {
     key: "contacts",

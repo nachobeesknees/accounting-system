@@ -33,6 +33,7 @@ export function statusVariant(status: string | null | undefined): PillVariant {
       return "active";
     case "draft":
     case "pending":
+    case "pending_approval":
     case "partial":
     case "closing":
       return "pending";

@@ -4,7 +4,13 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getSessionUser } from "@/lib/session";
 import { getJournalEntryById } from "@/lib/data";
-import { postJournalEntry, voidJournalEntry } from "@/lib/mutations";
+import {
+  approveJournalEntry,
+  postJournalEntry,
+  rejectJournalEntry,
+  submitJournalEntryForApproval,
+  voidJournalEntry,
+} from "@/lib/mutations";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
 import { PermissionError, requirePermission, type Action } from "@/lib/permissions";
 
@@ -62,6 +68,85 @@ export async function postEntry(formData: FormData): Promise<void> {
       periodOverrideReason:
         periodOverrideReason === "" ? null : periodOverrideReason,
     });
+  } catch (err) {
+    if (isRedirect(err)) throw err;
+    revalidatePath(beforeTarget);
+    redirect(`${beforeTarget}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+
+  const entry = await getJournalEntryById(entryId);
+  const target = entry ? `/journal/${entry.entryNumber}` : "/journal";
+  revalidatePath("/journal");
+  revalidatePath(target);
+  redirect(target);
+}
+
+export async function submitEntry(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  permissionGuard(user, "journal_entry.create", "/journal");
+
+  const entryId = String(formData.get("entryId") ?? "");
+  if (!entryId) redirect("/journal");
+
+  const before = await getJournalEntryById(entryId);
+  const beforeTarget = before ? `/journal/${before.entryNumber}` : "/journal";
+
+  try {
+    await submitJournalEntryForApproval(user, entryId);
+  } catch (err) {
+    if (isRedirect(err)) throw err;
+    revalidatePath(beforeTarget);
+    redirect(`${beforeTarget}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+
+  const entry = await getJournalEntryById(entryId);
+  const target = entry ? `/journal/${entry.entryNumber}` : "/journal";
+  revalidatePath("/journal");
+  revalidatePath(target);
+  redirect(target);
+}
+
+export async function approveEntry(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  permissionGuard(user, "journal_entry.approve", "/journal");
+
+  const entryId = String(formData.get("entryId") ?? "");
+  if (!entryId) redirect("/journal");
+
+  const before = await getJournalEntryById(entryId);
+  const beforeTarget = before ? `/journal/${before.entryNumber}` : "/journal";
+
+  try {
+    await approveJournalEntry(user, entryId);
+  } catch (err) {
+    if (isRedirect(err)) throw err;
+    revalidatePath(beforeTarget);
+    redirect(`${beforeTarget}?error=${encodeURIComponent(errorMessage(err))}`);
+  }
+
+  const entry = await getJournalEntryById(entryId);
+  const target = entry ? `/journal/${entry.entryNumber}` : "/journal";
+  revalidatePath("/journal");
+  revalidatePath(target);
+  redirect(target);
+}
+
+export async function rejectEntry(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  permissionGuard(user, "journal_entry.approve", "/journal");
+
+  const entryId = String(formData.get("entryId") ?? "");
+  const reason = String(formData.get("reason") ?? "");
+  if (!entryId) redirect("/journal");
+
+  const before = await getJournalEntryById(entryId);
+  const beforeTarget = before ? `/journal/${before.entryNumber}` : "/journal";
+
+  try {
+    await rejectJournalEntry(user, entryId, reason);
   } catch (err) {
     if (isRedirect(err)) throw err;
     revalidatePath(beforeTarget);

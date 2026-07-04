@@ -163,6 +163,9 @@ export default async function Page({
         );
   const todayIso = new Date().toISOString().slice(0, 10);
   const dueTemplates = templates.filter((t) => isTemplateDue(t, todayIso));
+  const pendingApprovalCount = allEntries.filter(
+    (e) => e.status === "pending_approval",
+  ).length;
 
   // If a customer was requested, narrow the entity filter to entities that
   // belong to that customer. Useful for "show every JE for this client".
@@ -211,9 +214,14 @@ export default async function Page({
             : `${allEntries.length} entries this period`
         }
         actions={
-          <ButtonLink variant="primary" href="/journal/new">
-            + New entry
-          </ButtonLink>
+          <>
+            <ButtonLink variant="secondary" href="/journal/import">
+              Import CSV
+            </ButtonLink>
+            <ButtonLink variant="primary" href="/journal/new">
+              + New entry
+            </ButtonLink>
+          </>
         }
       />
 
@@ -246,6 +254,32 @@ export default async function Page({
             }}
           >
             {error}
+          </div>
+        </div>
+      )}
+
+      {view === "entries" && pendingApprovalCount > 0 && status !== "pending_approval" && (
+        <div className="px-6 pt-3.5">
+          <div
+            className="rounded-md px-3 py-2 flex items-center justify-between"
+            style={{
+              background: "var(--p-pending-bg)",
+              color: "var(--p-pending-fg)",
+              border: "1px solid var(--p-pending-fg)",
+              fontSize: 12.5,
+            }}
+          >
+            <span>
+              {pendingApprovalCount} journal{" "}
+              {pendingApprovalCount === 1 ? "entry is" : "entries are"} awaiting
+              approval.
+            </span>
+            <Link
+              href="/journal?status=pending_approval"
+              style={{ color: "inherit", textDecoration: "underline" }}
+            >
+              Review pending →
+            </Link>
           </div>
         </div>
       )}
@@ -293,8 +327,10 @@ export default async function Page({
               />
               <SelectField label="Status" name="status" defaultValue={status}>
                 <option value="">All</option>
-                <option value="posted">Posted</option>
                 <option value="draft">Draft</option>
+                <option value="pending_approval">Pending approval</option>
+                <option value="approved">Approved</option>
+                <option value="posted">Posted</option>
                 <option value="void">Void</option>
               </SelectField>
               <SelectField label="Source" name="source" defaultValue={source}>

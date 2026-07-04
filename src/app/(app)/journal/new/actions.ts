@@ -3,10 +3,13 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getSessionUser } from "@/lib/session";
-import { createJournalEntry } from "@/lib/mutations";
+import {
+  createJournalEntry,
+  submitJournalEntryForApproval,
+} from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
-import { PermissionError, hasPermission, requirePermission } from "@/lib/permissions";
+import { PermissionError, requirePermission } from "@/lib/permissions";
 import type { RecurringFrequency } from "@/lib/types";
 
 export type CreateEntryState = { error: string | null };
@@ -113,16 +116,22 @@ export async function createEntry(
   const entryDate = String(formData.get("entryDate") ?? "");
   const description = String(formData.get("description") ?? "");
   const reference = String(formData.get("reference") ?? "");
-  const sourceRaw = String(formData.get("source") ?? "manual");
   const fiscalPeriodId = String(formData.get("fiscalPeriodId") ?? "");
   const firmEntityId = String(formData.get("firmEntityId") ?? "");
   const periodOverrideReason = String(
     formData.get("periodOverrideReason") ?? "",
   ).trim();
+  // Manual JEs no longer post directly from this form — segregation of
+  // duties requires a separate approver. The actions here are:
+  //   draft    → land as draft
+  //   submit   → land as draft, then move to pending_approval
+  //   template → save as a recurring template
   const action = String(formData.get("action") ?? "draft");
   const bypassControlWarning =
     String(formData.get("bypassControlWarning") ?? "") === "1";
   const isTemplate = action === "template";
+  const submitForApproval = action === "submit";
+  const autoReverse = String(formData.get("autoReverse") ?? "") === "1";
 
   // Optional FX-rate snapshot. Only attached when the user opened the
   // <details> disclosure, picked a non-base currency, and typed a rate.
@@ -133,10 +142,14 @@ export async function createEntry(
   const fxRate: number | null =
     Number.isFinite(fxRateParsed) && fxRateParsed > 0 ? fxRateParsed : null;
 
-  const validSources = ["manual", "invoice", "bill", "reconciliation"] as const;
-  const source = (validSources as readonly string[]).includes(sourceRaw)
-    ? (sourceRaw as (typeof validSources)[number])
-    : "manual";
+  // Hand-keyed entries from this form are ALWAYS `manual`, no matter what
+  // the client submits. Segregation of duties keys the maker-checker
+  // requirement off `source === "manual"` (journalEntryRequiresApproval);
+  // honoring a client-supplied "invoice"/"bill"/"reconciliation" here would
+  // let a single user create a draft that skips approval and post it
+  // directly. System sources are set only by their own flows (invoice/bill/
+  // payment/reconciliation posting), never by a person typing lines.
+  const source = "manual" as const;
 
   let recurringFrequency: RecurringFrequency | null = null;
   let recurringDayOfMonth: number | null = null;
@@ -181,18 +194,9 @@ export async function createEntry(
     return { error: "Description is required." };
   }
 
-  const status: "draft" | "posted" | "template" = isTemplate
-    ? "template"
-    : action === "post"
-      ? "posted"
-      : "draft";
-
-  // Posting requires elevated permission; downgrade to draft for users
-  // who can create but can't post.
-  let effectiveStatus = status;
-  if (effectiveStatus === "posted" && !hasPermission(user, "journal_entry.post")) {
-    effectiveStatus = "draft";
-  }
+  // Manual JEs land as draft (or template). Posting is a separate,
+  // approval-gated step on the detail page — no create+post here.
+  const status: "draft" | "template" = isTemplate ? "template" : "draft";
 
   try {
     const created = await createJournalEntry(user, {
@@ -202,8 +206,9 @@ export async function createEntry(
       source,
       fiscalPeriodId: fiscalPeriodId === "" ? null : fiscalPeriodId,
       firmEntityId: firmEntityId === "" ? null : firmEntityId,
-      status: effectiveStatus,
+      status,
       bypassControlWarning,
+      autoReverse,
       periodOverrideReason:
         periodOverrideReason === "" ? null : periodOverrideReason,
       isTemplate,
@@ -221,6 +226,10 @@ export async function createEntry(
         intercompanyCounterpartEntityId: l.intercompanyCounterpartEntityId,
       })),
     });
+    // Optionally push straight into the approval queue.
+    if (submitForApproval && !isTemplate) {
+      await submitJournalEntryForApproval(user, created.id);
+    }
     revalidatePath("/journal");
     if (isTemplate) {
       redirect("/journal?view=templates");

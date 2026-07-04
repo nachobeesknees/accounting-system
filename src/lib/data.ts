@@ -822,6 +822,14 @@ function mapJournalEntry(
     recurringEndDate: r.recurringEndDate ?? null,
     recurringParentId: r.recurringParentId ?? null,
     fxRate: (r as { fxRate?: string | null }).fxRate ?? null,
+    submittedAt: isoOrNull(r.submittedAt),
+    submittedBy: r.submittedBy ?? null,
+    approvedAt: isoOrNull(r.approvedAt),
+    approvedBy: r.approvedBy ?? null,
+    approvalRejectionReason: r.approvalRejectionReason ?? null,
+    autoReverse: r.autoReverse ?? false,
+    reversalEntryId: r.reversalEntryId ?? null,
+    isClosingEntry: r.isClosingEntry ?? false,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }
@@ -2019,6 +2027,19 @@ export async function getJournalEntries(
     linesByEntry.set(mapped.journalEntryId, arr);
   }
   return heads.map((h) => mapJournalEntry(h, linesByEntry.get(h.id) ?? []));
+}
+
+/**
+ * Manual journal entries currently awaiting maker-checker approval
+ * (status = pending_approval). Honors the same firm scope as
+ * getJournalEntries. The later unified-approvals inbox consumes this; for
+ * now the JE list "Pending approval" filter surfaces them too.
+ */
+export async function getJournalEntriesAwaitingApproval(
+  scope?: FirmScopeArg,
+): Promise<JournalEntry[]> {
+  const all = await getJournalEntries(scope);
+  return all.filter((e) => e.status === "pending_approval");
 }
 
 /**

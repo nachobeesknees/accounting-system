@@ -38,7 +38,11 @@ import {
 import { getJournalEntryById } from "./data";
 import { computeClearedTotal, findOpeningAnchor } from "./reconciliation";
 import { getEntityScope } from "./entity-scope";
-import { checkPeriodForPost } from "./periods";
+import {
+  checkPeriodForPost,
+  getAccountingPeriods,
+  stripPeriodErrorPrefix,
+} from "./periods";
 import { logAuditEvent } from "./audit";
 import { hasPermission, requirePermission } from "./permissions";
 
@@ -196,13 +200,21 @@ export type CreateJournalEntryInput = {
   entryDate: string;
   description: string;
   reference?: string | null;
-  source?: "manual" | "invoice" | "bill" | "reconciliation";
+  source?: "manual" | "invoice" | "bill" | "reconciliation" | "auto_reverse";
   fiscalPeriodId?: string | null;
   /** Legacy: client-entity tag. Reserved; not used for scoping. */
   entityId?: string | null;
   /** Which firm corporate entity issued this entry (drives the topbar scope). */
   firmEntityId?: string | null;
-  status?: "draft" | "posted" | "template";
+  status?: "draft" | "pending_approval" | "approved" | "posted" | "template";
+  /**
+   * Auto-reversing accrual. When true and the entry is later POSTED, a
+   * mirrored posted entry is generated dated day 1 of the next open period.
+   * Ignored for templates.
+   */
+  autoReverse?: boolean;
+  /** Set on a generated reversal — points back to the original entry. */
+  reversalEntryId?: string | null;
   /** User confirmed past an AR/AP/Cash direct-posting warning. */
   bypassControlWarning?: boolean;
   /**
@@ -316,6 +328,8 @@ export async function createJournalEntry(
       recurringEndDate: isTemplate ? input.recurringEndDate ?? null : null,
       recurringParentId: input.recurringParentId ?? null,
       fxRate: serializeFxRate(input.fxRate),
+      autoReverse: isTemplate ? false : input.autoReverse ?? false,
+      reversalEntryId: input.reversalEntryId ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -497,6 +511,33 @@ export async function generateNextRecurringEntry(
   return { id, entryNumber };
 }
 
+/**
+ * True when this entry is a free-form MANUAL journal entry that must clear
+ * maker-checker approval before posting. System- and generation-created
+ * entries are exempt so we never block the invoice/bill/payment/
+ * reconciliation/distribution/elimination flows or recurring/auto-reverse
+ * generation:
+ *   - non-"manual" source (invoice/bill/reconciliation/auto_reverse) → exempt
+ *   - templates → exempt (they never post themselves)
+ *   - elimination entries (eliminationEntryId set) → exempt (system)
+ *   - recurring-generated entries (recurringParentId set) → exempt
+ * Everything else keyed by a human on /journal/new needs a different
+ * approver's sign-off.
+ */
+export function journalEntryRequiresApproval(entry: {
+  source: JournalEntry["source"];
+  isTemplate?: boolean;
+  eliminationEntryId?: string | null;
+  recurringParentId?: string | null;
+}): boolean {
+  return (
+    entry.source === "manual" &&
+    entry.isTemplate !== true &&
+    (entry.eliminationEntryId ?? null) == null &&
+    (entry.recurringParentId ?? null) == null
+  );
+}
+
 export async function postJournalEntry(
   user: SessionUser,
   entryId: string,
@@ -506,6 +547,16 @@ export async function postJournalEntry(
   if (!entry) throw new Error("Entry not found.");
   if (entry.status === "posted") return entry;
   if (entry.status === "void") throw new Error("Cannot post a voided entry.");
+
+  // Maker-checker: a free-form manual JE can only be posted once a second
+  // person has approved it. draft / pending_approval → block; approved → OK.
+  if (journalEntryRequiresApproval(entry) && entry.status !== "approved") {
+    throw new Error(
+      entry.status === "pending_approval"
+        ? "This entry is awaiting approval. A different user must approve it before it can be posted."
+        : "This entry must be submitted for approval and approved by a different user before it can be posted.",
+    );
+  }
 
   if (entry.fiscalPeriodId) {
     const db = getDb();
@@ -556,6 +607,286 @@ export async function postJournalEntry(
     metadata: periodCheck.overrideRecorded
       ? { periodOverrideReason: periodCheck.overrideRecorded }
       : undefined,
+  });
+
+  // Auto-reversing accrual: on post, spawn a mirrored posted entry dated
+  // day 1 of the next open period. Guarded so we never double-generate.
+  if (updated.autoReverse && updated.reversalEntryId == null) {
+    try {
+      await generateAutoReversal(user, updated);
+    } catch (err) {
+      // Never let a reversal failure roll back a valid post — surface it in
+      // the audit log and leave the original posted so the user can retry.
+      await logAuditEvent(user, {
+        action: "journal.auto_reverse_failed",
+        resourceType: "journal_entry",
+        resourceId: updated.id,
+        resourceName: updated.entryNumber,
+        metadata: {
+          error: err instanceof Error ? err.message : "unknown",
+        },
+      });
+    }
+    const refreshed = await getJournalEntryById(entryId);
+    if (refreshed) return refreshed;
+  }
+  return updated;
+}
+
+/**
+ * Pick the entry date for an auto-reversal: day 1 of the next OPEN
+ * accounting period after the original entry's period. Falls back to day 1
+ * of the next calendar month when the next period doesn't exist or is
+ * locked/closed. Returns the ISO date plus a note describing the choice.
+ */
+async function pickAutoReversalDate(
+  entryDate: string,
+): Promise<{ date: string; note: string }> {
+  const periods = await getAccountingPeriods(); // ascending by startDate
+  // First-of-next-calendar-month fallback, computed from the entry date.
+  const nextMonthFirst = `${addMonthsIso(`${entryDate.slice(0, 8)}01`, 1).slice(0, 8)}01`;
+
+  // Find the current period, then the first OPEN period that starts after it.
+  const current = periods.find(
+    (p) => entryDate >= p.startDate && entryDate <= p.endDate,
+  );
+  if (current) {
+    const nextOpen = periods.find(
+      (p) => p.startDate > current.endDate && p.status === "open",
+    );
+    if (nextOpen) {
+      return {
+        date: nextOpen.startDate,
+        note: `Reversal dated first day of next open period (${nextOpen.name}).`,
+      };
+    }
+  }
+  return {
+    date: nextMonthFirst,
+    note: "Reversal dated first day of next calendar month (no open next period found).",
+  };
+}
+
+/**
+ * Generate the auto-reversal for a freshly-posted auto_reverse entry.
+ * Creates a POSTED entry with every line's debit/credit swapped, dated day
+ * 1 of the next open period, source 'auto_reverse', autoReverse=false so it
+ * never recurses. Links the original → reversal via reversalEntryId.
+ */
+async function generateAutoReversal(
+  user: SessionUser,
+  original: JournalEntry,
+): Promise<JournalEntry> {
+  const { date, note } = await pickAutoReversalDate(original.entryDate);
+
+  const reversalLines: DraftJournalLine[] = original.lines.map((l) => ({
+    accountId: l.accountId,
+    description: l.description,
+    // Swap: original debit becomes credit, original credit becomes debit.
+    debit: parseAmount(l.credit),
+    credit: parseAmount(l.debit),
+    dimensions: l.dimensions ?? {},
+    intercompanyCounterpartEntityId: l.intercompanyCounterpartEntityId ?? null,
+  }));
+
+  // The reversal posts directly (system-generated — never routes through
+  // maker-checker). No period-override reason is forced; if the target
+  // period is closed/locked, createJournalEntry's period check throws and
+  // the caller records the failure without rolling back the original post.
+  const reversal = await createJournalEntry(user, {
+    entryDate: date,
+    description: `Auto-reversal of ${original.entryNumber}`,
+    reference: original.entryNumber,
+    source: "auto_reverse",
+    status: "posted",
+    entityId: original.entityId,
+    firmEntityId: original.firmEntityId ?? null,
+    fiscalPeriodId: null,
+    autoReverse: false,
+    reversalEntryId: original.id,
+    fxRate: original.fxRate ?? null,
+    lines: reversalLines,
+  });
+
+  const db = getDb();
+  await db
+    .update(schema.journalEntries)
+    .set({ reversalEntryId: reversal.id, updatedAt: new Date() })
+    .where(eq(schema.journalEntries.id, original.id));
+
+  await logAuditEvent(user, {
+    action: "journal.auto_reverse",
+    resourceType: "journal_entry",
+    resourceId: original.id,
+    resourceName: original.entryNumber,
+    metadata: { reversalId: reversal.id, reversalNumber: reversal.entryNumber, note },
+  });
+  return reversal;
+}
+
+// --------- Maker-checker approval (manual JEs) ---------
+
+/**
+ * Submit a draft manual JE for approval. Permission: journal_entry.create
+ * (the author or any updater can submit). Only draft manual entries that
+ * actually require approval can be submitted; system/generated entries are
+ * rejected with a clear error. Records submittedAt/By and moves the entry
+ * to pending_approval.
+ */
+export async function submitJournalEntryForApproval(
+  user: SessionUser,
+  entryId: string,
+): Promise<JournalEntry> {
+  requirePermission(user, "journal_entry.create");
+  const entry = await getJournalEntryById(entryId);
+  if (!entry) throw new Error("Entry not found.");
+  if (!journalEntryRequiresApproval(entry)) {
+    throw new Error(
+      "This entry does not go through approval (system-generated or a template).",
+    );
+  }
+  if (entry.status === "pending_approval") return entry;
+  if (entry.status !== "draft") {
+    throw new Error(`Only draft entries can be submitted (this one is ${entry.status}).`);
+  }
+
+  const db = getDb();
+  const now = new Date();
+  await db
+    .update(schema.journalEntries)
+    .set({
+      status: "pending_approval",
+      submittedAt: now,
+      submittedBy: user.userId,
+      // Clear any stale rejection reason from a previous round-trip.
+      approvalRejectionReason: null,
+      updatedAt: now,
+    })
+    .where(eq(schema.journalEntries.id, entryId));
+
+  const updated = await getJournalEntryById(entryId);
+  if (!updated) throw new Error("Entry vanished after submit.");
+  await logAuditEvent(user, {
+    action: "journal.submit_for_approval",
+    resourceType: "journal_entry",
+    resourceId: updated.id,
+    resourceName: updated.entryNumber,
+    changes: {
+      before: { status: entry.status },
+      after: { status: "pending_approval" },
+    },
+  });
+  return updated;
+}
+
+/**
+ * Approve a pending manual JE. Permission: journal_entry.approve. Enforces
+ * segregation of duties: the approver may be neither the submitter nor the
+ * original creator. Moves the entry to "approved" (posting becomes allowed).
+ */
+export async function approveJournalEntry(
+  user: SessionUser,
+  entryId: string,
+): Promise<JournalEntry> {
+  requirePermission(user, "journal_entry.approve");
+  const entry = await getJournalEntryById(entryId);
+  if (!entry) throw new Error("Entry not found.");
+  if (!journalEntryRequiresApproval(entry)) {
+    throw new Error("This entry does not require approval.");
+  }
+  if (entry.status === "approved") return entry;
+  if (entry.status !== "pending_approval") {
+    throw new Error(
+      `Only entries awaiting approval can be approved (this one is ${entry.status}).`,
+    );
+  }
+  // Segregation of duties — enforced in the mutation regardless of role.
+  if (entry.submittedBy && entry.submittedBy === user.userId) {
+    throw new Error(
+      "Segregation of duties: the person who submitted this entry cannot approve it. A different user must approve.",
+    );
+  }
+  if (entry.createdBy && entry.createdBy === user.userId) {
+    throw new Error(
+      "Segregation of duties: the person who created this entry cannot approve it. A different user must approve.",
+    );
+  }
+
+  const db = getDb();
+  const now = new Date();
+  await db
+    .update(schema.journalEntries)
+    .set({
+      status: "approved",
+      approvedAt: now,
+      approvedBy: user.userId,
+      approvalRejectionReason: null,
+      updatedAt: now,
+    })
+    .where(eq(schema.journalEntries.id, entryId));
+
+  const updated = await getJournalEntryById(entryId);
+  if (!updated) throw new Error("Entry vanished after approve.");
+  await logAuditEvent(user, {
+    action: "journal.approve",
+    resourceType: "journal_entry",
+    resourceId: updated.id,
+    resourceName: updated.entryNumber,
+    changes: {
+      before: { status: entry.status },
+      after: { status: "approved" },
+    },
+  });
+  return updated;
+}
+
+/**
+ * Reject a pending manual JE back to draft. Permission:
+ * journal_entry.approve. Records the rejection reason and clears the
+ * submission trail so the author can amend and resubmit.
+ */
+export async function rejectJournalEntry(
+  user: SessionUser,
+  entryId: string,
+  reason: string,
+): Promise<JournalEntry> {
+  requirePermission(user, "journal_entry.approve");
+  const entry = await getJournalEntryById(entryId);
+  if (!entry) throw new Error("Entry not found.");
+  if (entry.status !== "pending_approval") {
+    throw new Error(
+      `Only entries awaiting approval can be rejected (this one is ${entry.status}).`,
+    );
+  }
+  const trimmed = (reason ?? "").trim();
+
+  const db = getDb();
+  const now = new Date();
+  await db
+    .update(schema.journalEntries)
+    .set({
+      status: "draft",
+      approvalRejectionReason: trimmed === "" ? null : trimmed,
+      submittedAt: null,
+      submittedBy: null,
+      approvedAt: null,
+      approvedBy: null,
+      updatedAt: now,
+    })
+    .where(eq(schema.journalEntries.id, entryId));
+
+  const updated = await getJournalEntryById(entryId);
+  if (!updated) throw new Error("Entry vanished after reject.");
+  await logAuditEvent(user, {
+    action: "journal.reject",
+    resourceType: "journal_entry",
+    resourceId: updated.id,
+    resourceName: updated.entryNumber,
+    changes: {
+      before: { status: entry.status },
+      after: { status: "draft" },
+    },
+    metadata: trimmed ? { reason: trimmed } : undefined,
   });
   return updated;
 }
@@ -5872,6 +6203,210 @@ export async function duplicateJournalEntry(
   });
 
   return { id, entryNumber };
+}
+
+// --------- Journal-entry CSV import (staging) ---------
+
+export type JournalCsvGroupInput = {
+  /** Grouping key (Reference / Group value) — becomes the entry reference. */
+  key: string;
+  /** Entry date (YYYY-MM-DD). */
+  date: string;
+  lines: Array<{
+    rowNo: number;
+    accountToken: string;
+    description: string | null;
+    debit: number;
+    credit: number;
+    firmEntityToken: string | null;
+  }>;
+  /** Row-level parse errors already found for this group (bad date/amount). */
+  parseErrors: string[];
+};
+
+export type JournalCsvGroupResult =
+  | { key: string; ok: true; entryNumber: string; lineCount: number }
+  | { key: string; ok: false; error: string };
+
+/**
+ * Stage parsed CSV groups as DRAFT manual journal entries. Each group is
+ * validated independently — a bad group is reported and skipped without
+ * aborting the rest of the file:
+ *   - the group must have ≥ 2 usable lines with no parse errors
+ *   - debits must equal credits to the cent
+ *   - every account token must resolve (by code, then name)
+ *   - the entry date must fall in an OPEN period (reuses checkPeriodForPost,
+ *     the same gate createJournalEntry applies — closed/locked → rejected)
+ * Valid groups land as status="draft", source="manual", so they flow
+ * through the maker-checker approval path like any hand-keyed entry.
+ */
+export async function stageJournalEntriesFromCsv(
+  user: SessionUser,
+  groups: JournalCsvGroupInput[],
+): Promise<{ results: JournalCsvGroupResult[]; staged: number; rejected: number }> {
+  requirePermission(user, "journal_entry.create");
+  const db = getDb();
+
+  // Resolve accounts (firm-level chart) and firm entities once.
+  const accountRows = await db
+    .select({
+      id: schema.accounts.id,
+      code: schema.accounts.code,
+      name: schema.accounts.name,
+      isActive: schema.accounts.isActive,
+    })
+    .from(schema.accounts);
+  const accountByCode = new Map<string, string>();
+  const accountByName = new Map<string, string>();
+  for (const a of accountRows) {
+    if (!a.isActive) continue;
+    accountByCode.set(a.code.toLowerCase(), a.id);
+    accountByName.set(a.name.toLowerCase(), a.id);
+  }
+  function resolveAccount(token: string): string | null {
+    const t = token.trim().toLowerCase();
+    return accountByCode.get(t) ?? accountByName.get(t) ?? null;
+  }
+
+  const officeRows = await db
+    .select({
+      id: schema.offices.id,
+      code: schema.offices.code,
+      name: schema.offices.name,
+    })
+    .from(schema.offices);
+  const officeById = new Map(officeRows.map((o) => [o.id, o.id] as const));
+  const officeByCode = new Map(
+    officeRows.map((o) => [o.code.toLowerCase(), o.id] as const),
+  );
+  const officeByName = new Map(
+    officeRows.map((o) => [o.name.toLowerCase(), o.id] as const),
+  );
+  function resolveOffice(token: string): string | null {
+    const t = token.trim().toLowerCase();
+    return (
+      officeById.get(token) ??
+      officeByCode.get(t) ??
+      officeByName.get(t) ??
+      null
+    );
+  }
+
+  const results: JournalCsvGroupResult[] = [];
+  let staged = 0;
+  let rejected = 0;
+
+  for (const group of groups) {
+    const reject = (error: string) => {
+      results.push({ key: group.key, ok: false, error });
+      rejected += 1;
+    };
+
+    if (group.parseErrors.length > 0) {
+      reject(group.parseErrors.join(" "));
+      continue;
+    }
+    if (group.lines.length < 2) {
+      reject("Entry must have at least 2 lines.");
+      continue;
+    }
+    if (!group.date) {
+      reject("Entry has no valid date.");
+      continue;
+    }
+
+    // Resolve all accounts + firm entities up front.
+    const resolvedLines: DraftJournalLine[] = [];
+    let firmEntityId: string | null = null;
+    let firmError: string | null = null;
+    let accountError: string | null = null;
+    for (const l of group.lines) {
+      const accountId = resolveAccount(l.accountToken);
+      if (!accountId) {
+        accountError = `Row ${l.rowNo}: account "${l.accountToken}" not found.`;
+        break;
+      }
+      if (l.firmEntityToken) {
+        const oid = resolveOffice(l.firmEntityToken);
+        if (!oid) {
+          firmError = `Row ${l.rowNo}: firm entity "${l.firmEntityToken}" not found.`;
+          break;
+        }
+        // First firm entity seen drives the header; a divergent one is an error.
+        if (firmEntityId == null) firmEntityId = oid;
+        else if (firmEntityId !== oid) {
+          firmError = `Row ${l.rowNo}: all lines of one entry must share the same firm entity.`;
+          break;
+        }
+      }
+      resolvedLines.push({
+        accountId,
+        description: l.description,
+        debit: l.debit,
+        credit: l.credit,
+      });
+    }
+    if (accountError) {
+      reject(accountError);
+      continue;
+    }
+    if (firmError) {
+      reject(firmError);
+      continue;
+    }
+
+    // Balance to the cent.
+    const dt = resolvedLines.reduce((s, l) => s + (l.debit ?? 0), 0);
+    const ct = resolvedLines.reduce((s, l) => s + (l.credit ?? 0), 0);
+    if (Math.abs(dt - ct) > 0.005) {
+      reject(
+        `Unbalanced: debits ${dt.toFixed(2)} ≠ credits ${ct.toFixed(2)}.`,
+      );
+      continue;
+    }
+
+    // Open-period gate — same check createJournalEntry runs on a draft.
+    // A closed period needs an override reason (not supplied here) and a
+    // locked period always throws; both surface as a per-group rejection.
+    try {
+      await checkPeriodForPost(group.date, null);
+    } catch (err) {
+      reject(stripPeriodErrorPrefix(err instanceof Error ? err.message : "Period is not open."));
+      continue;
+    }
+
+    try {
+      const created = await createJournalEntry(user, {
+        entryDate: group.date,
+        description: `Imported entry ${group.key}`,
+        reference: group.key,
+        source: "manual",
+        status: "draft",
+        firmEntityId,
+        lines: resolvedLines,
+      });
+      results.push({
+        key: group.key,
+        ok: true,
+        entryNumber: created.entryNumber,
+        lineCount: resolvedLines.length,
+      });
+      staged += 1;
+    } catch (err) {
+      reject(
+        stripPeriodErrorPrefix(err instanceof Error ? err.message : "Insert failed."),
+      );
+    }
+  }
+
+  await logAuditEvent(user, {
+    action: "journal.csv_import",
+    resourceType: "journal_entry",
+    resourceId: "batch",
+    metadata: { staged, rejected, groups: groups.length },
+  });
+
+  return { results, staged, rejected };
 }
 
 /**
