@@ -23,6 +23,7 @@ import type {
   Dimension,
   DimensionValue,
   Entity,
+  TaxCode,
   Vendor,
 } from "@/lib/types";
 import { suggestNextVendorInvoiceNumber } from "@/lib/vendor-invoice-numbers";
@@ -42,6 +43,8 @@ type Line = {
   accountId: string;
   quantity: string;
   unitPrice: string;
+  /** Per-line input-VAT code (soft FK → tax_codes.id). */
+  taxCodeId: string;
   /** Per-line rebill client — only used when the chargeback is [Split]. */
   clientId: string;
   /** Per-line rebill entity — only used when splitting by entity. */
@@ -55,6 +58,7 @@ function blankLine(accountId = ""): Line {
     accountId,
     quantity: "1",
     unitPrice: "",
+    taxCodeId: "",
     clientId: "",
     entityId: "",
     dimensions: {},
@@ -71,6 +75,8 @@ export function NewBillForm({
   expenseAccounts,
   customers,
   entities,
+  taxCodes,
+  kind = "bill",
   today,
   defaultDueDate,
   dimensionsWithValues,
@@ -83,6 +89,9 @@ export function NewBillForm({
   expenseAccounts: Account[];
   customers: Customer[];
   entities: Entity[];
+  taxCodes: TaxCode[];
+  /** 'bill' (default) | 'vendor_credit'. */
+  kind?: "bill" | "vendor_credit";
   today: string;
   defaultDueDate: string;
   dimensionsWithValues: Array<{ dimension: Dimension; values: DimensionValue[] }>;
@@ -91,6 +100,13 @@ export function NewBillForm({
   currencyCode: string;
   latestFxRates: Record<string, number>;
 }) {
+  const taxCodeOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      taxCodes
+        .filter((c) => c.isActive)
+        .map((c) => ({ value: c.id, label: `${c.code} — ${c.name}`, search: c.code })),
+    [taxCodes],
+  );
   // Local vendor list seeded from server. The OCR auto-fill path may
   // append a newly-created vendor (when the extracted name doesn't match
   // any existing one), and the rest of the form picks it up via the
@@ -291,6 +307,7 @@ export function NewBillForm({
                 : li.total != null && li.quantity
                   ? (li.total / li.quantity).toFixed(2)
                   : "",
+            taxCodeId: "",
             clientId: "",
             entityId: "",
             dimensions: {},
@@ -523,6 +540,7 @@ export function NewBillForm({
 
   return (
     <form action={formAction} className="flex flex-col gap-3.5 px-6 py-3.5 pb-8">
+      <input type="hidden" name="kind" value={kind} />
       {state.error && (
         <div
           className="rounded-md px-3 py-2 text-[12.5px]"
@@ -815,14 +833,27 @@ export function NewBillForm({
                     />
                   </TD>
                   <TD>
-                    <SmartSelect
-                      name={`lines[${i}][accountId]`}
-                      value={line.accountId}
-                      onChange={(v) => updateLine(i, { accountId: v })}
-                      options={expenseAccountOptions}
-                      emptyLabel="— Select account —"
-                      ariaLabel="Expense account"
-                    />
+                    <div className="flex flex-col gap-1">
+                      <SmartSelect
+                        name={`lines[${i}][accountId]`}
+                        value={line.accountId}
+                        onChange={(v) => updateLine(i, { accountId: v })}
+                        options={expenseAccountOptions}
+                        emptyLabel="— Select account —"
+                        ariaLabel="Expense account"
+                      />
+                      {taxCodeOptions.length > 0 && (
+                        <SmartSelect
+                          name={`lines[${i}][taxCodeId]`}
+                          value={line.taxCodeId}
+                          onChange={(v) => updateLine(i, { taxCodeId: v })}
+                          options={taxCodeOptions}
+                          emptyLabel="— No input VAT/GST —"
+                          clearable
+                          ariaLabel="Input tax code"
+                        />
+                      )}
+                    </div>
                   </TD>
                   {dimensionsWithValues.map(({ dimension }) => (
                     <TD key={dimension.id}>

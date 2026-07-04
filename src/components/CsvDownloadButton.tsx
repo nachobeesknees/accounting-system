@@ -20,7 +20,9 @@ export function CsvDownloadButton({
     | "income-statement-monthly"
     | "cash-flows"
     | "ar-aging"
-    | "ap-aging";
+    | "ap-aging"
+    | "vat"
+    | "statement";
   label?: string;
   extraParams?: Record<string, string>;
 }) {

@@ -303,6 +303,9 @@ export type EntityFee = {
   lastBilledDate?: string | null;
   /** Override the derived per-period amount. */
   perPeriodAmount?: string | null;
+  /** Opt-in: invoices generated from this fee defer revenue over the
+   *  coverage window (startDate..endDate). */
+  deferRevenue?: boolean;
 };
 
 export type RecurringPaymentFrequency =
@@ -599,6 +602,7 @@ export type InvoiceStatus =
   | "paid"
   | "overdue"
   | "void"
+  | "written_off"
   | "template";
 
 export type InvoiceRecurringFrequency =
@@ -617,13 +621,27 @@ export type InvoiceLine = {
   unitPrice: string;
   amount: string;
   accountId: string;
+  /** Per-line VAT/GST coding. Soft FK → tax_codes.id. null = legacy
+   *  invoice-level rate applies. */
+  taxCodeId?: string | null;
+  /** round(amount × tax_code.rate). 0 for zero-rated / exempt / out-of-scope. */
+  taxAmount?: string;
+  /** Opt-in deferred revenue over [deferralStart, deferralEnd]. */
+  deferRevenue?: boolean;
+  deferralStart?: string | null;
+  deferralEnd?: string | null;
   /** Read side always populates from DB JSONB (defaults to {}). */
   dimensions?: DimensionMap;
 };
 
+/** 'invoice' | 'credit_memo'. Credit memos store NEGATIVE totals. */
+export type InvoiceKind = "invoice" | "credit_memo";
+
 export type Invoice = {
   id: string;
   invoiceNumber: string;
+  /** 'invoice' | 'credit_memo'. Defaults to 'invoice' for legacy rows. */
+  kind?: InvoiceKind;
   customerId: string;
   entityId: string | null;
   clientId: string | null;
@@ -647,6 +665,8 @@ export type Invoice = {
   amountPaid: string;
   balanceDue: string;
   currencyCode: string;
+  /** Which of the firm's corporate entities issued this invoice. */
+  firmEntityId?: string | null;
   expectedPaymentDate?: string | null;
   notes: string | null;
   journalEntryId: string | null;
@@ -666,6 +686,11 @@ export type Invoice = {
    * NULL = invoice is in base currency / no conversion needed.
    */
   fxRate?: string | null;
+  /** Bad-debt write-off audit trail. */
+  writtenOffAt?: string | null;
+  writtenOffBy?: string | null;
+  writeoffReason?: string | null;
+  writeoffJournalEntryId?: string | null;
   lines: InvoiceLine[];
 };
 
@@ -695,6 +720,9 @@ export type VendorApprovalStatus = "pending" | "approved" | "rejected";
 
 export type BillStatus = "draft" | "approved" | "partial" | "paid" | "overdue" | "void";
 
+/** 'bill' | 'vendor_credit'. Vendor credits store NEGATIVE totals. */
+export type BillKind = "bill" | "vendor_credit";
+
 export type BillLine = {
   id: string;
   billId: string;
@@ -704,6 +732,10 @@ export type BillLine = {
   unitPrice: string;
   amount: string;
   accountId: string;
+  /** Per-line input-VAT coding. Soft FK → tax_codes.id. */
+  taxCodeId?: string | null;
+  /** round(amount × tax_code.rate); recoverable input VAT for standard/reduced. */
+  taxAmount?: string;
   clientId?: string | null;
   entityId?: string | null;
   /** Split chargebacks: invoice that rebilled this line (null = unbilled). */
@@ -724,6 +756,8 @@ export type BillChargebackType = "cost" | "markup" | "fixed" | "included";
 export type Bill = {
   id: string;
   billNumber: string;
+  /** 'bill' | 'vendor_credit'. Defaults to 'bill' for legacy rows. */
+  kind?: BillKind;
   vendorId: string;
   /** Vendor's own invoice number (separate from our internal billNumber). */
   vendorInvoiceNumber?: string | null;
@@ -992,4 +1026,130 @@ export type Distribution = {
   journalEntryId: string | null;
   resolutionReference: string | null;
   notes: string | null;
+};
+
+// ---- Revenue chain: tax codes, payments/retainers, credits, deferred rev,
+//      collections ----
+
+export type TaxCodeKind =
+  | "standard"
+  | "reduced"
+  | "zero_rated"
+  | "exempt"
+  | "out_of_scope";
+
+export type TaxCode = {
+  id: string;
+  code: string;
+  name: string;
+  /** Decimal rate (0.15 = 15%). */
+  rate: string;
+  kind: TaxCodeKind;
+  country: string | null;
+  isActive: boolean;
+  notes: string | null;
+};
+
+/** True when a tax code sits inside the VAT net (standard/reduced/zero-rated). */
+export function taxCodeInVatNet(kind: TaxCodeKind): boolean {
+  return kind === "standard" || kind === "reduced" || kind === "zero_rated";
+}
+
+export type PaymentDirection = "inbound" | "outbound";
+export type PaymentKind = "standard" | "retainer";
+
+export type Payment = {
+  id: string;
+  paymentNumber: string;
+  paymentDate: string;
+  amount: string;
+  paymentMethod: string | null;
+  reference: string | null;
+  direction: PaymentDirection;
+  customerId: string | null;
+  vendorId: string | null;
+  bankAccountId: string | null;
+  journalEntryId: string | null;
+  /** Portion not yet applied to an invoice (funds on account). */
+  unappliedAmount: string;
+  firmEntityId: string | null;
+  currencyCode: string;
+  kind: PaymentKind;
+  notes: string | null;
+  createdAt: string;
+};
+
+export type PaymentAllocation = {
+  id: string;
+  paymentId: string;
+  invoiceId: string | null;
+  billId: string | null;
+  amount: string;
+  createdAt: string;
+};
+
+export type CreditApplication = {
+  id: string;
+  creditInvoiceId: string;
+  targetInvoiceId: string;
+  amount: string;
+  appliedBy: string | null;
+  createdAt: string;
+};
+
+export type BillCreditApplication = {
+  id: string;
+  creditBillId: string;
+  targetBillId: string;
+  amount: string;
+  appliedBy: string | null;
+  createdAt: string;
+};
+
+export type RevenueRecognitionScheduleStatus = "active" | "complete" | "cancelled";
+
+export type RevenueRecognitionSchedule = {
+  id: string;
+  invoiceId: string;
+  invoiceLineId: string;
+  deferralAccountId: string;
+  revenueAccountId: string;
+  startDate: string;
+  endDate: string;
+  total: string;
+  recognizedAmount: string;
+  status: RevenueRecognitionScheduleStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type RevenueRecognitionEntry = {
+  id: string;
+  scheduleId: string;
+  periodDate: string;
+  amount: string;
+  journalEntryId: string | null;
+  createdAt: string;
+};
+
+export type CollectionActivityKind =
+  | "note"
+  | "call"
+  | "email"
+  | "promise"
+  | "reminder";
+
+export type CollectionActivityStatus = "open" | "kept" | "broken" | "done";
+
+export type CollectionActivity = {
+  id: string;
+  customerId: string;
+  activityDate: string;
+  kind: CollectionActivityKind;
+  amount: string | null;
+  promiseDate: string | null;
+  status: CollectionActivityStatus;
+  ownerUserId: string | null;
+  notes: string | null;
+  createdAt: string;
 };

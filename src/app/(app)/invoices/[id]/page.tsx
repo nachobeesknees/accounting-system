@@ -13,12 +13,17 @@ import {
   getAccounts,
   getBankAccounts,
   getBaseCurrency,
+  getCreditApplicationsByCredit,
+  getCreditApplicationsForInvoice,
   getCustomerAssignments,
   getCustomerById,
   getDimensionsWithValues,
+  getFundsOnAccount,
   getInvoiceById,
   getInvoiceNotes,
+  getInvoices,
   getJournalEntryById,
+  getTaxCodeById,
   getUserById,
 } from "@/lib/data";
 import { getSessionUser } from "@/lib/session";
@@ -27,6 +32,8 @@ import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
 import {
   addInvoiceNoteAction,
+  applyCreditAction,
+  applyFundsAction,
   assignedApproveInvoiceAction,
   cfoApproveInvoiceAction,
   postInvoiceAction,
@@ -35,6 +42,7 @@ import {
   setExpectedPaymentDateAction,
   submitInvoiceForApprovalAction,
   voidInvoiceAction,
+  writeOffInvoiceAction,
 } from "./actions";
 import {
   duplicateInvoiceAction,
@@ -115,6 +123,9 @@ export default async function Page({
     submitted?: string;
     approved?: string;
     rejected?: string;
+    writtenoff?: string;
+    applied?: string;
+    fundsapplied?: string;
   }>;
 }) {
   const { id } = await params;
@@ -146,6 +157,59 @@ export default async function Page({
     getBaseCurrency(),
   ]);
   const baseCode = base?.code ?? "USD";
+
+  const isCreditMemo = invoice.kind === "credit_memo";
+  // Funds on account for this client + credit-application context.
+  const [
+    fundsOnAccount,
+    creditAppsFrom,
+    creditAppsTo,
+    allInvoicesForClient,
+    lineTaxCodes,
+  ] = await Promise.all([
+    getFundsOnAccount(invoice.customerId),
+    isCreditMemo
+      ? getCreditApplicationsByCredit(invoice.id)
+      : Promise.resolve([]),
+    !isCreditMemo
+      ? getCreditApplicationsForInvoice(invoice.id)
+      : Promise.resolve([]),
+    isCreditMemo ? getInvoices() : Promise.resolve([]),
+    Promise.all(
+      Array.from(
+        new Set(
+          invoice.lines
+            .map((l) => l.taxCodeId)
+            .filter((v): v is string => !!v),
+        ),
+      ).map(async (tcId) => [tcId, await getTaxCodeById(tcId)] as const),
+    ),
+  ]);
+  const taxCodeById = new Map(lineTaxCodes.filter(([, c]) => c != null));
+  // Remaining credit on a credit memo = abs(total) − applied.
+  const creditApplied = creditAppsFrom.reduce(
+    (s, a) => s + parseAmount(a.amount),
+    0,
+  );
+  const creditRemaining = isCreditMemo
+    ? Math.abs(parseAmount(invoice.total)) - creditApplied
+    : 0;
+  // Open invoices this credit memo could be applied to (same client, same
+  // currency — the mutation rejects cross-currency application).
+  const openTargets = isCreditMemo
+    ? allInvoicesForClient.filter(
+        (t) =>
+          t.customerId === invoice.customerId &&
+          t.currencyCode === invoice.currencyCode &&
+          t.kind !== "credit_memo" &&
+          !t.isTemplate &&
+          parseAmount(t.balanceDue) > 0.005 &&
+          t.status !== "void" &&
+          t.status !== "paid" &&
+          t.status !== "draft",
+      )
+    : [];
+
   // FX snapshot is meaningful only when both the rate exists AND the
   // invoice is in a non-base currency. A stored value of "1.00000000"
   // would also mean "no conversion", so treat that as absent.
@@ -235,13 +299,32 @@ export default async function Page({
   const canSubmit = isDraft && hasPermission(sessionUser, "invoice.update");
   const canPay =
     !isTemplate &&
+    !isCreditMemo &&
     (status === "sent" || status === "partial" || status === "overdue") &&
     hasPermission(sessionUser, "bank.create_transaction");
   const canVoid =
     !isTemplate &&
     status !== "paid" &&
     status !== "void" &&
+    status !== "written_off" &&
     hasPermission(sessionUser, "invoice.void");
+  // Bad-debt write-off: open, posted, non-credit invoice with a balance.
+  const canWriteOff =
+    !isTemplate &&
+    !isCreditMemo &&
+    balance > 0.005 &&
+    (status === "sent" ||
+      status === "partial" ||
+      status === "overdue") &&
+    hasPermission(sessionUser, "invoice.void");
+  // Apply funds on account: same eligibility as payment + funds available.
+  const canApplyFunds =
+    !isTemplate &&
+    !isCreditMemo &&
+    balance > 0.005 &&
+    (status === "sent" || status === "partial" || status === "overdue") &&
+    fundsOnAccount > 0.005 &&
+    hasPermission(sessionUser, "bank.create_transaction");
 
   const templateEnded =
     isTemplate &&
@@ -354,6 +437,15 @@ export default async function Page({
     }
     if (sp.approved === "assigned") {
       return "Final approval recorded — invoice posted.";
+    }
+    if (sp.writtenoff === "1") {
+      return "Balance written off to bad debt.";
+    }
+    if (sp.applied === "1") {
+      return "Credit applied.";
+    }
+    if (sp.fundsapplied === "1") {
+      return "Funds on account applied.";
     }
     return null;
   })();
@@ -731,6 +823,174 @@ export default async function Page({
           </Card>
         )}
 
+        {isCreditMemo && (
+          <Card
+            title="Credit memo"
+            actions={
+              <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                Remaining {formatMoney(creditRemaining, invoice.currencyCode, { compact: true })}
+              </span>
+            }
+          >
+            <div className="p-3.5 flex flex-col gap-3">
+              {creditAppsFrom.length > 0 && (
+                <Table>
+                  <THead>
+                    <TR hover={false}>
+                      <TH>Applied to</TH>
+                      <TH num>Amount</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {creditAppsFrom.map((a) => (
+                      <TR key={a.id}>
+                        <TD mono>
+                          <Link
+                            href={`/invoices/${a.targetInvoiceId}`}
+                            style={{ color: "var(--ink)", textDecoration: "none" }}
+                          >
+                            {a.targetInvoiceId}
+                          </Link>
+                        </TD>
+                        <TD num>
+                          {formatMoney(a.amount, invoice.currencyCode, { compact: true })}
+                        </TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              )}
+              {creditRemaining > 0.005 &&
+              status !== "draft" &&
+              status !== "void" &&
+              openTargets.length > 0 ? (
+                <form
+                  action={applyCreditAction}
+                  className="flex items-end gap-3 flex-wrap"
+                >
+                  <input type="hidden" name="creditInvoiceId" value={invoice.id} />
+                  <SelectField
+                    label="Apply to invoice"
+                    name="targetInvoiceId"
+                    required
+                  >
+                    {openTargets.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.invoiceNumber} — bal{" "}
+                        {formatMoney(t.balanceDue, t.currencyCode, { compact: true })}
+                      </option>
+                    ))}
+                  </SelectField>
+                  <Field
+                    label="Amount"
+                    name="amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    mono
+                    defaultValue={creditRemaining.toFixed(2)}
+                  />
+                  <Button variant="primary" type="submit">
+                    Apply credit
+                  </Button>
+                </form>
+              ) : (
+                <div className="text-[12.5px]" style={{ color: "var(--ink-3)" }}>
+                  {status === "draft"
+                    ? "Post the credit memo to apply it."
+                    : creditRemaining <= 0.005
+                      ? "Fully applied."
+                      : "No open invoices to apply to."}
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {!isCreditMemo && creditAppsTo.length > 0 && (
+          <Card title="Credit memos applied">
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Credit memo</TH>
+                  <TH num>Amount</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {creditAppsTo.map((a) => (
+                  <TR key={a.id}>
+                    <TD mono>
+                      <Link
+                        href={`/invoices/${a.creditInvoiceId}`}
+                        style={{ color: "var(--ink)", textDecoration: "none" }}
+                      >
+                        {a.creditInvoiceId}
+                      </Link>
+                    </TD>
+                    <TD num>
+                      {formatMoney(a.amount, invoice.currencyCode, { compact: true })}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </Card>
+        )}
+
+        {canApplyFunds && (
+          <Card
+            title="Funds on account"
+            actions={
+              <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                Available {formatMoney(fundsOnAccount, invoice.currencyCode, { compact: true })}
+              </span>
+            }
+          >
+            <form action={applyFundsAction}>
+              <input type="hidden" name="invoiceId" value={invoice.id} />
+              <div className="p-3.5 flex items-end gap-3 flex-wrap">
+                <Field
+                  label="Apply amount"
+                  name="amount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  mono
+                  defaultValue={Math.min(fundsOnAccount, balance).toFixed(2)}
+                />
+                <Button variant="primary" type="submit">
+                  Apply funds on account
+                </Button>
+              </div>
+            </form>
+          </Card>
+        )}
+
+        {canWriteOff && (
+          <Card title="Bad-debt write-off">
+            <form action={writeOffInvoiceAction}>
+              <input type="hidden" name="invoiceId" value={invoice.id} />
+              <div className="p-3.5 flex flex-col gap-3">
+                <TextareaField
+                  label="Write-off reason"
+                  name="reason"
+                  required
+                  placeholder="Client insolvent — balance deemed uncollectible."
+                />
+                <div className="flex justify-end">
+                  <ConfirmButton
+                    label="Write off balance"
+                    title={`Write off ${invoice.invoiceNumber}?`}
+                    message="Posts Dr bad-debt expense / Cr AR for the remaining balance and marks the invoice written off. The invoice is not deleted."
+                    confirmText="Write off"
+                    requirePhrase={invoice.invoiceNumber}
+                  />
+                </div>
+              </div>
+            </form>
+          </Card>
+        )}
+
         {isTemplate && (
           <Card title="Recurring schedule">
             <KVGrid>
@@ -783,15 +1043,18 @@ export default async function Page({
                 <TH>#</TH>
                 <TH>Description</TH>
                 <TH>Account</TH>
+                <TH>Tax code</TH>
                 <TH num>Qty</TH>
                 <TH num>Unit price</TH>
                 <TH num>Amount</TH>
+                <TH num>Tax</TH>
               </TR>
             </THead>
             <TBody>
               {invoice.lines.map((line) => {
                 const account = accountById.get(line.accountId);
                 const dimText = renderDimensions(line.dimensions);
+                const tc = line.taxCodeId ? taxCodeById.get(line.taxCodeId) : undefined;
                 return (
                   <TR key={line.id}>
                     <TD mono>{line.lineNumber}</TD>
@@ -806,6 +1069,16 @@ export default async function Page({
                           }}
                         >
                           {dimText}
+                        </div>
+                      )}
+                      {line.deferRevenue && (
+                        <div
+                          style={{ fontSize: 11, color: "var(--ink-4)", marginTop: 2 }}
+                        >
+                          Deferred{" "}
+                          {line.deferralStart && line.deferralEnd
+                            ? `${line.deferralStart} → ${line.deferralEnd}`
+                            : ""}
                         </div>
                       )}
                     </TD>
@@ -827,24 +1100,40 @@ export default async function Page({
                         </span>
                       )}
                     </TD>
+                    <TD>
+                      {tc ? (
+                        <span style={{ fontSize: 11.5 }}>
+                          {tc.code}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--ink-4)" }}>—</span>
+                      )}
+                    </TD>
                     <TD num>{line.quantity}</TD>
                     <TD num>{formatMoney(line.unitPrice, invoice.currencyCode, { compact: true, paren: true })}</TD>
                     <TD num>{formatMoney(line.amount, invoice.currencyCode, { compact: true, paren: true })}</TD>
+                    <TD num>
+                      {formatMoney(line.taxAmount ?? "0", invoice.currencyCode, {
+                        compact: true,
+                        paren: true,
+                      })}
+                    </TD>
                   </TR>
                 );
               })}
               <TR total hover={false}>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD>Subtotal</TD>
+                <TD colSpan={2}>Subtotal</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
                 <TD num>{formatMoney(invoice.subtotal, invoice.currencyCode, { compact: true, paren: true })}</TD>
+                <TD>{""}</TD>
               </TR>
               <TR total hover={false}>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD>
+                <TD colSpan={2}>
                   Tax
                   {invoice.taxExempt
                     ? " (exempt)"
@@ -857,21 +1146,23 @@ export default async function Page({
                 <TD>{""}</TD>
                 <TD>{""}</TD>
                 <TD num>{formatMoney(invoice.taxAmount, invoice.currencyCode, { compact: true, paren: true })}</TD>
+                <TD>{""}</TD>
               </TR>
               <TR total hover={false}>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
-                <TD>Total</TD>
+                <TD colSpan={2}>Total</TD>
                 <TD>{""}</TD>
                 <TD>{""}</TD>
                 <TD num>{formatMoney(invoice.total, invoice.currencyCode, { compact: true, paren: true })}</TD>
+                <TD>{""}</TD>
               </TR>
               {hasFxSnapshot && (
                 <TR hover={false}>
                   <TD>{""}</TD>
                   <TD>{""}</TD>
                   <TD
-                    colSpan={3}
+                    colSpan={5}
                     style={{ color: "var(--ink-3)", fontSize: 11.5 }}
                   >
                     Booked at 1 {baseCode} = {fxRateNum} {invoice.currencyCode}

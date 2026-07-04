@@ -74,6 +74,7 @@ type ParsedLine = {
   accountId: string;
   quantity: number;
   unitPrice: number;
+  taxCodeId: string | null;
   clientId: string | null;
   entityId: string | null;
   dimensions: Record<string, string>;
@@ -114,11 +115,16 @@ function parseLines(formData: FormData): ParsedLine[] {
 
     const lineClientId = formData.get(`lines[${i}][clientId]`);
     const lineEntityId = formData.get(`lines[${i}][entityId]`);
+    const lineTaxCode = formData.get(`lines[${i}][taxCodeId]`);
     lines.push({
       description: typeof description === "string" ? description : "",
       accountId: typeof accountId === "string" ? accountId : "",
       quantity: parseAmount(typeof quantity === "string" ? quantity : ""),
       unitPrice: parseAmount(typeof unitPrice === "string" ? unitPrice : ""),
+      taxCodeId:
+        typeof lineTaxCode === "string" && lineTaxCode.trim() !== ""
+          ? lineTaxCode.trim()
+          : null,
       clientId:
         typeof lineClientId === "string" && lineClientId.trim() !== ""
           ? lineClientId.trim()
@@ -171,6 +177,8 @@ export async function createBillAction(
     formData.get("periodOverrideReason") ?? "",
   ).trim();
   const action = String(formData.get("action") ?? "draft");
+  const kindRaw = String(formData.get("kind") ?? "bill");
+  const kind = kindRaw === "vendor_credit" ? "vendor_credit" : "bill";
   const clientIdRaw = String(formData.get("clientId") ?? "").trim();
   const entityIdRaw = String(formData.get("entityId") ?? "").trim();
 
@@ -200,6 +208,7 @@ export async function createBillAction(
       accountId: l.accountId,
       quantity: l.quantity,
       unitPrice: l.unitPrice,
+      taxCodeId: l.taxCodeId,
       clientId: l.clientId,
       entityId: l.entityId,
       dimensions: l.dimensions,
@@ -291,6 +300,7 @@ export async function createBillAction(
   try {
     const created = await createBill(user, {
       vendorId,
+      kind,
       billDate,
       dueDate,
       reference: reference === "" ? null : reference,

@@ -10,6 +10,7 @@ import {
   getEntities,
   getFirmEntities,
   getLatestFxRateForCurrency,
+  getTaxCodes,
   getVendors,
 } from "@/lib/data";
 import { getEntityScope } from "@/lib/entity-scope";
@@ -20,7 +21,13 @@ import {
 
 import { NewBillForm } from "./NewBillForm";
 
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ kind?: string }>;
+}) {
+  const sp = await searchParams;
+  const kind = sp.kind === "vendor_credit" ? "vendor_credit" : "bill";
   await ensureAccountingPeriods(new Date().getUTCFullYear());
   const [
     vendorsAll,
@@ -33,6 +40,7 @@ export default async function Page() {
     currencies,
     firmEntities,
     firmEntityId,
+    taxCodes,
   ] = await Promise.all([
     getVendors(),
     getAccounts(),
@@ -44,6 +52,7 @@ export default async function Page() {
     getCurrencies(),
     getFirmEntities(),
     getEntityScope(),
+    getTaxCodes(),
   ]);
   const baseCode = base?.code ?? "USD";
   // Currency that this bill will be issued in. Mirrors mutations.ts'
@@ -114,8 +123,8 @@ export default async function Page() {
   return (
     <>
       <PageHeader
-        title="New bill"
-        meta="Bills / New"
+        title={kind === "vendor_credit" ? "New vendor credit" : "New bill"}
+        meta={kind === "vendor_credit" ? "Bills / New vendor credit" : "Bills / New"}
         actions={
           <ButtonLink href="/bills" variant="secondary">
             Cancel
@@ -127,6 +136,8 @@ export default async function Page() {
         expenseAccounts={expenseAccounts}
         customers={customers}
         entities={entities}
+        taxCodes={taxCodes}
+        kind={kind}
         today={today}
         defaultDueDate={defaultDueDate}
         dimensionsWithValues={dimensionsWithValues}

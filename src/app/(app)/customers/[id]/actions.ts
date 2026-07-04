@@ -8,9 +8,13 @@ import { getSessionUser } from "@/lib/session";
 import {
   addCustomerAssignment,
   generateChargebackInvoice,
+  logCollectionActivity,
+  recordRetainer,
   removeCustomerAssignment,
   setCustomerAssignedUser,
 } from "@/lib/mutations";
+import { parseAmount } from "@/lib/money";
+import type { CollectionActivityKind } from "@/lib/types";
 
 function isRedirectError(err: unknown): boolean {
   return (
@@ -122,6 +126,77 @@ export async function removeAssignmentAction(formData: FormData): Promise<void> 
   revalidatePath(`/customers/${customerId}`);
   revalidatePath("/customers");
   redirect(`/customers/${customerId}?saved=1`);
+}
+
+export async function recordRetainerAction(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  const customerId = String(formData.get("customerId") ?? "");
+  if (!customerId) {
+    redirect(`/customers?error=${encodeURIComponent("Missing customer id.")}`);
+  }
+  const amount = parseAmount(String(formData.get("amount") ?? ""));
+  const paymentDate =
+    String(formData.get("paymentDate") ?? "").trim() ||
+    new Date().toISOString().slice(0, 10);
+  const bankAccountIdRaw = String(formData.get("bankAccountId") ?? "").trim();
+  const reference = String(formData.get("reference") ?? "").trim();
+  if (!(amount > 0)) {
+    redirect(
+      `/customers/${customerId}?error=${encodeURIComponent("Retainer amount must be > 0.")}`,
+    );
+  }
+  try {
+    await recordRetainer(user, {
+      customerId,
+      amount,
+      paymentDate,
+      bankAccountId: bankAccountIdRaw === "" ? null : bankAccountIdRaw,
+      reference: reference || null,
+    });
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const msg = err instanceof Error ? err.message : "Failed to record retainer.";
+    redirect(`/customers/${customerId}?error=${encodeURIComponent(msg)}`);
+  }
+  revalidatePath(`/customers/${customerId}`);
+  revalidatePath("/journal");
+  redirect(`/customers/${customerId}?saved=1`);
+}
+
+export async function logCustomerCollectionAction(
+  formData: FormData,
+): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  const customerId = String(formData.get("customerId") ?? "");
+  if (!customerId) {
+    redirect(`/customers?error=${encodeURIComponent("Missing customer id.")}`);
+  }
+  const kindRaw = String(formData.get("kind") ?? "note");
+  const valid = ["note", "call", "email", "promise", "reminder"];
+  const kind = (valid.includes(kindRaw) ? kindRaw : "note") as CollectionActivityKind;
+  const notes = String(formData.get("notes") ?? "").trim();
+  const amountRaw = String(formData.get("amount") ?? "").trim();
+  const amount = amountRaw === "" ? null : parseAmount(amountRaw);
+  const promiseDateRaw = String(formData.get("promiseDate") ?? "").trim();
+  try {
+    await logCollectionActivity(user, {
+      customerId,
+      kind,
+      amount,
+      promiseDate: promiseDateRaw === "" ? null : promiseDateRaw,
+      status: kind === "promise" ? "open" : "done",
+      notes: notes || null,
+    });
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const msg = err instanceof Error ? err.message : "Failed to log activity.";
+    redirect(`/customers/${customerId}?error=${encodeURIComponent(msg)}`);
+  }
+  revalidatePath(`/customers/${customerId}`);
+  revalidatePath("/collections");
+  redirect(`/customers/${customerId}?saved=1#collections`);
 }
 
 /**

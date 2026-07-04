@@ -28,6 +28,7 @@ const SECTIONS: Section[] = [
       { href: "/invoices", label: "Invoices" },
       { href: "/customers", label: "Clients" },
       { href: "/entities", label: "Entities" },
+      { href: "/collections", label: "Collections" },
     ],
   },
   {
@@ -73,6 +74,8 @@ const SECTIONS: Section[] = [
       { href: "/reports/variance", label: "Variance Analysis" },
       { href: "/reports/ap-aging", label: "AP Aging" },
       { href: "/reports/ar-aging", label: "AR Aging" },
+      { href: "/reports/vat", label: "VAT / GST Return" },
+      { href: "/revenue/recognition", label: "Revenue Recognition" },
       { href: "/reports/cash-forecast", label: "12-Week Cash Forecast" },
       { href: "/cash-forecast", label: "Cash Forecast" },
       { href: "/consolidation", label: "Consolidation" },

@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/session";
 import {
   addInvoiceNote,
+  applyCreditMemo,
+  applyFundsToInvoice,
   assignedApproveInvoice,
   cfoApproveInvoice,
   postInvoice,
@@ -13,6 +15,7 @@ import {
   setInvoiceExpectedPaymentDate,
   submitInvoiceForApproval,
   voidInvoice,
+  writeOffInvoice,
 } from "@/lib/mutations";
 import { parseAmount } from "@/lib/money";
 import { stripPeriodErrorPrefix } from "@/lib/periods";
@@ -290,6 +293,85 @@ export async function addInvoiceNoteAction(formData: FormData): Promise<void> {
 
   revalidatePath(`/invoices/${invoiceId}`);
   redirect(`/invoices/${invoiceId}#notes`);
+}
+
+export async function writeOffInvoiceAction(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  const reason = String(formData.get("reason") ?? "").trim();
+  if (!invoiceId) {
+    redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
+  }
+  guardPermission(user, "invoice.void", invoiceId);
+  if (!reason) {
+    redirect(
+      `/invoices/${invoiceId}?error=${encodeURIComponent("A write-off reason is required.")}`,
+    );
+  }
+  try {
+    await writeOffInvoice(user, invoiceId, reason);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const message = err instanceof Error ? err.message : "Failed to write off invoice.";
+    redirect(`/invoices/${invoiceId}?error=${encodeURIComponent(message)}`);
+  }
+  revalidateAfterMutation(invoiceId);
+  redirect(`/invoices/${invoiceId}?writtenoff=1`);
+}
+
+export async function applyCreditAction(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  // Applied FROM the credit-memo detail page: creditInvoiceId is the current
+  // memo, targetInvoiceId is the chosen open invoice.
+  const creditInvoiceId = String(formData.get("creditInvoiceId") ?? "");
+  const targetInvoiceId = String(formData.get("targetInvoiceId") ?? "");
+  const amount = parseAmount(String(formData.get("amount") ?? ""));
+  if (!creditInvoiceId || !targetInvoiceId) {
+    redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
+  }
+  guardPermission(user, "invoice.update", creditInvoiceId);
+  if (!(amount > 0)) {
+    redirect(
+      `/invoices/${creditInvoiceId}?error=${encodeURIComponent("Amount must be > 0.")}`,
+    );
+  }
+  try {
+    await applyCreditMemo(user, { creditInvoiceId, targetInvoiceId, amount });
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const message = err instanceof Error ? err.message : "Failed to apply credit.";
+    redirect(`/invoices/${creditInvoiceId}?error=${encodeURIComponent(message)}`);
+  }
+  revalidateAfterMutation(creditInvoiceId);
+  revalidateAfterMutation(targetInvoiceId);
+  redirect(`/invoices/${creditInvoiceId}?applied=1`);
+}
+
+export async function applyFundsAction(formData: FormData): Promise<void> {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  const amount = parseAmount(String(formData.get("amount") ?? ""));
+  if (!invoiceId) {
+    redirect(`/invoices?error=${encodeURIComponent("Missing invoice id.")}`);
+  }
+  guardPermission(user, "bank.create_transaction", invoiceId);
+  if (!(amount > 0)) {
+    redirect(
+      `/invoices/${invoiceId}?error=${encodeURIComponent("Amount must be > 0.")}`,
+    );
+  }
+  try {
+    await applyFundsToInvoice(user, { invoiceId, amount });
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const message = err instanceof Error ? err.message : "Failed to apply funds.";
+    redirect(`/invoices/${invoiceId}?error=${encodeURIComponent(message)}`);
+  }
+  revalidateAfterMutation(invoiceId);
+  redirect(`/invoices/${invoiceId}?fundsapplied=1`);
 }
 
 export async function rejectInvoiceAction(formData: FormData): Promise<void> {

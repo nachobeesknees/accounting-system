@@ -14,6 +14,9 @@ import {
   getBankAccounts,
   getBaseCurrency,
   getBillById,
+  getBillCreditApplicationsByCredit,
+  getBillCreditApplicationsForBill,
+  getBills,
   getCustomerById,
   getCustomers,
   getDimensionsWithValues,
@@ -21,6 +24,7 @@ import {
   getEntityById,
   getInvoiceById,
   getJournalEntryById,
+  getTaxCodeById,
   getVendorById,
 } from "@/lib/data";
 import { formatDate } from "@/lib/format";
@@ -30,6 +34,7 @@ import { getSessionUser } from "@/lib/session";
 import type { Bill } from "@/lib/types";
 
 import {
+  applyVendorCreditAction,
   approveBillAction,
   recordBillPaymentAction,
   setBillChargebackAction,
@@ -68,10 +73,11 @@ export default async function Page({
     voided?: string;
     error?: string;
     cb?: string;
+    applied?: string;
   }>;
 }) {
   const { id } = await params;
-  const { paid, approved, voided, error, cb } = await searchParams;
+  const { paid, approved, voided, error, cb, applied } = await searchParams;
   const sessionUser = await getSessionUser();
   const bill = await getBillById(id);
   if (!bill) notFound();
@@ -110,6 +116,44 @@ export default async function Page({
     getBaseCurrency(),
   ]);
   const baseCode = base?.code ?? "USD";
+
+  const isVendorCredit = bill.kind === "vendor_credit";
+  const [
+    creditAppsFrom,
+    creditAppsTo,
+    allBills,
+    billTaxCodes,
+  ] = await Promise.all([
+    isVendorCredit
+      ? getBillCreditApplicationsByCredit(bill.id)
+      : Promise.resolve([]),
+    !isVendorCredit
+      ? getBillCreditApplicationsForBill(bill.id)
+      : Promise.resolve([]),
+    isVendorCredit ? getBills() : Promise.resolve([]),
+    Promise.all(
+      Array.from(
+        new Set(bill.lines.map((l) => l.taxCodeId).filter((v): v is string => !!v)),
+      ).map(async (tcId) => [tcId, await getTaxCodeById(tcId)] as const),
+    ),
+  ]);
+  const billTaxCodeById = new Map(billTaxCodes.filter(([, c]) => c != null));
+  const vcApplied = creditAppsFrom.reduce((s, a) => s + parseAmount(a.amount), 0);
+  const vcRemaining = isVendorCredit
+    ? Math.abs(parseAmount(bill.total)) - vcApplied
+    : 0;
+  const openBillTargets = isVendorCredit
+    ? allBills.filter(
+        (t) =>
+          t.vendorId === bill.vendorId &&
+          t.kind !== "vendor_credit" &&
+          parseAmount(t.balanceDue) > 0.005 &&
+          t.status !== "void" &&
+          t.status !== "paid" &&
+          t.status !== "draft",
+      )
+    : [];
+
   // FX snapshot is meaningful only for non-base bills with a real rate
   // ("1.00000000" is also treated as absent).
   const fxRateStr = bill.fxRate;
@@ -310,6 +354,18 @@ export default async function Page({
             Bill voided.
           </div>
         )}
+        {applied && (
+          <div
+            className="rounded-md px-3 py-2 text-[12.5px]"
+            style={{
+              background: "var(--p-active-bg)",
+              color: "var(--p-active-fg)",
+              border: "1px solid var(--p-active-fg)",
+            }}
+          >
+            Vendor credit applied.
+          </div>
+        )}
 
         <Card
           title="Header"
@@ -487,6 +543,116 @@ export default async function Page({
                 </div>
               </div>
             </form>
+          </Card>
+        )}
+
+        {isVendorCredit && (
+          <Card
+            title="Vendor credit"
+            actions={
+              <span style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                Remaining {formatMoney(vcRemaining, bill.currencyCode, { compact: true })}
+              </span>
+            }
+          >
+            <div className="p-3.5 flex flex-col gap-3">
+              {creditAppsFrom.length > 0 && (
+                <Table>
+                  <THead>
+                    <TR hover={false}>
+                      <TH>Applied to bill</TH>
+                      <TH num>Amount</TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {creditAppsFrom.map((a) => (
+                      <TR key={a.id}>
+                        <TD mono>
+                          <Link
+                            href={`/bills/${a.targetBillId}`}
+                            style={{ color: "var(--ink)", textDecoration: "none" }}
+                          >
+                            {a.targetBillId}
+                          </Link>
+                        </TD>
+                        <TD num>
+                          {formatMoney(a.amount, bill.currencyCode, { compact: true })}
+                        </TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              )}
+              {vcRemaining > 0.005 &&
+              bill.status !== "draft" &&
+              bill.status !== "void" &&
+              openBillTargets.length > 0 ? (
+                <form
+                  action={applyVendorCreditAction}
+                  className="flex items-end gap-3 flex-wrap"
+                >
+                  <input type="hidden" name="creditBillId" value={bill.id} />
+                  <SelectField label="Apply to bill" name="targetBillId" required>
+                    {openBillTargets.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.billNumber} — bal{" "}
+                        {formatMoney(t.balanceDue, t.currencyCode, { compact: true })}
+                      </option>
+                    ))}
+                  </SelectField>
+                  <Field
+                    label="Amount"
+                    name="amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    mono
+                    defaultValue={vcRemaining.toFixed(2)}
+                  />
+                  <Button variant="primary" type="submit">
+                    Apply credit
+                  </Button>
+                </form>
+              ) : (
+                <div className="text-[12.5px]" style={{ color: "var(--ink-3)" }}>
+                  {bill.status === "draft"
+                    ? "Approve the vendor credit to apply it."
+                    : vcRemaining <= 0.005
+                      ? "Fully applied."
+                      : "No open bills for this vendor to apply to."}
+                </div>
+              )}
+            </div>
+          </Card>
+        )}
+
+        {!isVendorCredit && creditAppsTo.length > 0 && (
+          <Card title="Vendor credits applied">
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Vendor credit</TH>
+                  <TH num>Amount</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {creditAppsTo.map((a) => (
+                  <TR key={a.id}>
+                    <TD mono>
+                      <Link
+                        href={`/bills/${a.creditBillId}`}
+                        style={{ color: "var(--ink)", textDecoration: "none" }}
+                      >
+                        {a.creditBillId}
+                      </Link>
+                    </TD>
+                    <TD num>
+                      {formatMoney(a.amount, bill.currencyCode, { compact: true })}
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
           </Card>
         )}
 

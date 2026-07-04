@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { getSessionUser } from "@/lib/session";
 import {
+  applyVendorCredit,
   approveBill,
   recordBillPayment,
   setBillChargeback,
@@ -209,6 +210,33 @@ export async function setBillChargebackAction(formData: FormData) {
     if (isRedirectError(err)) throw err;
     const msg = err instanceof Error ? err.message : "Failed to update chargeback.";
     redirect(`/bills/${billId}?error=${encodeURIComponent(msg)}`);
+  }
+}
+
+export async function applyVendorCreditAction(formData: FormData) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  // Applied FROM the vendor-credit detail page: creditBillId is this credit,
+  // targetBillId is the chosen open bill.
+  const creditBillId = String(formData.get("creditBillId") ?? "");
+  const targetBillId = String(formData.get("targetBillId") ?? "");
+  const amount = parseAmount(String(formData.get("amount") ?? ""));
+  if (!creditBillId || !targetBillId) redirect("/bills");
+  guardPermission(user, "bill.update", creditBillId);
+  if (!(amount > 0)) {
+    redirect(
+      `/bills/${creditBillId}?error=${encodeURIComponent("Amount must be > 0.")}`,
+    );
+  }
+  try {
+    await applyVendorCredit(user, { creditBillId, targetBillId, amount });
+    revalidateCommon(creditBillId);
+    revalidateCommon(targetBillId);
+    redirect(`/bills/${creditBillId}?applied=1`);
+  } catch (err) {
+    if (isRedirectError(err)) throw err;
+    const msg = err instanceof Error ? err.message : "Failed to apply credit.";
+    redirect(`/bills/${creditBillId}?error=${encodeURIComponent(msg)}`);
   }
 }
 
