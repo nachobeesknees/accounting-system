@@ -1067,6 +1067,33 @@ export async function getLatestFxRateForCurrency(
 }
 
 /**
+ * FX rate (rate_per_base) for a currency as of a date — the most recent
+ * rate row dated on or before `asOf`. Used by period-end FX revaluation
+ * to reprice open balances at the period-end rate. Base currency → 1.
+ * Returns null when we have no rate row at or before that date.
+ */
+export async function getFxRateAsOf(
+  currencyCode: string,
+  asOf: string,
+): Promise<number | null> {
+  const base = await getBaseCurrency();
+  if (base && base.code === currencyCode) return 1;
+  const db = getDb();
+  const [row] = await db
+    .select({ ratePerBase: schema.fxRates.ratePerBase })
+    .from(schema.fxRates)
+    .where(
+      and(
+        eq(schema.fxRates.currencyCode, currencyCode),
+        lte(schema.fxRates.rateDate, asOf),
+      ),
+    )
+    .orderBy(desc(schema.fxRates.rateDate))
+    .limit(1);
+  return row ? parseFloat(row.ratePerBase) : null;
+}
+
+/**
  * Convert an amount in `from` currency to the base currency using the
  * latest FX rate. Returns null if the rate is unknown.
  */
@@ -2443,7 +2470,12 @@ export async function getFirmPlRollup(
     );
 
   const n = normalizeFirmScope(scope);
-  const conds = [eq(schema.journalEntries.status, "posted")];
+  // P&L rollup — exclude year-end closing entries so a closed fiscal year
+  // isn't shown as zero net income.
+  const conds = [
+    eq(schema.journalEntries.status, "posted"),
+    eq(schema.journalEntries.isClosingEntry, false),
+  ];
   if (n.kind === "firm-level-null") {
     conds.push(isNull(schema.journalEntries.firmEntityId));
   } else if (n.kind === "office") {
@@ -3485,6 +3517,12 @@ export async function getSubledgerReconciliation(
  *
  * Returns Map of accountId → signed delta in the range. Caller decides
  * whether to negate for credit-normal accounts.
+ *
+ * Year-end closing entries (is_closing_entry = true) are ALWAYS excluded
+ * here — this helper only ever backs income-statement / P&L views, and
+ * closing entries would otherwise zero the P&L for a closed fiscal year
+ * retroactively. Balance-sheet callers use getSignedBalancesAsOf, which
+ * includes them.
  */
 async function getSignedBalancesInRange(
   start: string, // inclusive
@@ -3507,6 +3545,7 @@ async function getSignedBalancesInRange(
 
   const conds = [
     eq(schema.journalEntries.status, "posted"),
+    eq(schema.journalEntries.isClosingEntry, false),
     gte(schema.journalEntries.entryDate, start),
     lte(schema.journalEntries.entryDate, end),
   ];
@@ -3597,10 +3636,47 @@ export async function getSignedBalancesAsOf(
   return balances;
 }
 
+/**
+ * Net income for a single fiscal year (calendar Jan 1 → Dec 31 of `year`),
+ * scoped to a firm entity / region, EXCLUDING year-end closing entries.
+ *
+ * This is the canonical "current year earnings" number: it reflects P&L
+ * activity booked in `year` only, so once prior years are rolled into
+ * retained earnings via closing entries it does NOT double-count them.
+ * Optionally cap the window at `asOf` (defaults to Dec 31 of `year`).
+ */
+export async function getFiscalYearNetIncome(
+  year: number,
+  scope?: FirmScopeArg,
+  entityIds?: string[],
+  asOf?: string,
+): Promise<{ revenue: number; expenses: number; netIncome: number }> {
+  const start = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  const end = asOf && asOf < yearEnd ? asOf : yearEnd;
+  const { revenue, expenses, netIncome } = await getIncomeStatementForPeriod(
+    start,
+    end,
+    scope,
+    entityIds,
+  );
+  return { revenue, expenses, netIncome };
+}
+
 export type KpisSummary = {
   revenue: number;
   expenses: number;
   netIncome: number;
+  /**
+   * Net income for the fiscal year OF `asOf` that is NOT yet rolled into
+   * retained earnings — the figure a balance sheet shows as "Current Year
+   * Earnings". Computed as the movement in the P&L accounts across the
+   * fiscal-year window INCLUDING closing entries, so:
+   *   - current (open) year, prior years closed → current-year P&L
+   *   - a year that has itself been closed        → 0 (rolled into RE)
+   * This keeps assets = liabilities + equity + currentYearEarnings exact.
+   */
+  currentYearEarnings: number;
   assets: number;
   liabilities: number;
   equity: number;
@@ -3608,8 +3684,18 @@ export type KpisSummary = {
 };
 
 /**
- * KPI snapshot as of a specific date. Revenue/expenses are inception-to-date
- * (everything posted ≤ asOf); balance-sheet figures are also as-of `asOf`.
+ * KPI snapshot as of a specific date. `revenue`/`expenses`/`netIncome` are
+ * the inception-to-date balances still sitting on the P&L accounts
+ * (post-close years zero out); balance-sheet figures are also as-of `asOf`.
+ * For the balance sheet's equity roll-up use `equity + netIncome`: the
+ * double-entry invariant makes `assets = liabilities + equity + netIncome`
+ * hold for ANY balanced set of posted entries (closing entries included, as
+ * they self-balance), so it ties out in every close state.
+ * `currentYearEarnings` is only the fiscal-year-of-`asOf` P&L movement; it
+ * equals `netIncome` ONLY when all prior years are closed to RE, so it is a
+ * *display* breakdown of `netIncome`, NOT the equity total. Show it alongside
+ * a "prior-year unclosed" line (`netIncome - currentYearEarnings`) if you want
+ * the year split — the two must sum back to `netIncome` or the sheet breaks.
  *
  * If you need a period-over-period comparison (e.g. "this month vs last
  * month"), call `getIncomeStatementForPeriod` for the deltas and this for
@@ -3621,13 +3707,23 @@ export async function getKpisAsOf(
   entityIds?: string[],
 ): Promise<KpisSummary> {
   const accounts = await getAccounts("all");
-  const balances = await getSignedBalancesAsOf(asOf, scope ?? "all", entityIds);
+  const fiscalYear = parseInt(asOf.slice(0, 4), 10);
+  const fyStartMinus1 = `${fiscalYear - 1}-12-31`;
+  // Two as-of snapshots (both INCLUDE closing entries): at asOf and at the
+  // day before the fiscal year starts. Their difference on the P&L accounts
+  // is the current-fiscal-year earnings still on the books.
+  const [balances, priorYearEnd] = await Promise.all([
+    getSignedBalancesAsOf(asOf, scope ?? "all", entityIds),
+    getSignedBalancesAsOf(fyStartMinus1, scope ?? "all", entityIds),
+  ]);
   let revenue = 0,
     expenses = 0,
     assets = 0,
     liabilities = 0,
     equity = 0,
     cash = 0;
+  let cyeRevenue = 0,
+    cyeExpenses = 0;
   for (const a of accounts) {
     const raw = balances.get(a.id) ?? 0;
     if (a.accountType === "asset") assets += raw;
@@ -3636,10 +3732,17 @@ export async function getKpisAsOf(
     else if (a.accountType === "revenue") revenue += -raw;
     else if (a.accountType === "expense") expenses += raw;
     if (a.code === "1000") cash = a.normalBalance === "debit" ? raw : -raw;
+    // Fiscal-year P&L movement (incl. closing entries) for CYE.
+    if (a.accountType === "revenue") {
+      cyeRevenue += -(raw - (priorYearEnd.get(a.id) ?? 0));
+    } else if (a.accountType === "expense") {
+      cyeExpenses += raw - (priorYearEnd.get(a.id) ?? 0);
+    }
   }
   return {
     revenue,
     expenses,
+    currentYearEarnings: cyeRevenue - cyeExpenses,
     netIncome: revenue - expenses,
     assets,
     liabilities,
@@ -3738,6 +3841,8 @@ async function fetchByEntityCells(opts: {
   start?: string;
   end: string;
   scope?: FirmScopeArg;
+  /** Exclude year-end closing entries (income-statement callers). */
+  excludeClosingEntries?: boolean;
 }): Promise<{
   /** Map of accountId → { entityId | null → signed (debit - credit) sum } */
   cells: Map<string, Map<string | null, number>>;
@@ -3763,6 +3868,9 @@ async function fetchByEntityCells(opts: {
     isNull(schema.journalEntries.eliminationEntryId),
     lte(schema.journalEntries.entryDate, opts.end),
   ];
+  if (opts.excludeClosingEntries) {
+    conds.push(eq(schema.journalEntries.isClosingEntry, false));
+  }
   if (opts.start) {
     conds.push(gte(schema.journalEntries.entryDate, opts.start));
   }
@@ -3832,7 +3940,7 @@ export async function getIncomeStatementByEntity(
   const [accounts, allEntities, { cells, entityIdsSeen }] = await Promise.all([
     getAccounts("all"),
     getEntities(),
-    fetchByEntityCells({ start, end, scope }),
+    fetchByEntityCells({ start, end, scope, excludeClosingEntries: true }),
   ]);
 
   const entities = allEntities
@@ -4076,8 +4184,10 @@ export async function getMonthlyIncomeStatement(
   const db = getDb();
   const start = `${year}-01-01`;
   const end = `${year}-12-31`;
+  // Exclude year-end closing entries — this is a P&L view.
   const conds = [
     eq(schema.journalEntries.status, "posted"),
+    eq(schema.journalEntries.isClosingEntry, false),
     gte(schema.journalEntries.entryDate, start),
     lte(schema.journalEntries.entryDate, end),
   ];
@@ -4745,4 +4855,443 @@ export async function getBeneficiaryContacts(): Promise<Contact[]> {
     .where(eq(schema.contacts.isBeneficiary, true))
     .orderBy(schema.contacts.name);
   return rows.map(mapContact);
+}
+
+// ==========================================================================
+// Statement of Cash Flows (indirect method)
+// ==========================================================================
+
+export type CashFlowLine = { label: string; amount: number; code?: string };
+
+export type CashFlowStatement = {
+  start: string;
+  end: string;
+  baseCode: string;
+  netIncome: number;
+  operatingAdjustments: CashFlowLine[]; // depreciation/amortization add-backs
+  workingCapital: CashFlowLine[]; // Δ current assets/liabilities
+  operatingTotal: number;
+  investing: CashFlowLine[];
+  investingTotal: number;
+  financing: CashFlowLine[];
+  financingTotal: number;
+  /** Sum of operating + investing + financing. */
+  netChangeComputed: number;
+  /** Actual movement in cash accounts (code 10xx) over the period. */
+  netChangeActual: number;
+  beginningCash: number;
+  endingCash: number;
+  /** netChangeComputed − netChangeActual; non-zero flags an articulation gap. */
+  reconciliationDifference: number;
+};
+
+function cfDayBefore(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** True for cash / cash-equivalent accounts (asset code 10xx). */
+function isCashAccount(a: Account): boolean {
+  return a.accountType === "asset" && /^10\d\d$/.test(a.code);
+}
+
+/**
+ * Statement of cash flows (indirect method) for a period + firm scope.
+ * Starts from net income (P&L net for the period, excluding closing
+ * entries), adds back non-cash movements (accumulated depreciation 1510 +
+ * amortization schedules), adjusts for working-capital movements, then
+ * investing (long-term assets) and financing (equity + long-term
+ * liabilities) as explicit balance movements. Ends with the net change in
+ * cash reconciled against the actual movement in cash accounts (10xx).
+ */
+export async function getCashFlowStatement(
+  start: string,
+  end: string,
+  scope?: FirmScopeArg,
+  entityIds?: string[],
+): Promise<CashFlowStatement> {
+  const base = await getBaseCurrency();
+  const baseCode = base?.code ?? "USD";
+  const accounts = await getAccounts("all");
+  const beforeStart = cfDayBefore(start);
+
+  const [openBal, closeBal, is] = await Promise.all([
+    getSignedBalancesAsOf(beforeStart, scope ?? "all", entityIds),
+    getSignedBalancesAsOf(end, scope ?? "all", entityIds),
+    getIncomeStatementForPeriod(start, end, scope, entityIds),
+  ]);
+  const netIncome = round2(is.netIncome);
+
+  // Signed (debit − credit) movement per account over the period.
+  const delta = (id: string) => (closeBal.get(id) ?? 0) - (openBal.get(id) ?? 0);
+
+  const operatingAdjustments: CashFlowLine[] = [];
+  const workingCapital: CashFlowLine[] = [];
+  const investing: CashFlowLine[] = [];
+  const financing: CashFlowLine[] = [];
+
+  let beginningCash = 0;
+  let endingCash = 0;
+
+  for (const a of accounts) {
+    if (isCashAccount(a)) {
+      // Cash sign: debit-normal → raw; else inverse. Seed cash is debit.
+      const sign = a.normalBalance === "debit" ? 1 : -1;
+      beginningCash += sign * (openBal.get(a.id) ?? 0);
+      endingCash += sign * (closeBal.get(a.id) ?? 0);
+      continue;
+    }
+    const dRaw = round2(delta(a.id));
+    if (Math.abs(dRaw) < 0.005) continue;
+
+    if (a.accountType === "asset") {
+      // Accumulated depreciation (contra-asset, credit-normal): its
+      // increase is a non-cash add-back to operating.
+      if (a.code === "1510" || /accumulated deprec/i.test(a.name)) {
+        // credit-normal → an increase means dRaw is negative; add back the
+        // magnitude of the increase (positive = add to CFO).
+        const addBack = round2(-dRaw);
+        operatingAdjustments.push({
+          label: `Depreciation (${a.code} ${a.name})`,
+          amount: addBack,
+          code: a.code,
+        });
+        continue;
+      }
+      if (a.subType === "current_asset") {
+        // Increase in a current asset (debit-normal, dRaw>0) uses cash.
+        workingCapital.push({
+          label: `Δ ${a.name}`,
+          amount: round2(-dRaw),
+          code: a.code,
+        });
+      } else {
+        // Long-term asset purchase (dRaw>0) is an investing outflow.
+        investing.push({
+          label: `Δ ${a.name}`,
+          amount: round2(-dRaw),
+          code: a.code,
+        });
+      }
+    } else if (a.accountType === "liability") {
+      // Liability is credit-normal: an increase means dRaw<0; that PROVIDES
+      // cash → flip sign so an increase is positive.
+      const provides = round2(-dRaw);
+      if (a.subType === "current_liability") {
+        workingCapital.push({ label: `Δ ${a.name}`, amount: provides, code: a.code });
+      } else {
+        financing.push({ label: `Δ ${a.name}`, amount: provides, code: a.code });
+      }
+    } else if (a.accountType === "equity") {
+      // Equity is credit-normal: an increase (contributions / retained
+      // earnings) provides cash → flip. Current-year earnings already sit
+      // in net income above, so equity movements here are contributions,
+      // distributions, and prior-year RASE roll-ins via closing entries.
+      financing.push({
+        label: `Δ ${a.name}`,
+        amount: round2(-dRaw),
+        code: a.code,
+      });
+    }
+    // revenue / expense movements are captured by net income above.
+  }
+
+  operatingAdjustments.sort((x, y) => (x.code ?? "").localeCompare(y.code ?? ""));
+  workingCapital.sort((x, y) => (x.code ?? "").localeCompare(y.code ?? ""));
+  investing.sort((x, y) => (x.code ?? "").localeCompare(y.code ?? ""));
+  financing.sort((x, y) => (x.code ?? "").localeCompare(y.code ?? ""));
+
+  const operatingTotal = round2(
+    netIncome +
+      operatingAdjustments.reduce((s, l) => s + l.amount, 0) +
+      workingCapital.reduce((s, l) => s + l.amount, 0),
+  );
+  const investingTotal = round2(investing.reduce((s, l) => s + l.amount, 0));
+  const financingTotal = round2(financing.reduce((s, l) => s + l.amount, 0));
+  const netChangeComputed = round2(operatingTotal + investingTotal + financingTotal);
+  beginningCash = round2(beginningCash);
+  endingCash = round2(endingCash);
+  const netChangeActual = round2(endingCash - beginningCash);
+
+  return {
+    start,
+    end,
+    baseCode,
+    netIncome,
+    operatingAdjustments,
+    workingCapital,
+    operatingTotal,
+    investing,
+    investingTotal,
+    financing,
+    financingTotal,
+    netChangeComputed,
+    netChangeActual,
+    beginningCash,
+    endingCash,
+    reconciliationDifference: round2(netChangeComputed - netChangeActual),
+  };
+}
+
+// ==========================================================================
+// Close chain — read helpers
+// ==========================================================================
+
+export type YearEndCloseRow = {
+  id: string;
+  fiscalYear: number;
+  firmEntityId: string | null;
+  journalEntryId: string | null;
+  retainedEarningsAccountId: string;
+  netIncome: number;
+  status: "closed" | "reopened";
+  closedBy: string | null;
+  closedAt: string;
+  reopenedBy: string | null;
+  reopenedAt: string | null;
+  notes: string | null;
+};
+
+function mapYearEndClose(
+  r: typeof schema.yearEndCloses.$inferSelect,
+): YearEndCloseRow {
+  return {
+    id: r.id,
+    fiscalYear: r.fiscalYear,
+    firmEntityId: r.firmEntityId,
+    journalEntryId: r.journalEntryId,
+    retainedEarningsAccountId: r.retainedEarningsAccountId,
+    netIncome: parseAmount(r.netIncome),
+    status: (r.status as "closed" | "reopened") ?? "closed",
+    closedBy: r.closedBy,
+    closedAt: r.closedAt.toISOString(),
+    reopenedBy: r.reopenedBy,
+    reopenedAt: r.reopenedAt ? r.reopenedAt.toISOString() : null,
+    notes: r.notes,
+  };
+}
+
+/** All year-end close rows, newest fiscal year first. */
+export async function getYearEndCloses(): Promise<YearEndCloseRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.yearEndCloses)
+    .orderBy(desc(schema.yearEndCloses.fiscalYear), desc(schema.yearEndCloses.closedAt));
+  return rows.map(mapYearEndClose);
+}
+
+export type FxRevaluationRow = {
+  id: string;
+  revaluationDate: string;
+  firmEntityId: string | null;
+  journalEntryId: string | null;
+  reversalEntryId: string | null;
+  details: unknown;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+function mapFxRevaluation(
+  r: typeof schema.fxRevaluations.$inferSelect,
+): FxRevaluationRow {
+  return {
+    id: r.id,
+    revaluationDate: r.revaluationDate,
+    firmEntityId: r.firmEntityId,
+    journalEntryId: r.journalEntryId,
+    reversalEntryId: r.reversalEntryId,
+    details: r.details,
+    createdBy: r.createdBy,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+/** History of FX revaluation runs, newest first. */
+export async function getFxRevaluations(): Promise<FxRevaluationRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.fxRevaluations)
+    .orderBy(desc(schema.fxRevaluations.revaluationDate), desc(schema.fxRevaluations.createdAt));
+  return rows.map(mapFxRevaluation);
+}
+
+export type PeriodCloseTaskRow = {
+  id: string;
+  accountingPeriodId: string;
+  taskKey: string;
+  label: string;
+  sortOrder: number;
+  status: "open" | "done" | "na";
+  completedBy: string | null;
+  completedAt: string | null;
+  notes: string | null;
+};
+
+function mapPeriodCloseTask(
+  r: typeof schema.periodCloseTasks.$inferSelect,
+): PeriodCloseTaskRow {
+  return {
+    id: r.id,
+    accountingPeriodId: r.accountingPeriodId,
+    taskKey: r.taskKey,
+    label: r.label,
+    sortOrder: r.sortOrder,
+    status: (r.status as "open" | "done" | "na") ?? "open",
+    completedBy: r.completedBy,
+    completedAt: r.completedAt ? r.completedAt.toISOString() : null,
+    notes: r.notes,
+  };
+}
+
+/** Close-checklist tasks for a single accounting period, in sort order. */
+export async function getPeriodCloseTasks(
+  accountingPeriodId: string,
+): Promise<PeriodCloseTaskRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.periodCloseTasks)
+    .where(eq(schema.periodCloseTasks.accountingPeriodId, accountingPeriodId))
+    .orderBy(asc(schema.periodCloseTasks.sortOrder));
+  return rows.map(mapPeriodCloseTask);
+}
+
+/** Close-checklist tasks for many periods at once (checklist grid). */
+export async function getPeriodCloseTasksForPeriods(
+  accountingPeriodIds: string[],
+): Promise<Map<string, PeriodCloseTaskRow[]>> {
+  const out = new Map<string, PeriodCloseTaskRow[]>();
+  if (accountingPeriodIds.length === 0) return out;
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.periodCloseTasks)
+    .where(inArray(schema.periodCloseTasks.accountingPeriodId, accountingPeriodIds))
+    .orderBy(asc(schema.periodCloseTasks.sortOrder));
+  for (const r of rows) {
+    const mapped = mapPeriodCloseTask(r);
+    const arr = out.get(mapped.accountingPeriodId) ?? [];
+    arr.push(mapped);
+    out.set(mapped.accountingPeriodId, arr);
+  }
+  return out;
+}
+
+export type AmortizationScheduleRow = {
+  id: string;
+  kind: "prepaid" | "fixed_asset";
+  name: string;
+  sourceAccountId: string;
+  targetAccountId: string;
+  firmEntityId: string | null;
+  totalCost: number;
+  residualValue: number;
+  startDate: string;
+  months: number;
+  method: string;
+  generatedThrough: string | null;
+  isActive: boolean;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function mapAmortizationSchedule(
+  r: typeof schema.amortizationSchedules.$inferSelect,
+): AmortizationScheduleRow {
+  return {
+    id: r.id,
+    kind: (r.kind as "prepaid" | "fixed_asset") ?? "prepaid",
+    name: r.name,
+    sourceAccountId: r.sourceAccountId,
+    targetAccountId: r.targetAccountId,
+    firmEntityId: r.firmEntityId,
+    totalCost: parseAmount(r.totalCost),
+    residualValue: parseAmount(r.residualValue),
+    startDate: r.startDate,
+    months: r.months,
+    method: r.method,
+    generatedThrough: r.generatedThrough,
+    isActive: r.isActive,
+    notes: r.notes,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  };
+}
+
+export async function getAmortizationSchedules(): Promise<AmortizationScheduleRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.amortizationSchedules)
+    .orderBy(desc(schema.amortizationSchedules.createdAt));
+  return rows.map(mapAmortizationSchedule);
+}
+
+export async function getAmortizationScheduleById(
+  id: string,
+): Promise<AmortizationScheduleRow | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.amortizationSchedules)
+    .where(eq(schema.amortizationSchedules.id, id))
+    .limit(1);
+  return row ? mapAmortizationSchedule(row) : undefined;
+}
+
+export type AmortizationEntryRow = {
+  id: string;
+  scheduleId: string;
+  periodDate: string;
+  amount: number;
+  journalEntryId: string | null;
+  createdAt: string;
+};
+
+function mapAmortizationEntry(
+  r: typeof schema.amortizationEntries.$inferSelect,
+): AmortizationEntryRow {
+  return {
+    id: r.id,
+    scheduleId: r.scheduleId,
+    periodDate: r.periodDate,
+    amount: parseAmount(r.amount),
+    journalEntryId: r.journalEntryId,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+/** Generated entries for one schedule, oldest period first. */
+export async function getAmortizationEntries(
+  scheduleId: string,
+): Promise<AmortizationEntryRow[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.amortizationEntries)
+    .where(eq(schema.amortizationEntries.scheduleId, scheduleId))
+    .orderBy(asc(schema.amortizationEntries.periodDate));
+  return rows.map(mapAmortizationEntry);
+}
+
+/** Remaining net-book balance per schedule = total − residual − generated. */
+export async function getAmortizationGeneratedTotals(): Promise<
+  Map<string, number>
+> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      scheduleId: schema.amortizationEntries.scheduleId,
+      amount: schema.amortizationEntries.amount,
+    })
+    .from(schema.amortizationEntries);
+  const out = new Map<string, number>();
+  for (const r of rows) {
+    out.set(r.scheduleId, (out.get(r.scheduleId) ?? 0) + parseAmount(r.amount));
+  }
+  return out;
 }

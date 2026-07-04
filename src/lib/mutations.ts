@@ -12,7 +12,7 @@
 
 import "server-only";
 
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumCredits, sumDebits, toDecimalString } from "./money";
@@ -35,12 +35,22 @@ import {
   isOpenFilingStatus,
   kycReviewIntervalMonths,
 } from "./compliance";
-import { getJournalEntryById } from "./data";
+import {
+  getAccountByCode,
+  getBaseCurrency,
+  getFirmEntities,
+  getFirmEntityById,
+  getFiscalYearNetIncome,
+  getFxRateAsOf,
+  getIncomeStatementForPeriod,
+  getJournalEntryById,
+} from "./data";
 import { computeClearedTotal, findOpeningAnchor } from "./reconciliation";
 import { getEntityScope } from "./entity-scope";
 import {
   checkPeriodForPost,
   getAccountingPeriods,
+  getPeriodForDate,
   stripPeriodErrorPrefix,
 } from "./periods";
 import { logAuditEvent } from "./audit";
@@ -108,6 +118,11 @@ function serializeFxRate(v: number | string | null | undefined): string | null {
   // Treat exactly 1.0 as "same as base — don't bother storing"
   if (n === 1) return null;
   return n.toFixed(8);
+}
+
+/** Round to 2dp for money math (avoids fp drift in closing-entry plugs). */
+function round2Amount(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 // --------- Number generators ---------
@@ -7695,4 +7710,1011 @@ export async function markDistributionPaid(user: SessionUser, id: string) {
     metadata: { journalEntryId, entryNumber },
   });
   return { distributionId: id, journalEntryId, entryNumber };
+}
+
+// ==========================================================================
+// Year-end close + retained-earnings rollover
+// ==========================================================================
+
+/**
+ * Firm-entity scopes to close. `officeId = null` is the firm-level bucket
+ * (journal_entries.firm_entity_id IS NULL). A closing run may target one
+ * office, the firm-level bucket, or every scope with activity ("all").
+ */
+type CloseScope = { officeId: string | null; label: string };
+
+async function resolveCloseScopes(
+  scope: "all" | string | null,
+): Promise<CloseScope[]> {
+  if (scope === "all") {
+    const offices = await getFirmEntities();
+    // Firm-level bucket first, then each office.
+    return [
+      { officeId: null, label: "Firm-level" },
+      ...offices.map((o) => ({ officeId: o.id, label: o.name })),
+    ];
+  }
+  if (scope === null) return [{ officeId: null, label: "Firm-level" }];
+  const office = await getFirmEntityById(scope);
+  return [{ officeId: scope, label: office?.name ?? scope }];
+}
+
+export type YearEndClosePreviewRow = {
+  officeId: string | null;
+  label: string;
+  netIncome: number;
+  revenue: number;
+  expenses: number;
+  status: "open" | "closed" | "reopened";
+  closeId: string | null;
+  journalEntryId: string | null;
+  entryNumber: string | null;
+};
+
+/**
+ * Per-firm-entity preview for a fiscal year: that year's net income (P&L
+ * accounts only, EXCLUDING closing entries) and whether a year_end_closes
+ * row already exists.
+ */
+export async function getYearEndClosePreview(
+  fiscalYear: number,
+  scope: "all" | string | null,
+): Promise<YearEndClosePreviewRow[]> {
+  const db = getDb();
+  const scopes = await resolveCloseScopes(scope);
+  const closes = await db
+    .select()
+    .from(schema.yearEndCloses)
+    .where(eq(schema.yearEndCloses.fiscalYear, fiscalYear));
+  const closeByOffice = new Map<string | null, typeof closes[number]>();
+  for (const c of closes) closeByOffice.set(c.firmEntityId ?? null, c);
+
+  const out: YearEndClosePreviewRow[] = [];
+  for (const s of scopes) {
+    const pl = await getFiscalYearNetIncome(fiscalYear, s.officeId);
+    const existing = closeByOffice.get(s.officeId);
+    let entryNumber: string | null = null;
+    if (existing?.journalEntryId) {
+      const je = await getJournalEntryById(existing.journalEntryId);
+      entryNumber = je?.entryNumber ?? null;
+    }
+    out.push({
+      officeId: s.officeId,
+      label: s.label,
+      netIncome: pl.netIncome,
+      revenue: pl.revenue,
+      expenses: pl.expenses,
+      status: existing
+        ? (existing.status as "closed" | "reopened")
+        : "open",
+      closeId: existing?.id ?? null,
+      journalEntryId: existing?.journalEntryId ?? null,
+      entryNumber,
+    });
+  }
+  return out;
+}
+
+/**
+ * Close a fiscal year for every firm entity in `scope`. For each entity,
+ * posts ONE closing journal entry dated Dec 31 of `fiscalYear`
+ * (is_closing_entry = true) that zeroes all revenue/expense accounts into
+ * Retained Earnings (3100), and records a year_end_closes row.
+ *
+ * Refuses an entity already closed for that year unless it was reopened.
+ * Each entity's JE + close row commit together (createJournalEntry runs its
+ * own transaction; the close row is written immediately after).
+ */
+export async function closeYearEnd(
+  user: SessionUser,
+  fiscalYear: number,
+  scope: "all" | string | null,
+): Promise<{ closed: YearEndClosePreviewRow[]; skipped: string[] }> {
+  requirePermission(user, "close.year_end");
+  const db = getDb();
+
+  const reAccount = await getAccountByCode("3100", null);
+  if (!reAccount) {
+    throw new Error(
+      "Retained Earnings account (code 3100) not found — create it before closing the year.",
+    );
+  }
+
+  const scopes = await resolveCloseScopes(scope);
+  const existingCloses = await db
+    .select()
+    .from(schema.yearEndCloses)
+    .where(eq(schema.yearEndCloses.fiscalYear, fiscalYear));
+  const closeByOffice = new Map<string | null, typeof existingCloses[number]>();
+  for (const c of existingCloses) closeByOffice.set(c.firmEntityId ?? null, c);
+
+  const closedRows: YearEndClosePreviewRow[] = [];
+  const skipped: string[] = [];
+  const closeDate = `${fiscalYear}-12-31`;
+
+  for (const s of scopes) {
+    const existing = closeByOffice.get(s.officeId);
+    if (existing && existing.status !== "reopened") {
+      skipped.push(`${s.label} (already closed)`);
+      continue;
+    }
+
+    const pl = await getIncomeStatementForPeriod(
+      `${fiscalYear}-01-01`,
+      closeDate,
+      s.officeId,
+    );
+    if (pl.rows.length === 0) {
+      skipped.push(`${s.label} (no P&L activity)`);
+      continue;
+    }
+
+    // Build closing lines: debit each revenue account for its earned amount,
+    // credit each expense account for its incurred amount, balance to RE.
+    // Amounts are rounded to 2dp; the RE plug is derived from the rounded
+    // debit/credit totals so the entry balances exactly.
+    const lines: DraftJournalLine[] = [];
+    let debitTotal = 0;
+    let creditTotal = 0;
+    for (const r of pl.rows) {
+      const amt = round2Amount(r.amount);
+      if (Math.abs(amt) < 0.005) continue;
+      if (r.accountType === "revenue") {
+        // credit-normal balance → debit to zero it
+        const debit = amt >= 0 ? amt : 0;
+        const credit = amt < 0 ? -amt : 0;
+        debitTotal += debit;
+        creditTotal += credit;
+        lines.push({
+          accountId: r.accountId,
+          description: `Close ${r.code} ${r.name}`,
+          debit,
+          credit,
+        });
+      } else {
+        // expense debit-normal balance → credit to zero it
+        const debit = amt < 0 ? -amt : 0;
+        const credit = amt >= 0 ? amt : 0;
+        debitTotal += debit;
+        creditTotal += credit;
+        lines.push({
+          accountId: r.accountId,
+          description: `Close ${r.code} ${r.name}`,
+          debit,
+          credit,
+        });
+      }
+    }
+
+    // RE plug = whatever balances the (rounded) revenue/expense legs. This
+    // IS the net income actually rolled into RE (revenue debits − expense
+    // credits), used both for the JE and the recorded netIncome so the two
+    // never drift by rounding.
+    const plug = round2Amount(debitTotal - creditTotal);
+    const net = plug;
+    if (lines.length === 0 && Math.abs(plug) < 0.005) {
+      skipped.push(`${s.label} (no P&L activity)`);
+      continue;
+    }
+    if (plug > 0) {
+      // Revenue debits exceed expense credits → net income → credit RE.
+      lines.push({
+        accountId: reAccount.id,
+        description: `Net income → Retained Earnings (FY${fiscalYear})`,
+        debit: 0,
+        credit: plug,
+      });
+    } else if (plug < 0) {
+      lines.push({
+        accountId: reAccount.id,
+        description: `Net loss → Retained Earnings (FY${fiscalYear})`,
+        debit: -plug,
+        credit: 0,
+      });
+    }
+
+    const je = await createJournalEntry(user, {
+      entryDate: closeDate,
+      description: `Year-end close FY${fiscalYear} — ${s.label}`,
+      reference: `YEC-${fiscalYear}`,
+      source: "manual",
+      status: "posted",
+      firmEntityId: s.officeId,
+      periodOverrideReason: `Year-end close FY${fiscalYear}`,
+      lines,
+    });
+
+    // Flag it as a closing entry so P&L views exclude it.
+    await db
+      .update(schema.journalEntries)
+      .set({ isClosingEntry: true, updatedAt: new Date() })
+      .where(eq(schema.journalEntries.id, je.id));
+
+    // Upsert the year_end_closes row (reuse id if reopening).
+    const closeId = existing?.id ?? uid("yec");
+    if (existing) {
+      await db
+        .update(schema.yearEndCloses)
+        .set({
+          journalEntryId: je.id,
+          retainedEarningsAccountId: reAccount.id,
+          netIncome: toDecimalString(net),
+          status: "closed",
+          closedBy: user.userId,
+          closedAt: new Date(),
+          reopenedBy: null,
+          reopenedAt: null,
+        })
+        .where(eq(schema.yearEndCloses.id, existing.id));
+    } else {
+      await db.insert(schema.yearEndCloses).values({
+        id: closeId,
+        fiscalYear,
+        firmEntityId: s.officeId,
+        journalEntryId: je.id,
+        retainedEarningsAccountId: reAccount.id,
+        netIncome: toDecimalString(net),
+        status: "closed",
+        closedBy: user.userId,
+      });
+    }
+
+    await logAuditEvent(user, {
+      action: "close.year_end",
+      resourceType: "year_end_close",
+      resourceId: closeId,
+      resourceName: `FY${fiscalYear} — ${s.label}`,
+      changes: { after: { netIncome: round2Amount(net), journalEntryId: je.id } },
+      metadata: { fiscalYear, firmEntityId: s.officeId, entryNumber: je.entryNumber },
+    });
+
+    closedRows.push({
+      officeId: s.officeId,
+      label: s.label,
+      netIncome: net,
+      revenue: pl.revenue,
+      expenses: pl.expenses,
+      status: "closed",
+      closeId,
+      journalEntryId: je.id,
+      entryNumber: je.entryNumber,
+    });
+  }
+
+  return { closed: closedRows, skipped };
+}
+
+/**
+ * Reopen a closed fiscal year for a firm entity: void/reverse the closing
+ * JE and set the year_end_closes row back to "reopened".
+ */
+export async function reopenYearEnd(
+  user: SessionUser,
+  closeId: string,
+): Promise<void> {
+  requirePermission(user, "close.year_end");
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.yearEndCloses)
+    .where(eq(schema.yearEndCloses.id, closeId))
+    .limit(1);
+  if (!row) throw new Error("Year-end close not found.");
+  if (row.status === "reopened") return;
+
+  if (row.journalEntryId) {
+    // Void the closing entry directly (no reversing entry). A voided entry
+    // drops out of every balance/P&L query, so the RE rollover is undone and
+    // the P&L accounts are un-zeroed — exactly what reopening needs. Using
+    // voidJournalEntry here would instead post a NON-closing reversing entry
+    // that would then pollute income-statement views and any re-close.
+    await db
+      .update(schema.journalEntries)
+      .set({
+        status: "void",
+        voidedAt: new Date(),
+        voidReason: `Reopen FY${row.fiscalYear} year-end close`,
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.journalEntries.id, row.journalEntryId));
+  }
+
+  await db
+    .update(schema.yearEndCloses)
+    .set({
+      status: "reopened",
+      reopenedBy: user.userId,
+      reopenedAt: new Date(),
+    })
+    .where(eq(schema.yearEndCloses.id, closeId));
+
+  await logAuditEvent(user, {
+    action: "close.year_end_reopen",
+    resourceType: "year_end_close",
+    resourceId: closeId,
+    resourceName: `FY${row.fiscalYear}`,
+    changes: { before: { status: row.status }, after: { status: "reopened" } },
+    metadata: { fiscalYear: row.fiscalYear, firmEntityId: row.firmEntityId },
+  });
+}
+
+// ==========================================================================
+// Period-end FX revaluation
+// ==========================================================================
+
+/** First calendar day of the month AFTER the one containing `iso`. */
+function firstDayOfNextMonth(iso: string): string {
+  const [y, m] = iso.split("-").map((x) => parseInt(x, 10));
+  let ny = y;
+  let nm = m + 1;
+  if (nm > 12) {
+    nm = 1;
+    ny += 1;
+  }
+  return `${pad(ny, 4)}-${pad(nm, 2)}-01`;
+}
+
+type OpenMonetaryDoc = {
+  kind: "ar" | "ap";
+  currencyCode: string;
+  balanceDue: number; // native
+  fxRate: number | null; // booked "1 base = fxRate native"; null = base
+  firmEntityId: string | null;
+};
+
+async function fetchOpenMonetaryDocs(
+  baseCode: string,
+  scope: "all" | string | null,
+): Promise<OpenMonetaryDoc[]> {
+  const db = getDb();
+  const inScope = (firmEntityId: string | null): boolean => {
+    if (scope === "all") return true;
+    if (scope === null) return firmEntityId === null;
+    return firmEntityId === scope;
+  };
+
+  const invoices = await db
+    .select({
+      balanceDue: schema.invoices.balanceDue,
+      currencyCode: schema.invoices.currencyCode,
+      fxRate: schema.invoices.fxRate,
+      firmEntityId: schema.invoices.firmEntityId,
+      journalEntryId: schema.invoices.journalEntryId,
+      status: schema.invoices.status,
+      isTemplate: schema.invoices.isTemplate,
+    })
+    .from(schema.invoices);
+  // Bills carry no firm_entity_id (AP is not firm-entity scoped in the
+  // schema), so they're treated as firm-level: included at "all" / firm-
+  // level scope, excluded when a single office is selected.
+  const bills = await db
+    .select({
+      balanceDue: schema.bills.balanceDue,
+      currencyCode: schema.bills.currencyCode,
+      fxRate: schema.bills.fxRate,
+      journalEntryId: schema.bills.journalEntryId,
+      status: schema.bills.status,
+    })
+    .from(schema.bills);
+
+  const out: OpenMonetaryDoc[] = [];
+  for (const d of invoices) {
+    if (d.isTemplate) continue;
+    if (!d.journalEntryId) continue; // only posted docs sit on the AR control
+    if (d.status === "void") continue;
+    if (d.currencyCode === baseCode) continue;
+    const bal = parseAmount(d.balanceDue);
+    if (Math.abs(bal) < 0.005) continue;
+    if (!inScope(d.firmEntityId)) continue;
+    out.push({
+      kind: "ar",
+      currencyCode: d.currencyCode,
+      balanceDue: bal,
+      fxRate: d.fxRate == null ? null : parseAmount(d.fxRate),
+      firmEntityId: d.firmEntityId,
+    });
+  }
+  for (const d of bills) {
+    if (!d.journalEntryId) continue;
+    if (d.status === "void") continue;
+    if (d.currencyCode === baseCode) continue;
+    const bal = parseAmount(d.balanceDue);
+    if (Math.abs(bal) < 0.005) continue;
+    // Bills are firm-level (no firm_entity_id) — only in scope for "all"
+    // or firm-level runs.
+    if (!inScope(null)) continue;
+    out.push({
+      kind: "ap",
+      currencyCode: d.currencyCode,
+      balanceDue: bal,
+      fxRate: d.fxRate == null ? null : parseAmount(d.fxRate),
+      firmEntityId: null,
+    });
+  }
+  return out;
+}
+
+export type FxRevalCurrencyDetail = {
+  currencyCode: string;
+  periodEndRate: number;
+  arNative: number;
+  apNative: number;
+  arBaseBooked: number;
+  arBasePeriodEnd: number;
+  apBaseBooked: number;
+  apBasePeriodEnd: number;
+  arDelta: number; // base: period-end − booked (asset revaluation)
+  apDelta: number; // base: period-end − booked (liability revaluation)
+  netGainLoss: number; // arDelta − apDelta (positive = gain)
+};
+
+export type FxRevalPreview = {
+  revaluationDate: string;
+  baseCode: string;
+  details: FxRevalCurrencyDetail[];
+  totalArDelta: number;
+  totalApDelta: number;
+  totalNetGainLoss: number;
+  missingRates: string[]; // currencies with no period-end rate
+};
+
+/**
+ * Compute unrealized FX gain/loss on open foreign-currency AR/AP as of a
+ * revaluation date. Per currency:
+ *   base at booked rate     = native / bookedFxRate
+ *   base at period-end rate = native / periodEndRate
+ *   delta (gain/loss)       = base(period-end) − base(booked)
+ * AR delta is an asset revaluation; AP delta is a liability revaluation.
+ * netGainLoss = arDelta − apDelta.
+ */
+export async function previewFxRevaluation(
+  revaluationDate: string,
+  scope: "all" | string | null,
+): Promise<FxRevalPreview> {
+  const base = await getBaseCurrency();
+  const baseCode = base?.code ?? "USD";
+  const docs = await fetchOpenMonetaryDocs(baseCode, scope);
+
+  // Group native balances by currency + kind.
+  const byCurrency = new Map<
+    string,
+    { arNative: number; apNative: number; arBaseBooked: number; apBaseBooked: number }
+  >();
+  for (const d of docs) {
+    const cur =
+      byCurrency.get(d.currencyCode) ??
+      { arNative: 0, apNative: 0, arBaseBooked: 0, apBaseBooked: 0 };
+    // Booked base value: native / bookedFxRate (null/≤0 → treat native as base).
+    const bookedBase =
+      d.fxRate != null && d.fxRate > 0 ? d.balanceDue / d.fxRate : d.balanceDue;
+    if (d.kind === "ar") {
+      cur.arNative += d.balanceDue;
+      cur.arBaseBooked += bookedBase;
+    } else {
+      cur.apNative += d.balanceDue;
+      cur.apBaseBooked += bookedBase;
+    }
+    byCurrency.set(d.currencyCode, cur);
+  }
+
+  const details: FxRevalCurrencyDetail[] = [];
+  const missingRates: string[] = [];
+  let totalArDelta = 0;
+  let totalApDelta = 0;
+  for (const [currencyCode, agg] of byCurrency) {
+    const periodEndRate = await getFxRateAsOf(currencyCode, revaluationDate);
+    if (periodEndRate == null || periodEndRate <= 0) {
+      missingRates.push(currencyCode);
+      continue;
+    }
+    const arBasePeriodEnd = agg.arNative / periodEndRate;
+    const apBasePeriodEnd = agg.apNative / periodEndRate;
+    const arDelta = round2Amount(arBasePeriodEnd - agg.arBaseBooked);
+    const apDelta = round2Amount(apBasePeriodEnd - agg.apBaseBooked);
+    const netGainLoss = round2Amount(arDelta - apDelta);
+    totalArDelta = round2Amount(totalArDelta + arDelta);
+    totalApDelta = round2Amount(totalApDelta + apDelta);
+    details.push({
+      currencyCode,
+      periodEndRate,
+      arNative: round2Amount(agg.arNative),
+      apNative: round2Amount(agg.apNative),
+      arBaseBooked: round2Amount(agg.arBaseBooked),
+      arBasePeriodEnd: round2Amount(arBasePeriodEnd),
+      apBaseBooked: round2Amount(agg.apBaseBooked),
+      apBasePeriodEnd: round2Amount(apBasePeriodEnd),
+      arDelta,
+      apDelta,
+      netGainLoss,
+    });
+  }
+  details.sort((a, b) => a.currencyCode.localeCompare(b.currencyCode));
+  return {
+    revaluationDate,
+    baseCode,
+    details,
+    totalArDelta,
+    totalApDelta,
+    totalNetGainLoss: round2Amount(totalArDelta - totalApDelta),
+    missingRates,
+  };
+}
+
+/** Locate the FX gain/loss account: name match then sub_type fallback. */
+async function findFxGainLossAccount(): Promise<{ id: string } | null> {
+  const db = getDb();
+  const accounts = await db
+    .select({
+      id: schema.accounts.id,
+      name: schema.accounts.name,
+      subType: schema.accounts.subType,
+    })
+    .from(schema.accounts)
+    .where(eq(schema.accounts.isActive, true));
+  const re = /(unrealized )?(foreign exchange|fx|exchange) (gain|loss)/i;
+  const byName = accounts.find((a) => re.test(a.name));
+  if (byName) return { id: byName.id };
+  const bySubType = accounts.find(
+    (a) => a.subType != null && re.test(a.subType),
+  );
+  return bySubType ? { id: bySubType.id } : null;
+}
+
+/**
+ * Book a period-end FX revaluation. Posts ONE JE dated the revaluation date
+ * adjusting the AR/AP control accounts against an FX gain/loss account, then
+ * an auto-reversing JE dated day 1 of the next month. Records an
+ * fx_revaluations row with the per-currency detail.
+ */
+export async function bookFxRevaluation(
+  user: SessionUser,
+  revaluationDate: string,
+  scope: "all" | string | null,
+): Promise<{ journalEntryId: string; reversalEntryId: string; revalId: string }> {
+  requirePermission(user, "fx.revalue");
+  const db = getDb();
+
+  const preview = await previewFxRevaluation(revaluationDate, scope);
+  if (preview.details.length === 0) {
+    throw new Error(
+      "No open foreign-currency AR/AP balances to revalue for that date and scope.",
+    );
+  }
+  if (
+    Math.abs(preview.totalArDelta) < 0.005 &&
+    Math.abs(preview.totalApDelta) < 0.005
+  ) {
+    throw new Error(
+      "Revaluation is nil — booked and period-end rates produce no gain/loss.",
+    );
+  }
+
+  const arAccount = await getAccountByCode("1200", null);
+  const apAccount = await getAccountByCode("2000", null);
+  if (!arAccount || !apAccount) {
+    throw new Error(
+      "AR (1200) and/or AP (2000) control account not found — cannot post revaluation.",
+    );
+  }
+  const fxAccount = await findFxGainLossAccount();
+  if (!fxAccount) {
+    throw new Error(
+      "No FX gain/loss account found. Create an account named like 'Unrealized Foreign Exchange Gain/Loss' (or with a matching sub-type) before booking a revaluation.",
+    );
+  }
+
+  // Build the revaluation lines. AR control adjusts by totalArDelta (asset,
+  // debit-normal); AP control adjusts by totalApDelta (liability, credit-
+  // normal); the FX gain/loss account is the balancing plug.
+  const lines: DraftJournalLine[] = [];
+  const arDelta = preview.totalArDelta;
+  const apDelta = preview.totalApDelta;
+  if (Math.abs(arDelta) >= 0.005) {
+    lines.push({
+      accountId: arAccount.id,
+      description: "AR revaluation (unrealized FX)",
+      debit: arDelta > 0 ? arDelta : 0,
+      credit: arDelta < 0 ? -arDelta : 0,
+    });
+  }
+  if (Math.abs(apDelta) >= 0.005) {
+    // AP up (delta>0) → credit the payable; AP down → debit it.
+    lines.push({
+      accountId: apAccount.id,
+      description: "AP revaluation (unrealized FX)",
+      debit: apDelta < 0 ? -apDelta : 0,
+      credit: apDelta > 0 ? apDelta : 0,
+    });
+  }
+  // Net gain = arDelta − apDelta. The plug that balances the entry:
+  //   sum(debits) − sum(credits) currently = arDelta − apDelta = netGain.
+  // A net gain → credit FX (income); a net loss → debit FX (expense).
+  const netGain = round2Amount(arDelta - apDelta);
+  if (Math.abs(netGain) < 0.005) {
+    throw new Error("Revaluation nets to zero across AR and AP — nothing to book.");
+  }
+  lines.push({
+    accountId: fxAccount.id,
+    description:
+      netGain > 0
+        ? "Unrealized FX gain"
+        : "Unrealized FX loss",
+    debit: netGain < 0 ? -netGain : 0,
+    credit: netGain > 0 ? netGain : 0,
+  });
+
+  const firmEntityId = scope === "all" || scope === null ? null : scope;
+
+  const je = await createJournalEntry(user, {
+    entryDate: revaluationDate,
+    description: `Period-end FX revaluation (${revaluationDate})`,
+    reference: `FXREVAL-${revaluationDate}`,
+    source: "manual",
+    status: "posted",
+    firmEntityId,
+    periodOverrideReason: `FX revaluation ${revaluationDate}`,
+    lines,
+  });
+
+  // Auto-reversing entry dated day 1 of the next month.
+  const reversalDate = firstDayOfNextMonth(revaluationDate);
+  const reversalLines: DraftJournalLine[] = lines.map((l) => ({
+    accountId: l.accountId,
+    description: `Reversal — ${l.description ?? "FX revaluation"}`,
+    debit: l.credit ?? 0,
+    credit: l.debit ?? 0,
+  }));
+  const reversal = await createJournalEntry(user, {
+    entryDate: reversalDate,
+    description: `Reversal of FX revaluation (${revaluationDate})`,
+    reference: `FXREVAL-REV-${revaluationDate}`,
+    source: "manual",
+    status: "posted",
+    firmEntityId,
+    periodOverrideReason: `FX revaluation reversal ${revaluationDate}`,
+    lines: reversalLines,
+  });
+
+  // Link the two entries via the auto_reverse mechanism columns.
+  const now = new Date();
+  await db
+    .update(schema.journalEntries)
+    .set({ autoReverse: true, reversalEntryId: reversal.id, updatedAt: now })
+    .where(eq(schema.journalEntries.id, je.id));
+
+  const revalId = uid("fxr");
+  await db.insert(schema.fxRevaluations).values({
+    id: revalId,
+    revaluationDate,
+    firmEntityId,
+    journalEntryId: je.id,
+    reversalEntryId: reversal.id,
+    details: {
+      baseCode: preview.baseCode,
+      scope: scope === "all" ? "all" : scope === null ? "firm-level" : scope,
+      totalArDelta: preview.totalArDelta,
+      totalApDelta: preview.totalApDelta,
+      totalNetGainLoss: preview.totalNetGainLoss,
+      currencies: preview.details,
+    },
+    createdBy: user.userId,
+  });
+
+  await logAuditEvent(user, {
+    action: "fx.revalue",
+    resourceType: "fx_revaluation",
+    resourceId: revalId,
+    resourceName: `FX revaluation ${revaluationDate}`,
+    changes: {
+      after: {
+        netGainLoss: netGain,
+        journalEntryId: je.id,
+        reversalEntryId: reversal.id,
+      },
+    },
+    metadata: {
+      revaluationDate,
+      firmEntityId,
+      entryNumber: je.entryNumber,
+      reversalNumber: reversal.entryNumber,
+    },
+  });
+
+  return { journalEntryId: je.id, reversalEntryId: reversal.id, revalId };
+}
+
+// ==========================================================================
+// Month-end close checklist
+// ==========================================================================
+
+/** Standard close-checklist task catalogue, seeded per period on first view. */
+export const CLOSE_TASK_CATALOG: Array<{ key: string; label: string }> = [
+  { key: "bank_recs_complete", label: "Bank reconciliations complete" },
+  { key: "accruals_booked", label: "Accruals booked" },
+  { key: "fx_revalued", label: "FX revaluation posted" },
+  { key: "intercompany_reconciled", label: "Intercompany reconciled" },
+  { key: "subledgers_tie", label: "Subledgers tie to GL (AR/AP)" },
+  { key: "depreciation_posted", label: "Depreciation / amortization posted" },
+  { key: "reviewed", label: "Reviewed & signed off" },
+];
+
+/**
+ * Seed the standard checklist for an accounting period if it has none yet.
+ * Idempotent — only inserts tasks whose key is missing. Safe to call on
+ * every page view. No permission check (read-side seeding).
+ */
+export async function ensurePeriodCloseTasks(
+  accountingPeriodId: string,
+): Promise<void> {
+  const db = getDb();
+  const existing = await db
+    .select({ taskKey: schema.periodCloseTasks.taskKey })
+    .from(schema.periodCloseTasks)
+    .where(eq(schema.periodCloseTasks.accountingPeriodId, accountingPeriodId));
+  const have = new Set(existing.map((r) => r.taskKey));
+  const rows = CLOSE_TASK_CATALOG.filter((t) => !have.has(t.key)).map(
+    (t, i) => ({
+      id: `pct-${accountingPeriodId}-${t.key}`,
+      accountingPeriodId,
+      taskKey: t.key,
+      label: t.label,
+      sortOrder: CLOSE_TASK_CATALOG.findIndex((c) => c.key === t.key) * 10 + i,
+      status: "open" as const,
+    }),
+  );
+  if (rows.length === 0) return;
+  await db.insert(schema.periodCloseTasks).values(rows).onConflictDoNothing();
+}
+
+/**
+ * Toggle a single checklist task to open | done | na. Records completedBy/at
+ * when moving to done/na; clears them when reopening.
+ */
+export async function setPeriodCloseTaskStatus(
+  user: SessionUser,
+  taskId: string,
+  status: "open" | "done" | "na",
+): Promise<void> {
+  requirePermission(user, "close.task");
+  const db = getDb();
+  const [existing] = await db
+    .select()
+    .from(schema.periodCloseTasks)
+    .where(eq(schema.periodCloseTasks.id, taskId))
+    .limit(1);
+  if (!existing) throw new Error("Checklist task not found.");
+  const done = status === "done" || status === "na";
+  await db
+    .update(schema.periodCloseTasks)
+    .set({
+      status,
+      completedBy: done ? user.userId : null,
+      completedAt: done ? new Date() : null,
+    })
+    .where(eq(schema.periodCloseTasks.id, taskId));
+
+  await logAuditEvent(user, {
+    action: "close.task",
+    resourceType: "period_close_task",
+    resourceId: taskId,
+    resourceName: existing.label,
+    changes: { before: { status: existing.status }, after: { status } },
+    metadata: { accountingPeriodId: existing.accountingPeriodId },
+  });
+}
+
+// ==========================================================================
+// Prepaid amortization + depreciation schedules
+// ==========================================================================
+
+export type CreateAmortizationScheduleInput = {
+  kind: "prepaid" | "fixed_asset";
+  name: string;
+  sourceAccountId: string;
+  targetAccountId: string;
+  firmEntityId?: string | null;
+  totalCost: number;
+  residualValue?: number;
+  startDate: string;
+  months: number;
+  method?: "straight_line";
+  notes?: string | null;
+};
+
+export async function createAmortizationSchedule(
+  user: SessionUser,
+  input: CreateAmortizationScheduleInput,
+): Promise<{ id: string }> {
+  requirePermission(user, "settings.write");
+  if (!input.name.trim()) throw new Error("Name is required.");
+  if (!input.sourceAccountId || !input.targetAccountId) {
+    throw new Error("Source and target accounts are required.");
+  }
+  if (input.sourceAccountId === input.targetAccountId) {
+    throw new Error("Source and target accounts must differ.");
+  }
+  if (!Number.isInteger(input.months) || input.months < 1) {
+    throw new Error("Months must be a positive whole number.");
+  }
+  const totalCost = round2Amount(input.totalCost);
+  const residual = round2Amount(input.residualValue ?? 0);
+  if (!(totalCost > 0)) throw new Error("Total cost must be greater than zero.");
+  if (residual < 0 || residual >= totalCost) {
+    throw new Error("Residual value must be ≥ 0 and less than total cost.");
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.startDate)) {
+    throw new Error("Start date must be YYYY-MM-DD.");
+  }
+
+  const db = getDb();
+  const id = uid("amsch");
+  const now = new Date();
+  await db.insert(schema.amortizationSchedules).values({
+    id,
+    kind: input.kind,
+    name: input.name.trim(),
+    sourceAccountId: input.sourceAccountId,
+    targetAccountId: input.targetAccountId,
+    firmEntityId: input.firmEntityId ?? null,
+    totalCost: toDecimalString(totalCost),
+    residualValue: toDecimalString(residual),
+    startDate: input.startDate,
+    months: input.months,
+    method: input.method ?? "straight_line",
+    generatedThrough: null,
+    isActive: true,
+    notes: input.notes?.trim() || null,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await logAuditEvent(user, {
+    action: "amortization.schedule_create",
+    resourceType: "amortization_schedule",
+    resourceId: id,
+    resourceName: input.name.trim(),
+    changes: { after: { kind: input.kind, totalCost, months: input.months } },
+  });
+  return { id };
+}
+
+/** Advance a YYYY-MM-DD by n whole months, clamped to the last day. */
+function addMonthsClamped(iso: string, n: number): string {
+  const [y, m, d] = iso.split("-").map((x) => parseInt(x, 10));
+  let ny = y;
+  let nm = m + n;
+  while (nm > 12) {
+    nm -= 12;
+    ny += 1;
+  }
+  while (nm < 1) {
+    nm += 12;
+    ny -= 1;
+  }
+  const lastDay = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+  const day = Math.min(d, lastDay);
+  return `${pad(ny, 4)}-${pad(nm, 2)}-${pad(day, 2)}`;
+}
+
+/**
+ * Generate the due monthly amortization / depreciation JEs for a schedule,
+ * from the month after generatedThrough (or the start month) up to and
+ * including the month of `throughDate`. Each month:
+ *   Dr target (expense)  Cr source (prepaid asset / accumulated deprec)
+ * for (totalCost − residual) / months. Only months whose period date falls
+ * in an OPEN accounting period are posted; a month already generated (an
+ * amortization_entries row for that period date) is never double-booked.
+ * Advances generatedThrough to the last posted month.
+ */
+export async function generateAmortizationEntries(
+  user: SessionUser,
+  scheduleId: string,
+  throughDate: string,
+): Promise<{ generated: number; skipped: string[] }> {
+  requirePermission(user, "settings.write");
+  const db = getDb();
+  const [sched] = await db
+    .select()
+    .from(schema.amortizationSchedules)
+    .where(eq(schema.amortizationSchedules.id, scheduleId))
+    .limit(1);
+  if (!sched) throw new Error("Schedule not found.");
+  if (!sched.isActive) throw new Error("Schedule is not active.");
+
+  const totalCost = parseAmount(sched.totalCost);
+  const residual = parseAmount(sched.residualValue);
+  const months = sched.months;
+  const perMonth = round2Amount((totalCost - residual) / months);
+
+  // Existing generated months (avoid double-booking).
+  const existing = await db
+    .select({ periodDate: schema.amortizationEntries.periodDate })
+    .from(schema.amortizationEntries)
+    .where(eq(schema.amortizationEntries.scheduleId, scheduleId));
+  const generatedDates = new Set(existing.map((e) => e.periodDate));
+  const alreadyCount = existing.length;
+
+  const skipped: string[] = [];
+  let generated = 0;
+  let lastPosted: string | null = sched.generatedThrough ?? null;
+
+  for (let i = 0; i < months; i++) {
+    if (alreadyCount + generated >= months) break;
+    // Month i period date = last day of the (startDate month + i).
+    const monthStart = addMonthsClamped(`${sched.startDate.slice(0, 7)}-01`, i);
+    const [py, pm] = monthStart.split("-").map((x) => parseInt(x, 10));
+    const lastDay = new Date(Date.UTC(py, pm, 0)).getUTCDate();
+    const periodDate = `${pad(py, 4)}-${pad(pm, 2)}-${pad(lastDay, 2)}`;
+
+    if (periodDate > throughDate) break;
+    if (generatedDates.has(periodDate)) continue;
+
+    // Only post into an OPEN accounting period.
+    const period = await getPeriodForDate(periodDate);
+    if (period && period.status !== "open") {
+      skipped.push(`${periodDate} (${period.status} period)`);
+      continue;
+    }
+
+    // Final month: absorb rounding drift so the schedule fully amortizes.
+    const isLastMonth = alreadyCount + generated === months - 1;
+    const priorTotal = round2Amount(perMonth * (alreadyCount + generated));
+    const amount = isLastMonth
+      ? round2Amount(totalCost - residual - priorTotal)
+      : perMonth;
+    if (amount <= 0) {
+      skipped.push(`${periodDate} (nil amount)`);
+      continue;
+    }
+
+    const je = await createJournalEntry(user, {
+      entryDate: periodDate,
+      description: `${sched.kind === "prepaid" ? "Amortization" : "Depreciation"} — ${sched.name}`,
+      reference: `AMORT-${scheduleId}`,
+      source: "manual",
+      status: "posted",
+      firmEntityId: sched.firmEntityId ?? null,
+      lines: [
+        {
+          accountId: sched.targetAccountId,
+          description: `${sched.name} (period ${periodDate})`,
+          debit: amount,
+          credit: 0,
+        },
+        {
+          accountId: sched.sourceAccountId,
+          description: `${sched.name} (period ${periodDate})`,
+          debit: 0,
+          credit: amount,
+        },
+      ],
+    });
+
+    await db.insert(schema.amortizationEntries).values({
+      id: uid("ament"),
+      scheduleId,
+      periodDate,
+      amount: toDecimalString(amount),
+      journalEntryId: je.id,
+    });
+    generated += 1;
+    lastPosted = periodDate;
+  }
+
+  if (lastPosted) {
+    await db
+      .update(schema.amortizationSchedules)
+      .set({ generatedThrough: lastPosted, updatedAt: new Date() })
+      .where(eq(schema.amortizationSchedules.id, scheduleId));
+  }
+
+  await logAuditEvent(user, {
+    action: "amortization.generate",
+    resourceType: "amortization_schedule",
+    resourceId: scheduleId,
+    resourceName: sched.name,
+    changes: { after: { generated, throughDate } },
+    metadata: { skipped },
+  });
+  return { generated, skipped };
 }

@@ -13,6 +13,7 @@ import {
   accountsByType,
   getBaseCurrency,
   getBudgetByAccount,
+  getCashFlowStatement,
   getEntities,
   getIncomeStatementForPeriod,
   getKpisAsOf,
@@ -36,12 +37,13 @@ import {
 } from "@/lib/report-periods";
 import type { Account } from "@/lib/types";
 
-type TabId = "balance" | "income" | "trial" | "monthly";
+type TabId = "balance" | "income" | "cashflow" | "trial" | "monthly";
 
 function isTab(s: string | undefined): s is TabId {
   return (
     s === "balance" ||
     s === "income" ||
+    s === "cashflow" ||
     s === "trial" ||
     s === "monthly"
   );
@@ -248,9 +250,11 @@ export default async function Page({
                     ? "balance-sheet"
                     : tab === "income"
                       ? "income-statement"
-                      : tab === "monthly"
-                        ? "income-statement-monthly"
-                        : "trial-balance"
+                      : tab === "cashflow"
+                        ? "cash-flows"
+                        : tab === "monthly"
+                          ? "income-statement-monthly"
+                          : "trial-balance"
                 }
               />
             )}
@@ -263,6 +267,7 @@ export default async function Page({
         tabs={[
           { id: "balance", label: "Balance Sheet", href: tabHref("balance", params) },
           { id: "income", label: "Income Statement", href: tabHref("income", params) },
+          { id: "cashflow", label: "Cash Flows", href: tabHref("cashflow", params) },
           {
             id: "monthly",
             label: "Monthly P&L",
@@ -283,7 +288,7 @@ export default async function Page({
               <PeriodPicker />
               <CompareSelect
                 allowedModes={
-                  tab === "balance"
+                  tab === "balance" || tab === "cashflow"
                     ? ["none", "prior_period", "prior_year"]
                     : ["none", "prior_period", "prior_year", "budget"]
                 }
@@ -356,6 +361,16 @@ export default async function Page({
         )}
         {tab === "income" && (
           <IncomeStatementCard
+            period={period}
+            compare={compareMode}
+            scope={scope}
+            entityIdsInRegion={entityIdsInRegion}
+            compact={compact}
+            baseCode={baseCode}
+          />
+        )}
+        {tab === "cashflow" && (
+          <CashFlowCard
             period={period}
             compare={compareMode}
             scope={scope}
@@ -599,6 +614,18 @@ async function BalanceSheetCard({
 
   const totalAssets = kpis.assets;
   const totalLiab = kpis.liabilities;
+  // Current Year Earnings = fiscal-year-of-asOf P&L net (closing entries
+  // netting the current year to 0 if it was closed). Prior years already
+  // rolled into Retained Earnings land in kpis.equity.
+  const cye = kpis.currentYearEarnings;
+  const cmpCye = cmpKpis?.currentYearEarnings ?? 0;
+  // Any inception-to-date P&L still on the books that is NOT current-year is
+  // un-closed prior-year earnings — it must appear in equity or the sheet
+  // won't balance (assets = liabilities + equity + netIncome_ITD holds by
+  // construction; currentYearEarnings alone drops un-closed prior years).
+  const priorUnclosed = kpis.netIncome - cye;
+  const cmpPriorUnclosed = (cmpKpis?.netIncome ?? 0) - cmpCye;
+  // Total equity uses ITD net income so it balances in every close state.
   const totalEquity = kpis.equity + kpis.netIncome;
   const cmpAssets = cmpKpis?.assets ?? 0;
   const cmpLiab = cmpKpis?.liabilities ?? 0;
@@ -662,20 +689,30 @@ async function BalanceSheetCard({
               drillEnd={asOf}
             />
           ))}
+          {(priorUnclosed !== 0 || cmpPriorUnclosed !== 0) && (
+            <TR>
+              <TD mono>—</TD>
+              <TD>Prior-Year Earnings (Unclosed)</TD>
+              <TD num neg={priorUnclosed < 0}>{fmt(priorUnclosed)}</TD>
+              {showCmp && (
+                <>
+                  <TD num neg={cmpPriorUnclosed < 0}>{fmt(cmpPriorUnclosed)}</TD>
+                  <TD num neg={priorUnclosed - cmpPriorUnclosed < 0}>
+                    {fmt(priorUnclosed - cmpPriorUnclosed)}
+                  </TD>
+                </>
+              )}
+            </TR>
+          )}
           <TR>
             <TD mono>—</TD>
             <TD>Current Year Earnings</TD>
-            <TD num neg={kpis.netIncome < 0}>{fmt(kpis.netIncome)}</TD>
+            <TD num neg={cye < 0}>{fmt(cye)}</TD>
             {showCmp && (
               <>
-                <TD num neg={(cmpKpis?.netIncome ?? 0) < 0}>
-                  {fmt(cmpKpis?.netIncome ?? 0)}
-                </TD>
-                <TD
-                  num
-                  neg={kpis.netIncome - (cmpKpis?.netIncome ?? 0) < 0}
-                >
-                  {fmt(kpis.netIncome - (cmpKpis?.netIncome ?? 0))}
+                <TD num neg={cmpCye < 0}>{fmt(cmpCye)}</TD>
+                <TD num neg={cye - cmpCye < 0}>
+                  {fmt(cye - cmpCye)}
                 </TD>
               </>
             )}
@@ -888,6 +925,241 @@ async function IncomeStatementCard({
           />
         </TBody>
       </Table>
+    </Card>
+  );
+}
+
+// ------- Statement of Cash Flows (indirect) -------
+
+async function CashFlowCard({
+  period,
+  compare,
+  scope,
+  entityIdsInRegion,
+  compact,
+  baseCode,
+}: {
+  period: { start: string; end: string; label: string };
+  compare: CompareMode;
+  scope: string | null;
+  entityIdsInRegion?: string[];
+  compact: boolean;
+  baseCode: string;
+}) {
+  const fmt = (n: number) =>
+    formatMoney(n, "USD", { paren: true, compact, hideCurrency: true });
+  const cf = await getCashFlowStatement(
+    period.start,
+    period.end,
+    scope,
+    entityIdsInRegion,
+  );
+
+  let cmp: Awaited<ReturnType<typeof getCashFlowStatement>> | null = null;
+  let cmpLabel = "";
+  if (compare === "prior_period") {
+    const p = priorPeriod(period.start, period.end);
+    cmp = await getCashFlowStatement(p.start, p.end, scope, entityIdsInRegion);
+    cmpLabel = `${p.start} → ${p.end}`;
+  } else if (compare === "prior_year") {
+    const p = priorYearPeriod(period.start, period.end);
+    cmp = await getCashFlowStatement(p.start, p.end, scope, entityIdsInRegion);
+    cmpLabel = `${p.start} → ${p.end}`;
+  }
+  const showCmp = cmp !== null;
+
+  const periodCol = `${period.start} → ${period.end}`;
+  const cols: Array<{ key: string; label: string }> = [
+    { key: "curr", label: periodCol },
+  ];
+  if (showCmp) {
+    cols.push({ key: "cmp", label: cmpLabel });
+    cols.push({ key: "delta", label: "Δ" });
+  }
+
+  // Line lookups keyed by label so comparative deltas line up.
+  const cmpByLabel = (arr: { label: string; amount: number }[] | undefined) =>
+    new Map((arr ?? []).map((l) => [l.label, l.amount] as const));
+  const cmpAdj = cmpByLabel(cmp?.operatingAdjustments);
+  const cmpWc = cmpByLabel(cmp?.workingCapital);
+  const cmpInv = cmpByLabel(cmp?.investing);
+  const cmpFin = cmpByLabel(cmp?.financing);
+
+  function line(
+    label: string,
+    curr: number,
+    prev: number | undefined,
+    key?: string,
+  ) {
+    const extras: Array<{ key: string; value: string; neg?: boolean }> = [];
+    if (showCmp) {
+      const p = prev ?? 0;
+      extras.push({ key: "cmp", value: fmt(p), neg: p < 0 });
+      extras.push({ key: "delta", value: fmt(curr - p), neg: curr - p < 0 });
+    }
+    return (
+      <TR key={key ?? label}>
+        <TD></TD>
+        <TD>{label}</TD>
+        <TD num neg={curr < 0}>{fmt(curr)}</TD>
+        {extras.map((e) => (
+          <TD key={e.key} num neg={e.neg}>
+            {e.value}
+          </TD>
+        ))}
+      </TR>
+    );
+  }
+
+  function subtotal(label: string, curr: number, prev: number | undefined) {
+    const cells: Array<{ key: string; value: string; neg?: boolean }> = [
+      { key: "curr", value: fmt(curr), neg: curr < 0 },
+    ];
+    if (showCmp) {
+      const p = prev ?? 0;
+      cells.push({ key: "cmp", value: fmt(p), neg: p < 0 });
+      cells.push({ key: "delta", value: fmt(curr - p), neg: curr - p < 0 });
+    }
+    return (
+      <TR total hover={false}>
+        <TD colSpan={2} style={{ fontWeight: 600, color: "var(--ink)" }}>
+          {label}
+        </TD>
+        {cells.map((c) => (
+          <TD key={c.key} num neg={c.neg} style={{ fontWeight: 600 }}>
+            {c.value}
+          </TD>
+        ))}
+      </TR>
+    );
+  }
+
+  const tie = Math.abs(cf.reconciliationDifference) < 0.005;
+
+  return (
+    <Card
+      title={`Statement of Cash Flows · ${baseCode}`}
+      actions={
+        tie ? (
+          <Pill variant="active">Reconciled</Pill>
+        ) : (
+          <Pill variant="review">Out by {fmt(cf.reconciliationDifference)}</Pill>
+        )
+      }
+    >
+      <Table>
+        <THead>
+          <SectionHeading
+            label="Operating"
+            rightCols={cols.map((c) => ({ key: c.key, label: c.label, num: true }))}
+          />
+        </THead>
+        <TBody>
+          {line("Net income", cf.netIncome, cmp?.netIncome)}
+          {cf.operatingAdjustments.map((l) =>
+            line(l.label, l.amount, cmpAdj.get(l.label), `adj-${l.label}`),
+          )}
+          {cf.workingCapital.map((l) =>
+            line(l.label, l.amount, cmpWc.get(l.label), `wc-${l.label}`),
+          )}
+          {subtotal(
+            "Cash from operating activities",
+            cf.operatingTotal,
+            cmp?.operatingTotal,
+          )}
+        </TBody>
+        <THead>
+          <SectionHeading
+            label="Investing"
+            rightCols={cols.map((c) => ({ key: c.key, label: c.label, num: true }))}
+          />
+        </THead>
+        <TBody>
+          {cf.investing.length === 0 && (
+            <TR>
+              <TD></TD>
+              <TD style={{ color: "var(--ink-3)" }}>No investing activity</TD>
+              <TD num>—</TD>
+              {showCmp && (
+                <>
+                  <TD num>—</TD>
+                  <TD num>—</TD>
+                </>
+              )}
+            </TR>
+          )}
+          {cf.investing.map((l) =>
+            line(l.label, l.amount, cmpInv.get(l.label), `inv-${l.label}`),
+          )}
+          {subtotal(
+            "Cash from investing activities",
+            cf.investingTotal,
+            cmp?.investingTotal,
+          )}
+        </TBody>
+        <THead>
+          <SectionHeading
+            label="Financing"
+            rightCols={cols.map((c) => ({ key: c.key, label: c.label, num: true }))}
+          />
+        </THead>
+        <TBody>
+          {cf.financing.length === 0 && (
+            <TR>
+              <TD></TD>
+              <TD style={{ color: "var(--ink-3)" }}>No financing activity</TD>
+              <TD num>—</TD>
+              {showCmp && (
+                <>
+                  <TD num>—</TD>
+                  <TD num>—</TD>
+                </>
+              )}
+            </TR>
+          )}
+          {cf.financing.map((l) =>
+            line(l.label, l.amount, cmpFin.get(l.label), `fin-${l.label}`),
+          )}
+          {subtotal(
+            "Cash from financing activities",
+            cf.financingTotal,
+            cmp?.financingTotal,
+          )}
+        </TBody>
+        <TBody>
+          {subtotal("Net change in cash (computed)", cf.netChangeComputed, cmp?.netChangeComputed)}
+          {line("Beginning cash", cf.beginningCash, cmp?.beginningCash)}
+          {line("Ending cash", cf.endingCash, cmp?.endingCash)}
+          {line("Actual movement in cash (10xx)", cf.netChangeActual, cmp?.netChangeActual)}
+          <TR total hover={false}>
+            <TD colSpan={2} style={{ fontWeight: 600, color: tie ? "var(--ink)" : "var(--p-review-fg)" }}>
+              Reconciliation difference
+            </TD>
+            <TD num neg={!tie} style={{ fontWeight: 600 }}>
+              {fmt(cf.reconciliationDifference)}
+            </TD>
+            {showCmp && (
+              <>
+                <TD num>{fmt(cmp?.reconciliationDifference ?? 0)}</TD>
+                <TD num>
+                  {fmt(cf.reconciliationDifference - (cmp?.reconciliationDifference ?? 0))}
+                </TD>
+              </>
+            )}
+          </TR>
+        </TBody>
+      </Table>
+      {!tie && (
+        <div
+          className="px-3 py-2 text-[11.5px]"
+          style={{ color: "var(--p-review-fg)", borderTop: "1px solid var(--line)" }}
+        >
+          Computed net change does not tie to the actual cash movement. This
+          usually means the period spans a year-end close, or elimination
+          entries touched P&amp;L at the consolidated view. Investigate before
+          relying on these figures.
+        </div>
+      )}
     </Card>
   );
 }
