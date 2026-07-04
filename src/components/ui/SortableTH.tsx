@@ -82,21 +82,6 @@ export function SortableTH({
   );
 }
 
-/**
- * Shared sort-param parser. Validates the requested column against an
- * allowlist and returns a safe { col, dir }. `col` is null when the
- * request doesn't specify a valid sort, so the caller keeps its default
- * ordering.
- */
-export function parseSort<T extends string>(
-  sortParam: string | undefined,
-  dirParam: string | undefined,
-  allowed: readonly T[],
-): { col: T | null; dir: "asc" | "desc" } {
-  const dir = dirParam === "asc" ? "asc" : "desc";
-  const col =
-    sortParam && (allowed as readonly string[]).includes(sortParam)
-      ? (sortParam as T)
-      : null;
-  return { col, dir };
-}
+// parseSort now lives in "@/lib/list-params" (a non-client module) so
+// server components can call it — a plain fn exported from this "use client"
+// file cannot be invoked from the server.

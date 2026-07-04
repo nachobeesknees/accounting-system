@@ -64,24 +64,5 @@ export function Pagination({
   );
 }
 
-/**
- * Paginate an already-filtered array in memory and report the total. Used
- * by list pages that do rich in-app filtering (so aggregate totals stay
- * correct over the full filtered set while only a page is rendered).
- */
-export function paginate<T>(
-  rows: T[],
-  page: number,
-  pageSize: number,
-): { pageRows: T[]; total: number; page: number; lastPage: number } {
-  const total = rows.length;
-  const lastPage = Math.max(1, Math.ceil(total / pageSize));
-  const safePage = Math.min(Math.max(1, page), lastPage);
-  const start = (safePage - 1) * pageSize;
-  return {
-    pageRows: rows.slice(start, start + pageSize),
-    total,
-    page: safePage,
-    lastPage,
-  };
-}
+// paginate now lives in "@/lib/list-params" (a non-client module) so
+// server components can call it directly during render.

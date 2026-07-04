@@ -8,7 +8,8 @@ import { SmartSelectField, type SmartSelectOption } from "@/components/ui/SmartS
 import { IconUsers } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { SortableTH, parseSort } from "@/components/ui/SortableTH";
+import { SortableTH } from "@/components/ui/SortableTH";
+import { parseSort } from "@/lib/list-params";
 import { SavedViews } from "@/components/SavedViews";
 import {
   getCustomers,

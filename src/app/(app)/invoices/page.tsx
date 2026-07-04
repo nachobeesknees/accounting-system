@@ -9,8 +9,9 @@ import { Tabs } from "@/components/ui/Tabs";
 import { IconReceipt } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { SortableTH, parseSort } from "@/components/ui/SortableTH";
-import { Pagination, paginate } from "@/components/ui/Pagination";
+import { SortableTH } from "@/components/ui/SortableTH";
+import { Pagination } from "@/components/ui/Pagination";
+import { parseSort, paginate } from "@/lib/list-params";
 import { SavedViews } from "@/components/SavedViews";
 import { BulkSelectTable } from "@/components/BulkSelectTable";
 import {
