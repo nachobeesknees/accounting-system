@@ -6,6 +6,7 @@
 export const DASHBOARD_WIDGETS = [
   { key: "quickActions", label: "Quick actions" },
   { key: "recurringDue", label: "Recurring entries due" },
+  { key: "approvalsInbox", label: "Approvals inbox (all types)" },
   { key: "awaitingApproval", label: "Awaiting your approval" },
   { key: "bizKpis", label: "Business KPIs (ARR, fees, attendances, clients)" },
   { key: "ledgerKpis", label: "AUA / Net income / Cash tiles" },

@@ -8,12 +8,16 @@ import { SmartSelectField, type SmartSelectOption } from "@/components/ui/SmartS
 import { IconUsers } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { SortableTH, parseSort } from "@/components/ui/SortableTH";
+import { SavedViews } from "@/components/SavedViews";
 import {
   getCustomers,
   getInvoices,
   getRegionGroups,
   getRegions,
+  getSavedViews,
 } from "@/lib/data";
+import { getSessionUser } from "@/lib/session";
 import { formatMoney, parseAmount } from "@/lib/money";
 import {
   KYC_STATUS_LABELS,
@@ -21,6 +25,16 @@ import {
   kycStatusVariant,
 } from "@/lib/compliance";
 import type { Customer } from "@/lib/types";
+
+const CUSTOMER_SORT_COLUMNS = [
+  "code",
+  "name",
+  "email",
+  "terms",
+  "balance",
+  "status",
+] as const;
+type CustomerSortCol = (typeof CUSTOMER_SORT_COLUMNS)[number];
 
 function filterCustomers(
   customers: Customer[],
@@ -46,19 +60,33 @@ function filterCustomers(
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; region?: string; regionGroup?: string }>;
+  searchParams: Promise<{
+    q?: string;
+    region?: string;
+    regionGroup?: string;
+    sort?: string;
+    dir?: string;
+  }>;
 }) {
   const params = await searchParams;
   const q = params.q ?? "";
   const regionId = params.region ?? "";
   const regionGroupId = params.regionGroup ?? "";
+  const { col: sortCol, dir: sortDir } = parseSort<CustomerSortCol>(
+    params.sort,
+    params.dir,
+    CUSTOMER_SORT_COLUMNS,
+  );
 
-  const [allCustomers, allInvoices, regions, regionGroups] = await Promise.all([
-    getCustomers(),
-    getInvoices(),
-    getRegions(),
-    getRegionGroups(),
-  ]);
+  const user = await getSessionUser();
+  const [allCustomers, allInvoices, regions, regionGroups, savedViews] =
+    await Promise.all([
+      getCustomers(),
+      getInvoices(),
+      getRegions(),
+      getRegionGroups(),
+      user ? getSavedViews(user.userId, "/customers") : Promise.resolve([]),
+    ]);
   const regionGroupById = new Map(regionGroups.map((g) => [g.id, g] as const));
   const regionsByGroup = new Map<string | null, typeof regions>();
   for (const r of regions) {
@@ -73,16 +101,49 @@ export default async function Page({
     regionGroupId && !regionId
       ? new Set((regionsByGroup.get(regionGroupId) ?? []).map((r) => r.id))
       : null;
-  const rows = filterCustomers(allCustomers, q, regionId, regionIdsInGroup)
-    .slice()
-    .sort((a, b) => a.code.localeCompare(b.code));
+  const filtered = filterCustomers(
+    allCustomers,
+    q,
+    regionId,
+    regionIdsInGroup,
+  );
 
   const balanceFor = (customerId: string): number =>
     allInvoices
       .filter((inv) => inv.customerId === customerId)
       .reduce((s, inv) => s + parseAmount(inv.balanceDue), 0);
 
-  const balances = new Map(rows.map((c) => [c.id, balanceFor(c.id)] as const));
+  const balances = new Map(
+    filtered.map((c) => [c.id, balanceFor(c.id)] as const),
+  );
+  const factor = sortDir === "asc" ? 1 : -1;
+  const rows = sortCol
+    ? filtered.slice().sort((a, b) => {
+        let c = 0;
+        switch (sortCol) {
+          case "code":
+            c = a.code.localeCompare(b.code);
+            break;
+          case "name":
+            c = a.name.localeCompare(b.name);
+            break;
+          case "email":
+            c = (a.email ?? "").localeCompare(b.email ?? "");
+            break;
+          case "terms":
+            c = a.paymentTerms - b.paymentTerms;
+            break;
+          case "balance":
+            c = (balances.get(a.id) ?? 0) - (balances.get(b.id) ?? 0);
+            break;
+          case "status":
+            c = Number(a.isActive) - Number(b.isActive);
+            break;
+        }
+        return factor * c;
+      })
+    : filtered.slice().sort((a, b) => a.code.localeCompare(b.code));
+
   const balanceTotal = Array.from(balances.values()).reduce((s, n) => s + n, 0);
 
   return (
@@ -142,6 +203,8 @@ export default async function Page({
             emptyLabel="All regions"
             clearable
           />
+          {sortCol && <input type="hidden" name="sort" value={sortCol} />}
+          {sortCol && <input type="hidden" name="dir" value={sortDir} />}
           <Button variant="primary" type="submit">
             Apply
           </Button>
@@ -149,6 +212,7 @@ export default async function Page({
             Reset
           </ButtonLink>
         </form>
+        {user && <SavedViews route="/customers" views={savedViews} />}
       </div>
 
       <div className="px-6 py-3.5 pb-8">
@@ -176,15 +240,19 @@ export default async function Page({
             <Table>
               <THead>
                 <TR hover={false}>
-                  <TH>Code</TH>
-                  <TH>Name</TH>
-                  <TH>Email</TH>
+                  <SortableTH col="code">Code</SortableTH>
+                  <SortableTH col="name">Name</SortableTH>
+                  <SortableTH col="email">Email</SortableTH>
                   <TH>Phone</TH>
                   <TH>Region</TH>
                   <TH>KYC</TH>
-                  <TH num>Terms</TH>
-                  <TH num>Balance (USD)</TH>
-                  <TH>Status</TH>
+                  <SortableTH col="terms" num>
+                    Terms
+                  </SortableTH>
+                  <SortableTH col="balance" num>
+                    Balance (USD)
+                  </SortableTH>
+                  <SortableTH col="status">Status</SortableTH>
                 </TR>
               </THead>
               <TBody>

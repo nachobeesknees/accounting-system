@@ -9,12 +9,19 @@ import { Tabs } from "@/components/ui/Tabs";
 import { IconReceipt } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { SortableTH, parseSort } from "@/components/ui/SortableTH";
+import { Pagination, paginate } from "@/components/ui/Pagination";
+import { SavedViews } from "@/components/SavedViews";
+import { BulkSelectTable } from "@/components/BulkSelectTable";
 import {
   getCustomers,
   getInvoices,
   getInvoiceTemplates,
   getRegions,
+  getSavedViews,
 } from "@/lib/data";
+import { getSessionUser } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 import { formatDate } from "@/lib/format";
 import { formatMoney, parseAmount } from "@/lib/money";
 import { DrillNumber } from "@/components/DrillNumber";
@@ -22,7 +29,23 @@ import {
   duplicateInvoiceAction,
   generateNextRecurringInvoiceAction,
 } from "../duplicate-actions";
+import {
+  bulkApproveInvoicesAction,
+  bulkSubmitInvoicesAction,
+} from "./bulk-actions";
 import type { Customer, Invoice } from "@/lib/types";
+
+const PAGE_SIZE = 50;
+const INVOICE_SORT_COLUMNS = [
+  "number",
+  "customer",
+  "date",
+  "due",
+  "total",
+  "balance",
+  "status",
+] as const;
+type InvoiceSortCol = (typeof INVOICE_SORT_COLUMNS)[number];
 
 type Bucket = "current" | "d30" | "d60" | "d90" | "d90p";
 
@@ -114,6 +137,36 @@ function isTemplateDue(t: Invoice, todayIso: string): boolean {
   return t.recurringNextDate <= todayIso;
 }
 
+function sortInvoices(
+  rows: Invoice[],
+  customersById: Map<string, Customer>,
+  col: InvoiceSortCol,
+  dir: "asc" | "desc",
+): Invoice[] {
+  const factor = dir === "asc" ? 1 : -1;
+  const custName = (inv: Invoice) =>
+    customersById.get(inv.customerId)?.name ?? "";
+  const cmp = (a: Invoice, b: Invoice): number => {
+    switch (col) {
+      case "number":
+        return a.invoiceNumber.localeCompare(b.invoiceNumber);
+      case "customer":
+        return custName(a).localeCompare(custName(b));
+      case "date":
+        return a.invoiceDate.localeCompare(b.invoiceDate);
+      case "due":
+        return (a.dueDate ?? "").localeCompare(b.dueDate ?? "");
+      case "total":
+        return parseAmount(a.total) - parseAmount(b.total);
+      case "balance":
+        return parseAmount(a.balanceDue) - parseAmount(b.balanceDue);
+      case "status":
+        return a.status.localeCompare(b.status);
+    }
+  };
+  return rows.slice().sort((a, b) => factor * cmp(a, b));
+}
+
 export default async function Page({
   searchParams,
 }: {
@@ -125,6 +178,9 @@ export default async function Page({
     region?: string;
     view?: string;
     error?: string;
+    sort?: string;
+    dir?: string;
+    page?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -135,13 +191,25 @@ export default async function Page({
   const regionId = params.region ?? "";
   const view = params.view === "templates" ? "templates" : "invoices";
   const error = params.error ?? "";
+  const { col: sortCol, dir: sortDir } = parseSort<InvoiceSortCol>(
+    params.sort,
+    params.dir,
+    INVOICE_SORT_COLUMNS,
+  );
+  const pageNum = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
 
-  const [allInvoices, templates, allCustomers, allRegions] = await Promise.all([
-    getInvoices(),
-    getInvoiceTemplates(),
-    getCustomers(),
-    getRegions(),
-  ]);
+  const user = await getSessionUser();
+  const [allInvoices, templates, allCustomers, allRegions, savedViews] =
+    await Promise.all([
+      getInvoices(),
+      getInvoiceTemplates(),
+      getCustomers(),
+      getRegions(),
+      user ? getSavedViews(user.userId, "/invoices") : Promise.resolve([]),
+    ]);
+  const canSubmit = hasPermission(user, "invoice.update");
+  const canApprove = hasPermission(user, "invoice.approve");
+  const showBulk = canSubmit || canApprove;
   const customersById = new Map(allCustomers.map((c) => [c.id, c] as const));
   const customerIdsInRegion = regionId
     ? new Set(
@@ -150,7 +218,7 @@ export default async function Page({
           .map((c) => c.id),
       )
     : null;
-  const rows = filterInvoices(
+  const filtered = filterInvoices(
     allInvoices,
     customersById,
     q,
@@ -159,9 +227,23 @@ export default async function Page({
     bucket,
     new Date(),
     customerIdsInRegion,
-  )
-    .slice()
-    .sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate));
+  );
+  // Default order is newest invoice-date first; an explicit ?sort overrides
+  // via the validated allowlist column.
+  const sortedRows = sortCol
+    ? sortInvoices(filtered, customersById, sortCol, sortDir)
+    : filtered.slice().sort((a, b) => b.invoiceDate.localeCompare(a.invoiceDate));
+  // Totals are computed over the FULL filtered set, not the current page.
+  const totalSum = filtered.reduce((s, inv) => s + parseAmount(inv.total), 0);
+  const balanceSum = filtered.reduce(
+    (s, inv) => s + parseAmount(inv.balanceDue),
+    0,
+  );
+  const {
+    pageRows: rows,
+    total: filteredTotal,
+    page: currentPage,
+  } = paginate(sortedRows, pageNum, PAGE_SIZE);
   const customers = allCustomers
     .slice()
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -171,9 +253,6 @@ export default async function Page({
   const todayIso = new Date().toISOString().slice(0, 10);
   const dueTemplates = templates.filter((t) => isTemplateDue(t, todayIso));
 
-  const totalSum = rows.reduce((s, inv) => s + parseAmount(inv.total), 0);
-  const balanceSum = rows.reduce((s, inv) => s + parseAmount(inv.balanceDue), 0);
-
   return (
     <>
       <PageHeader
@@ -181,7 +260,11 @@ export default async function Page({
         meta={
           view === "templates"
             ? `${templates.length} template${templates.length === 1 ? "" : "s"}`
-            : `${rows.length} invoices`
+            : `${filteredTotal} invoice${filteredTotal === 1 ? "" : "s"}${
+                filteredTotal > PAGE_SIZE
+                  ? ` · page ${currentPage} of ${Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE))}`
+                  : ""
+              }`
         }
         actions={
           <>
@@ -312,6 +395,9 @@ export default async function Page({
                 emptyLabel="All"
                 clearable
               />
+              {/* Preserve the active sort when re-applying filters. */}
+              {sortCol && <input type="hidden" name="sort" value={sortCol} />}
+              {sortCol && <input type="hidden" name="dir" value={sortDir} />}
               <Button variant="primary" type="submit">
                 Apply
               </Button>
@@ -319,6 +405,9 @@ export default async function Page({
                 Reset
               </ButtonLink>
             </form>
+            {user && (
+              <SavedViews route="/invoices" views={savedViews} />
+            )}
           </div>
           {activeBucketLabel && (
             <div
@@ -356,107 +445,178 @@ export default async function Page({
                   }
                 />
               ) : (
-                <Table>
-                  <THead>
-                    <TR hover={false}>
-                      <TH>Invoice #</TH>
-                      <TH>Customer</TH>
-                      <TH>Date</TH>
-                      <TH>Due</TH>
-                      <TH num>Total (USD)</TH>
-                      <TH num>Balance (USD)</TH>
-                      <TH>Status</TH>
+                (() => {
+                  // Shared header cells (after any checkbox column).
+                  const headerCells = (
+                    <>
+                      <SortableTH col="number">Invoice #</SortableTH>
+                      <SortableTH col="customer">Customer</SortableTH>
+                      <SortableTH col="date">Date</SortableTH>
+                      <SortableTH col="due">Due</SortableTH>
+                      <SortableTH col="total" num>
+                        Total (USD)
+                      </SortableTH>
+                      <SortableTH col="balance" num>
+                        Balance (USD)
+                      </SortableTH>
+                      <SortableTH col="status">Status</SortableTH>
                       <TH>{""}</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {rows.map((inv) => {
-                      const cust = customersById.get(inv.customerId);
-                      const bal = parseAmount(inv.balanceDue);
-                      const isOverdue = inv.status === "overdue" && bal > 0;
-                      return (
-                        <TR key={inv.id} href={`/invoices/${inv.id}`}>
-                          <TD mono>
-                            <Link
-                              href={`/invoices/${inv.id}`}
-                              style={{ color: "var(--ink)", textDecoration: "none" }}
+                    </>
+                  );
+                  const rowCells = (inv: Invoice) => {
+                    const cust = customersById.get(inv.customerId);
+                    const bal = parseAmount(inv.balanceDue);
+                    const isOverdue = inv.status === "overdue" && bal > 0;
+                    return (
+                      <>
+                        <TD mono>
+                          <Link
+                            href={`/invoices/${inv.id}`}
+                            style={{ color: "var(--ink)", textDecoration: "none" }}
+                          >
+                            {inv.invoiceNumber}
+                          </Link>
+                          {inv.recurringParentId && (
+                            <span
+                              title="Generated from a recurring template"
+                              style={{
+                                marginLeft: 6,
+                                color: "var(--ink-3)",
+                                fontSize: 11,
+                              }}
                             >
-                              {inv.invoiceNumber}
-                            </Link>
-                            {inv.recurringParentId && (
-                              <span
-                                title="Generated from a recurring template"
-                                style={{
-                                  marginLeft: 6,
-                                  color: "var(--ink-3)",
-                                  fontSize: 11,
-                                }}
-                              >
-                                🔁
-                              </span>
-                            )}
-                          </TD>
-                          <TD>{cust?.name ?? "—"}</TD>
-                          <TD>{formatDate(inv.invoiceDate)}</TD>
-                          <TD>{formatDate(inv.dueDate)}</TD>
-                          <TD num>
-                            <DrillNumber
-                              value={inv.total}
-                              href={`/invoices/${inv.id}`}
-                              currencyCode={null}
-                              compact
-                            />
-                          </TD>
-                          <TD num neg={isOverdue}>
-                            <DrillNumber
-                              value={bal}
-                              href={`/invoices/${inv.id}`}
-                              currencyCode={null}
-                              compact
-                              neg={isOverdue || bal < 0}
-                            />
-                          </TD>
-                          <TD>
-                            <Pill variant={statusVariant(inv.status)}>
-                              {statusLabel(inv.status)}
-                            </Pill>
-                          </TD>
-                          <TD>
-                            <form action={duplicateInvoiceAction}>
-                              <input type="hidden" name="invoiceId" value={inv.id} />
-                              <button
-                                type="submit"
-                                title="Duplicate as draft"
-                                style={{
-                                  background: "transparent",
-                                  border: "1px solid var(--line-2)",
-                                  borderRadius: 4,
-                                  color: "var(--ink-3)",
-                                  cursor: "pointer",
-                                  fontSize: 11,
-                                  padding: "1px 6px",
-                                }}
-                              >
-                                Duplicate
-                              </button>
-                            </form>
-                          </TD>
-                        </TR>
-                      );
-                    })}
+                              🔁
+                            </span>
+                          )}
+                        </TD>
+                        <TD>{cust?.name ?? "—"}</TD>
+                        <TD>{formatDate(inv.invoiceDate)}</TD>
+                        <TD>{formatDate(inv.dueDate)}</TD>
+                        <TD num>
+                          <DrillNumber
+                            value={inv.total}
+                            href={`/invoices/${inv.id}`}
+                            currencyCode={null}
+                            compact
+                          />
+                        </TD>
+                        <TD num neg={isOverdue}>
+                          <DrillNumber
+                            value={bal}
+                            href={`/invoices/${inv.id}`}
+                            currencyCode={null}
+                            compact
+                            neg={isOverdue || bal < 0}
+                          />
+                        </TD>
+                        <TD>
+                          <Pill variant={statusVariant(inv.status)}>
+                            {statusLabel(inv.status)}
+                          </Pill>
+                        </TD>
+                        <TD>
+                          <form action={duplicateInvoiceAction}>
+                            <input type="hidden" name="invoiceId" value={inv.id} />
+                            <button
+                              type="submit"
+                              title="Duplicate as draft"
+                              style={{
+                                background: "transparent",
+                                border: "1px solid var(--line-2)",
+                                borderRadius: 4,
+                                color: "var(--ink-3)",
+                                cursor: "pointer",
+                                fontSize: 11,
+                                padding: "1px 6px",
+                              }}
+                            >
+                              Duplicate
+                            </button>
+                          </form>
+                        </TD>
+                      </>
+                    );
+                  };
+                  // Totals row reflects the FULL filtered set (all pages).
+                  const totalCells = (leadCol: boolean) => (
                     <TR total hover={false}>
-                      <TD>Total</TD>
+                      {leadCol && <TD>{""}</TD>}
+                      <TD>Total (all pages)</TD>
                       <TD>{""}</TD>
                       <TD>{""}</TD>
                       <TD>{""}</TD>
-                      <TD num>{formatMoney(totalSum, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
-                      <TD num>{formatMoney(balanceSum, "USD", { paren: true, compact: true, hideCurrency: true })}</TD>
+                      <TD num>
+                        {formatMoney(totalSum, "USD", {
+                          paren: true,
+                          compact: true,
+                          hideCurrency: true,
+                        })}
+                      </TD>
+                      <TD num>
+                        {formatMoney(balanceSum, "USD", {
+                          paren: true,
+                          compact: true,
+                          hideCurrency: true,
+                        })}
+                      </TD>
                       <TD>{""}</TD>
                       <TD>{""}</TD>
                     </TR>
-                  </TBody>
-                </Table>
+                  );
+
+                  if (showBulk) {
+                    const bulkActions = [];
+                    if (canSubmit)
+                      bulkActions.push({
+                        action: bulkSubmitInvoicesAction,
+                        label: "Submit drafts for approval",
+                        fieldName: "invoiceIds",
+                      });
+                    if (canApprove)
+                      bulkActions.push({
+                        action: bulkApproveInvoicesAction,
+                        label: "Approve / advance",
+                        fieldName: "invoiceIds",
+                        variant: "primary" as const,
+                      });
+                    return (
+                      <BulkSelectTable
+                        rows={rows.map((inv) => ({
+                          id: inv.id,
+                          href: `/invoices/${inv.id}`,
+                          cells: rowCells(inv),
+                        }))}
+                        header={headerCells}
+                        footer={totalCells(true)}
+                        actions={bulkActions}
+                        emptySelectionHint="Select invoices to submit or approve in bulk."
+                      />
+                    );
+                  }
+                  return (
+                    <Table>
+                      <THead>
+                        <TR hover={false}>{headerCells}</TR>
+                      </THead>
+                      <TBody>
+                        {rows.map((inv) => (
+                          <TR key={inv.id} href={`/invoices/${inv.id}`}>
+                            {rowCells(inv)}
+                          </TR>
+                        ))}
+                        {totalCells(false)}
+                      </TBody>
+                    </Table>
+                  );
+                })()
               )}
+              <div className="mt-3">
+                <Pagination
+                  page={currentPage}
+                  pageSize={PAGE_SIZE}
+                  total={filteredTotal}
+                />
+              </div>
             </Card>
           </div>
         </>

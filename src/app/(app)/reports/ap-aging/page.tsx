@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { DrillNumber } from "@/components/DrillNumber";
 import { PrintButton } from "@/components/PrintButton";
+import { CsvDownloadButton } from "@/components/CsvDownloadButton";
 import { GlTieOut, ReconcilingItemsCard } from "@/components/AgingTieOut";
 import {
   getBankAccounts,
@@ -246,7 +247,12 @@ export default async function Page() {
       <PageHeader
         title="AP Aging"
         meta={`As of ${asOf} · ${distinctVendors} vendors with open payables · totals per currency + ${baseCode} equivalent`}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <CsvDownloadButton report="ap-aging" />
+            <PrintButton />
+          </>
+        }
       />
 
       <div className="px-6 py-3.5 pb-8 flex flex-col gap-3.5">

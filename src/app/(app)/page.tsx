@@ -19,6 +19,7 @@ import {
   getOffices,
   getInvoices,
   getInvoicesAwaitingApproval,
+  getPendingApprovalsForUser,
   getJournalEntries,
   getAssets,
   getBusinessKpis,
@@ -210,6 +211,7 @@ export default async function Page() {
     base,
     fxRates,
     awaitingApproval,
+    approvalGroups,
     accountingPeriods,
     dueTemplateCount,
     allFilings,
@@ -234,6 +236,11 @@ export default async function Page() {
     user
       ? getInvoicesAwaitingApproval(user.userId, user.role, user.isSuperuser)
       : Promise.resolve([]),
+    user
+      ? getPendingApprovalsForUser(user)
+      : Promise.resolve(
+          [] as Awaited<ReturnType<typeof getPendingApprovalsForUser>>,
+        ),
     getAccountingPeriods(),
     getDueRecurringTemplateCount(demoTodayIso),
     getEntityFilings(),
@@ -442,6 +449,60 @@ export default async function Page() {
           </Card>
         </div>
       )}
+
+      {show("approvalsInbox") &&
+        (() => {
+          const actionableTotal = approvalGroups.reduce(
+            (s, g) => s + g.actionableCount,
+            0,
+          );
+          const nonEmpty = approvalGroups.filter((g) => g.actionableCount > 0);
+          if (actionableTotal === 0) return null;
+          return (
+            <div className="px-6 my-3.5">
+              <Card
+                title={`Approvals inbox — ${actionableTotal} awaiting your action`}
+                actions={
+                  <Link
+                    href="/approvals"
+                    style={{ color: "var(--ink-3)", textDecoration: "none" }}
+                  >
+                    Open inbox →
+                  </Link>
+                }
+              >
+                <Table>
+                  <THead>
+                    <TR hover={false}>
+                      <TH>Type</TH>
+                      <TH num>Actionable</TH>
+                      <TH></TH>
+                    </TR>
+                  </THead>
+                  <TBody>
+                    {nonEmpty.map((g) => (
+                      <TR key={g.type} href="/approvals">
+                        <TD>{g.label}</TD>
+                        <TD num>{g.actionableCount}</TD>
+                        <TD>
+                          <Link
+                            href="/approvals"
+                            style={{
+                              color: "var(--ink-3)",
+                              textDecoration: "none",
+                            }}
+                          >
+                            Review →
+                          </Link>
+                        </TD>
+                      </TR>
+                    ))}
+                  </TBody>
+                </Table>
+              </Card>
+            </div>
+          );
+        })()}
 
       {show("awaitingApproval") && awaitingApproval.length > 0 && (
         <div className="px-6 my-3.5">

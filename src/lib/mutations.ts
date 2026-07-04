@@ -10001,3 +10001,80 @@ export async function invoiceOverageForFee(
   });
   return { ...created, overageHours, amount };
 }
+
+// ===================================================================
+// Saved views (per-user, per-route list presets)
+// ===================================================================
+
+/**
+ * Create a saved view for the current user on a given route. A view is
+ * ALWAYS owned by user.userId — the ownership is stamped here from the
+ * session, never taken from client input. When `makeDefault` is set, any
+ * existing default for this (user, route) is demoted first so at most one
+ * default exists per user per route.
+ */
+export async function saveSavedView(
+  user: SessionUser,
+  input: {
+    route: string;
+    name: string;
+    params: Record<string, string>;
+    makeDefault?: boolean;
+  },
+): Promise<void> {
+  const route = input.route.trim();
+  const name = input.name.trim();
+  if (!route) throw new Error("A route is required for a saved view.");
+  if (!name) throw new Error("Give the view a name.");
+  // Never persist paging / one-off params into a reusable view.
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(input.params)) {
+    if (k === "page" || k === "error" || k === "view") continue;
+    if (v == null || v === "") continue;
+    params[k] = String(v);
+  }
+
+  const db = getDb();
+  if (input.makeDefault) {
+    await db
+      .update(schema.savedViews)
+      .set({ isDefault: false })
+      .where(
+        and(
+          eq(schema.savedViews.userId, user.userId),
+          eq(schema.savedViews.route, route),
+          eq(schema.savedViews.isDefault, true),
+        ),
+      );
+  }
+  await db.insert(schema.savedViews).values({
+    id: uid("view"),
+    userId: user.userId,
+    route,
+    name,
+    params,
+    isDefault: !!input.makeDefault,
+  });
+}
+
+/**
+ * Delete a saved view — scoped to the owner. The WHERE clause pins both id
+ * AND userId so a user can never delete a view belonging to someone else,
+ * even if they guess the id.
+ */
+export async function deleteSavedView(
+  user: SessionUser,
+  viewId: string,
+): Promise<void> {
+  const id = viewId.trim();
+  if (!id) return;
+  const db = getDb();
+  await db
+    .delete(schema.savedViews)
+    .where(
+      and(
+        eq(schema.savedViews.id, id),
+        eq(schema.savedViews.userId, user.userId),
+      ),
+    );
+}

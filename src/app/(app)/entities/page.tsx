@@ -8,16 +8,30 @@ import { SmartSelectField, type SmartSelectOption } from "@/components/ui/SmartS
 import { IconBuilding } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { SortableTH, parseSort } from "@/components/ui/SortableTH";
+import { SavedViews } from "@/components/SavedViews";
 import {
   getCustomers,
   getEntities,
   getRegionGroups,
   getRegions,
+  getSavedViews,
 } from "@/lib/data";
 import { getSessionUser } from "@/lib/session";
 import { getAllowedEntityIds } from "@/lib/entity-access";
 import { formatDate } from "@/lib/format";
 import type { Entity, EntityKind } from "@/lib/types";
+
+const ENTITY_SORT_COLUMNS = [
+  "code",
+  "name",
+  "kind",
+  "jurisdiction",
+  "formation",
+  "ownership",
+  "status",
+] as const;
+type EntitySortCol = (typeof ENTITY_SORT_COLUMNS)[number];
 
 const KIND_LABEL: Record<EntityKind, string> = {
   llc: "LLC",
@@ -66,6 +80,8 @@ export default async function Page({
     client?: string;
     region?: string;
     regionGroup?: string;
+    sort?: string;
+    dir?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -75,16 +91,28 @@ export default async function Page({
   const clientId = params.client ?? "";
   const regionId = params.region ?? "";
   const regionGroupId = params.regionGroup ?? "";
+  const { col: sortCol, dir: sortDir } = parseSort<EntitySortCol>(
+    params.sort,
+    params.dir,
+    ENTITY_SORT_COLUMNS,
+  );
 
   const user = await getSessionUser();
-  const [allEntitiesRaw, customers, regions, regionGroups, allowedEntityIds] =
-    await Promise.all([
-      getEntities(),
-      getCustomers(),
-      getRegions(),
-      getRegionGroups(),
-      getAllowedEntityIds(user),
-    ]);
+  const [
+    allEntitiesRaw,
+    customers,
+    regions,
+    regionGroups,
+    allowedEntityIds,
+    savedViews,
+  ] = await Promise.all([
+    getEntities(),
+    getCustomers(),
+    getRegions(),
+    getRegionGroups(),
+    getAllowedEntityIds(user),
+    user ? getSavedViews(user.userId, "/entities") : Promise.resolve([]),
+  ]);
   // user_entity_access scoping. null → unrestricted (admin default).
   const allEntities =
     allowedEntityIds === null
@@ -105,7 +133,7 @@ export default async function Page({
     regionGroupId && !regionId
       ? new Set((regionsByGroup.get(regionGroupId) ?? []).map((r) => r.id))
       : null;
-  const rows = filterEntities(
+  const filtered = filterEntities(
     allEntities,
     q,
     kind,
@@ -114,6 +142,38 @@ export default async function Page({
     regionId,
     regionIdsInGroup,
   );
+  const factor = sortDir === "asc" ? 1 : -1;
+  const rows = sortCol
+    ? filtered.slice().sort((a, b) => {
+        let c = 0;
+        switch (sortCol) {
+          case "code":
+            c = a.code.localeCompare(b.code);
+            break;
+          case "name":
+            c = a.name.localeCompare(b.name);
+            break;
+          case "kind":
+            c = a.kind.localeCompare(b.kind);
+            break;
+          case "jurisdiction":
+            c = (a.jurisdiction ?? "").localeCompare(b.jurisdiction ?? "");
+            break;
+          case "formation":
+            c = (a.formationDate ?? "").localeCompare(b.formationDate ?? "");
+            break;
+          case "ownership":
+            c =
+              parseFloat(a.ownershipPercent ?? "0") -
+              parseFloat(b.ownershipPercent ?? "0");
+            break;
+          case "status":
+            c = a.status.localeCompare(b.status);
+            break;
+        }
+        return factor * c;
+      })
+    : filtered;
 
   return (
     <>
@@ -197,6 +257,8 @@ export default async function Page({
             emptyLabel="All"
             clearable
           />
+          {sortCol && <input type="hidden" name="sort" value={sortCol} />}
+          {sortCol && <input type="hidden" name="dir" value={sortDir} />}
           <Button variant="primary" type="submit">
             Apply
           </Button>
@@ -204,6 +266,7 @@ export default async function Page({
             Reset
           </ButtonLink>
         </form>
+        {user && <SavedViews route="/entities" views={savedViews} />}
       </div>
 
       <div className="px-6 py-3.5 pb-8">
@@ -231,15 +294,17 @@ export default async function Page({
             <Table>
               <THead>
                 <TR hover={false}>
-                  <TH>Code</TH>
-                  <TH>Name</TH>
+                  <SortableTH col="code">Code</SortableTH>
+                  <SortableTH col="name">Name</SortableTH>
                   <TH>Client</TH>
-                  <TH>Kind</TH>
+                  <SortableTH col="kind">Kind</SortableTH>
                   <TH>Region</TH>
-                  <TH>Jurisdiction</TH>
-                  <TH>Formation</TH>
-                  <TH num>Ownership</TH>
-                  <TH>Status</TH>
+                  <SortableTH col="jurisdiction">Jurisdiction</SortableTH>
+                  <SortableTH col="formation">Formation</SortableTH>
+                  <SortableTH col="ownership" num>
+                    Ownership
+                  </SortableTH>
+                  <SortableTH col="status">Status</SortableTH>
                 </TR>
               </THead>
               <TBody>

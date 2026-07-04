@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { PeriodPicker } from "@/components/PeriodPicker";
 import { PrintButton } from "@/components/PrintButton";
+import { CsvDownloadButton } from "@/components/CsvDownloadButton";
 import { getAccounts, getLedgerLinesInRange } from "@/lib/data";
 import { formatDate } from "@/lib/format";
 import { formatAmount } from "@/lib/money";
@@ -73,6 +74,7 @@ export default async function Page({
                 <PeriodPicker />
               </Suspense>
             </div>
+            <CsvDownloadButton report="general-journal" />
             <PrintButton />
           </>
         }

@@ -7,9 +7,22 @@ import { Field } from "@/components/ui/Field";
 import { IconUsers } from "@/components/ui/Icon";
 import { Pill, statusLabel, statusVariant } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
-import { getAccounts, getBills, getVendors } from "@/lib/data";
+import { SortableTH, parseSort } from "@/components/ui/SortableTH";
+import { SavedViews } from "@/components/SavedViews";
+import { getAccounts, getBills, getSavedViews, getVendors } from "@/lib/data";
+import { getSessionUser } from "@/lib/session";
 import { formatMoney, parseAmount } from "@/lib/money";
 import type { Vendor } from "@/lib/types";
+
+const VENDOR_SORT_COLUMNS = [
+  "code",
+  "name",
+  "email",
+  "terms",
+  "balance",
+  "status",
+] as const;
+type VendorSortCol = (typeof VENDOR_SORT_COLUMNS)[number];
 
 function filterVendors(vendors: Vendor[], q: string): Vendor[] {
   const needle = q.trim().toLowerCase();
@@ -23,27 +36,62 @@ function filterVendors(vendors: Vendor[], q: string): Vendor[] {
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; sort?: string; dir?: string }>;
 }) {
   const params = await searchParams;
   const q = params.q ?? "";
+  const { col: sortCol, dir: sortDir } = parseSort<VendorSortCol>(
+    params.sort,
+    params.dir,
+    VENDOR_SORT_COLUMNS,
+  );
 
-  const [allVendors, allBills, accounts] = await Promise.all([
+  const user = await getSessionUser();
+  const [allVendors, allBills, accounts, savedViews] = await Promise.all([
     getVendors(),
     getBills(),
     getAccounts(),
+    user ? getSavedViews(user.userId, "/vendors") : Promise.resolve([]),
   ]);
   const accountById = new Map(accounts.map((a) => [a.id, a] as const));
-  const rows = filterVendors(allVendors, q).slice().sort((a, b) =>
-    a.code.localeCompare(b.code),
-  );
 
   const balanceFor = (vendorId: string): number =>
     allBills
       .filter((b) => b.vendorId === vendorId)
       .reduce((s, b) => s + parseAmount(b.balanceDue), 0);
 
-  const balances = new Map(rows.map((v) => [v.id, balanceFor(v.id)] as const));
+  const filtered = filterVendors(allVendors, q);
+  const balances = new Map(
+    filtered.map((v) => [v.id, balanceFor(v.id)] as const),
+  );
+  const factor = sortDir === "asc" ? 1 : -1;
+  const rows = sortCol
+    ? filtered.slice().sort((a, b) => {
+        let c = 0;
+        switch (sortCol) {
+          case "code":
+            c = a.code.localeCompare(b.code);
+            break;
+          case "name":
+            c = a.name.localeCompare(b.name);
+            break;
+          case "email":
+            c = (a.email ?? "").localeCompare(b.email ?? "");
+            break;
+          case "terms":
+            c = a.paymentTerms - b.paymentTerms;
+            break;
+          case "balance":
+            c = (balances.get(a.id) ?? 0) - (balances.get(b.id) ?? 0);
+            break;
+          case "status":
+            c = Number(a.isActive) - Number(b.isActive);
+            break;
+        }
+        return factor * c;
+      })
+    : filtered.slice().sort((a, b) => a.code.localeCompare(b.code));
+
   const balanceTotal = Array.from(balances.values()).reduce((s, n) => s + n, 0);
 
   return (
@@ -72,6 +120,8 @@ export default async function Page({
             placeholder="Code, name, or email"
             defaultValue={q}
           />
+          {sortCol && <input type="hidden" name="sort" value={sortCol} />}
+          {sortCol && <input type="hidden" name="dir" value={sortDir} />}
           <Button variant="primary" type="submit">
             Apply
           </Button>
@@ -79,6 +129,7 @@ export default async function Page({
             Reset
           </ButtonLink>
         </form>
+        {user && <SavedViews route="/vendors" views={savedViews} />}
       </div>
 
       <div className="px-6 py-3.5 pb-8">
@@ -106,13 +157,17 @@ export default async function Page({
             <Table>
               <THead>
                 <TR hover={false}>
-                  <TH>Code</TH>
-                  <TH>Name</TH>
-                  <TH>Email</TH>
+                  <SortableTH col="code">Code</SortableTH>
+                  <SortableTH col="name">Name</SortableTH>
+                  <SortableTH col="email">Email</SortableTH>
                   <TH>Default expense acct</TH>
-                  <TH num>Terms</TH>
-                  <TH num>Balance (USD)</TH>
-                  <TH>Status</TH>
+                  <SortableTH col="terms" num>
+                    Terms
+                  </SortableTH>
+                  <SortableTH col="balance" num>
+                    Balance (USD)
+                  </SortableTH>
+                  <SortableTH col="status">Status</SortableTH>
                 </TR>
               </THead>
               <TBody>

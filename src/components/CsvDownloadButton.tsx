@@ -22,7 +22,12 @@ export function CsvDownloadButton({
     | "ar-aging"
     | "ap-aging"
     | "vat"
-    | "statement";
+    | "statement"
+    | "general-ledger"
+    | "general-journal"
+    | "intercompany"
+    | "consolidation"
+    | "aua";
   label?: string;
   extraParams?: Record<string, string>;
 }) {

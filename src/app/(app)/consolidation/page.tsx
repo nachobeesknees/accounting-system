@@ -3,6 +3,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { PrintButton } from "@/components/PrintButton";
+import { CsvDownloadButton } from "@/components/CsvDownloadButton";
 import {
   convertToBase,
   getBaseCurrency,
@@ -70,6 +72,12 @@ export default async function Page() {
       <PageHeader
         title="Consolidation"
         meta={`Firm entities consolidated to ${baseCode} · intercompany eliminations applied`}
+        actions={
+          <>
+            <CsvDownloadButton report="consolidation" />
+            <PrintButton />
+          </>
+        }
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 px-6 my-3.5">

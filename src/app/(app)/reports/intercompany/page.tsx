@@ -7,6 +7,7 @@ import { Button, ButtonLink } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { PrintButton } from "@/components/PrintButton";
+import { CsvDownloadButton } from "@/components/CsvDownloadButton";
 import {
   getBaseCurrency,
   getEliminatedPairKeys,
@@ -313,7 +314,12 @@ export default async function Page({
       <PageHeader
         title="Intercompany"
         meta={`Auto-reconciliation by counterpart tag · ${pairs.length} entity pair${pairs.length === 1 ? "" : "s"} with tagged posted activity · amounts native + ${baseCode} base`}
-        actions={<PrintButton />}
+        actions={
+          <>
+            <CsvDownloadButton report="intercompany" />
+            <PrintButton />
+          </>
+        }
       />
 
       <div className="flex flex-col gap-3.5 px-6 py-3.5 pb-8">

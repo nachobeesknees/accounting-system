@@ -8,15 +8,21 @@ import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import { Field, SelectField } from "@/components/ui/Field";
 import { Empty } from "@/components/ui/Empty";
 import { IconBookOpen } from "@/components/ui/Icon";
+import { SortableTH, parseSort } from "@/components/ui/SortableTH";
+import { Pagination, paginate } from "@/components/ui/Pagination";
+import { SavedViews } from "@/components/SavedViews";
+import { BulkSelectTable } from "@/components/BulkSelectTable";
 import {
   getCustomers,
   getEntities,
   getJournalEntries,
   getJournalEntryTemplates,
   getRegions,
+  getSavedViews,
   totalDebits,
 } from "@/lib/data";
 import { getSessionUser } from "@/lib/session";
+import { hasPermission } from "@/lib/permissions";
 import { getAllowedEntityIds } from "@/lib/entity-access";
 import { SmartSelectField } from "@/components/ui/SmartSelect";
 import { formatMoney } from "@/lib/money";
@@ -26,6 +32,22 @@ import {
   duplicateJournalEntryAction,
   generateNextRecurringEntryAction,
 } from "../duplicate-actions";
+import {
+  bulkApproveEntriesAction,
+  bulkSubmitEntriesAction,
+} from "./bulk-actions";
+
+const PAGE_SIZE = 50;
+const JE_SORT_COLUMNS = [
+  "number",
+  "date",
+  "description",
+  "reference",
+  "source",
+  "status",
+  "total",
+] as const;
+type JeSortCol = (typeof JE_SORT_COLUMNS)[number];
 
 function formatShortDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
@@ -104,6 +126,33 @@ function filterEntries(
   });
 }
 
+function sortEntries(
+  rows: JournalEntry[],
+  col: JeSortCol,
+  dir: "asc" | "desc",
+): JournalEntry[] {
+  const factor = dir === "asc" ? 1 : -1;
+  const cmp = (a: JournalEntry, b: JournalEntry): number => {
+    switch (col) {
+      case "number":
+        return a.entryNumber.localeCompare(b.entryNumber);
+      case "date":
+        return a.entryDate.localeCompare(b.entryDate);
+      case "description":
+        return (a.description ?? "").localeCompare(b.description ?? "");
+      case "reference":
+        return (a.reference ?? "").localeCompare(b.reference ?? "");
+      case "source":
+        return (a.source ?? "").localeCompare(b.source ?? "");
+      case "status":
+        return a.status.localeCompare(b.status);
+      case "total":
+        return totalDebits(a) - totalDebits(b);
+    }
+  };
+  return rows.slice().sort((a, b) => factor * cmp(a, b));
+}
+
 export default async function Page({
   searchParams,
 }: {
@@ -120,6 +169,9 @@ export default async function Page({
     to?: string;
     view?: string;
     error?: string;
+    sort?: string;
+    dir?: string;
+    page?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -136,6 +188,12 @@ export default async function Page({
   const toDate = (params.to ?? "").trim();
   const view = params.view === "templates" ? "templates" : "entries";
   const error = params.error ?? "";
+  const { col: sortCol, dir: sortDir } = parseSort<JeSortCol>(
+    params.sort,
+    params.dir,
+    JE_SORT_COLUMNS,
+  );
+  const pageNum = Math.max(1, parseInt(params.page ?? "1", 10) || 1);
 
   const user = await getSessionUser();
   const [
@@ -145,6 +203,7 @@ export default async function Page({
     allEntities,
     allCustomers,
     allRegions,
+    savedViews,
   ] = await Promise.all([
     getJournalEntries(),
     getJournalEntryTemplates(),
@@ -152,7 +211,11 @@ export default async function Page({
     getEntities(),
     getCustomers(),
     getRegions(),
+    user ? getSavedViews(user.userId, "/journal") : Promise.resolve([]),
   ]);
+  const canSubmit = hasPermission(user, "journal_entry.create");
+  const canApprove = hasPermission(user, "journal_entry.approve");
+  const showBulk = canSubmit || canApprove;
   // user_entity_access — drop JEs tagged to a client entity outside the
   // user's scope. Firm-level (entityId null) entries are always visible.
   const allEntries =
@@ -191,7 +254,7 @@ export default async function Page({
         )
       : (customerEntityIds ?? entityIdsInRegion);
 
-  const entries = filterEntries(
+  const filteredEntries = filterEntries(
     allEntries,
     q,
     status,
@@ -202,7 +265,18 @@ export default async function Page({
     toDate,
     combinedEntityScope,
   );
-  const grandTotal = entries.reduce((s, e) => s + totalDebits(e), 0);
+  // Default order is the DB order (date desc, entry # desc); ?sort overrides
+  // via the validated allowlist column.
+  const sortedEntries = sortCol
+    ? sortEntries(filteredEntries, sortCol, sortDir)
+    : filteredEntries;
+  // Grand total is over the FULL filtered set, not the current page.
+  const grandTotal = filteredEntries.reduce((s, e) => s + totalDebits(e), 0);
+  const {
+    pageRows: entries,
+    total: filteredTotal,
+    page: currentPage,
+  } = paginate(sortedEntries, pageNum, PAGE_SIZE);
 
   return (
     <>
@@ -211,7 +285,11 @@ export default async function Page({
         meta={
           view === "templates"
             ? `${templates.length} template${templates.length === 1 ? "" : "s"}`
-            : `${allEntries.length} entries this period`
+            : `${filteredTotal} entr${filteredTotal === 1 ? "y" : "ies"}${
+                filteredTotal > PAGE_SIZE
+                  ? ` · page ${currentPage} of ${Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE))}`
+                  : ""
+              }`
         }
         actions={
           <>
@@ -374,6 +452,9 @@ export default async function Page({
               {customerFilter && (
                 <input type="hidden" name="customer" value={customerFilter} />
               )}
+              {/* Preserve the active sort when re-applying filters. */}
+              {sortCol && <input type="hidden" name="sort" value={sortCol} />}
+              {sortCol && <input type="hidden" name="dir" value={sortDir} />}
               <Button variant="primary" type="submit">
                 Apply
               </Button>
@@ -381,6 +462,7 @@ export default async function Page({
                 Reset
               </ButtonLink>
             </form>
+            {user && <SavedViews route="/journal" views={savedViews} />}
             {(accountId || customerFilter) && (
               <div
                 className="px-1 text-[11.5px]"
@@ -426,84 +508,84 @@ export default async function Page({
                   }
                 />
               ) : (
-                <Table>
-                  <THead>
-                    <TR hover={false}>
-                      <TH>Entry #</TH>
-                      <TH>Date</TH>
-                      <TH>Description</TH>
-                      <TH>Reference</TH>
-                      <TH>Source</TH>
-                      <TH>Status</TH>
-                      <TH num>Total</TH>
+                (() => {
+                  const headerCells = (
+                    <>
+                      <SortableTH col="number">Entry #</SortableTH>
+                      <SortableTH col="date">Date</SortableTH>
+                      <SortableTH col="description">Description</SortableTH>
+                      <SortableTH col="reference">Reference</SortableTH>
+                      <SortableTH col="source">Source</SortableTH>
+                      <SortableTH col="status">Status</SortableTH>
+                      <SortableTH col="total" num>
+                        Total
+                      </SortableTH>
                       <TH>{""}</TH>
-                    </TR>
-                  </THead>
-                  <TBody>
-                    {entries.map((e) => (
-                      <TR key={e.id} href={`/journal/${e.entryNumber}`}>
-                        <TD mono>
-                          <Link
-                            href={`/journal/${e.entryNumber}`}
+                    </>
+                  );
+                  const rowCells = (e: JournalEntry) => (
+                    <>
+                      <TD mono>
+                        <Link
+                          href={`/journal/${e.entryNumber}`}
+                          style={{ color: "var(--ink)", textDecoration: "none" }}
+                        >
+                          {e.entryNumber}
+                        </Link>
+                      </TD>
+                      <TD>{formatShortDate(e.entryDate)}</TD>
+                      <TD>{e.description ?? "—"}</TD>
+                      <TD mono style={{ color: "var(--ink-3)" }}>
+                        {e.reference ?? "—"}
+                      </TD>
+                      <TD
+                        style={{
+                          color: "var(--ink-3)",
+                          fontSize: 11.5,
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {e.source}
+                      </TD>
+                      <TD>
+                        <Pill variant={statusVariant(e.status)}>
+                          {statusLabel(e.status)}
+                        </Pill>
+                      </TD>
+                      <TD num>
+                        <DrillNumber
+                          value={totalDebits(e)}
+                          href={`/journal/${e.entryNumber}`}
+                          currencyCode={null}
+                          compact
+                        />
+                      </TD>
+                      <TD>
+                        <form action={duplicateJournalEntryAction}>
+                          <input type="hidden" name="entryId" value={e.id} />
+                          <button
+                            type="submit"
+                            title="Duplicate as draft"
                             style={{
-                              color: "var(--ink)",
-                              textDecoration: "none",
+                              background: "transparent",
+                              border: "1px solid var(--line-2)",
+                              borderRadius: 4,
+                              color: "var(--ink-3)",
+                              cursor: "pointer",
+                              fontSize: 11,
+                              padding: "1px 6px",
                             }}
                           >
-                            {e.entryNumber}
-                          </Link>
-                        </TD>
-                        <TD>{formatShortDate(e.entryDate)}</TD>
-                        <TD>{e.description ?? "—"}</TD>
-                        <TD mono style={{ color: "var(--ink-3)" }}>
-                          {e.reference ?? "—"}
-                        </TD>
-                        <TD
-                          style={{
-                            color: "var(--ink-3)",
-                            fontSize: 11.5,
-                            textTransform: "capitalize",
-                          }}
-                        >
-                          {e.source}
-                        </TD>
-                        <TD>
-                          <Pill variant={statusVariant(e.status)}>
-                            {statusLabel(e.status)}
-                          </Pill>
-                        </TD>
-                        <TD num>
-                          <DrillNumber
-                            value={totalDebits(e)}
-                            href={`/journal/${e.entryNumber}`}
-                            currencyCode={null}
-                            compact
-                          />
-                        </TD>
-                        <TD>
-                          <form action={duplicateJournalEntryAction}>
-                            <input type="hidden" name="entryId" value={e.id} />
-                            <button
-                              type="submit"
-                              title="Duplicate as draft"
-                              style={{
-                                background: "transparent",
-                                border: "1px solid var(--line-2)",
-                                borderRadius: 4,
-                                color: "var(--ink-3)",
-                                cursor: "pointer",
-                                fontSize: 11,
-                                padding: "1px 6px",
-                              }}
-                            >
-                              Duplicate
-                            </button>
-                          </form>
-                        </TD>
-                      </TR>
-                    ))}
+                            Duplicate
+                          </button>
+                        </form>
+                      </TD>
+                    </>
+                  );
+                  const totalCells = (leadCol: boolean) => (
                     <TR total hover={false}>
-                      <TD>Total</TD>
+                      {leadCol && <TD>{""}</TD>}
+                      <TD>Total (all pages)</TD>
                       <TD>{""}</TD>
                       <TD>{""}</TD>
                       <TD>{""}</TD>
@@ -512,9 +594,61 @@ export default async function Page({
                       <TD num>{formatMoney(grandTotal, "USD", { compact: true })}</TD>
                       <TD>{""}</TD>
                     </TR>
-                  </TBody>
-                </Table>
+                  );
+
+                  if (showBulk) {
+                    const bulkActions = [];
+                    if (canSubmit)
+                      bulkActions.push({
+                        action: bulkSubmitEntriesAction,
+                        label: "Submit drafts for approval",
+                        fieldName: "entryIds",
+                      });
+                    if (canApprove)
+                      bulkActions.push({
+                        action: bulkApproveEntriesAction,
+                        label: "Approve selected",
+                        fieldName: "entryIds",
+                        variant: "primary" as const,
+                      });
+                    return (
+                      <BulkSelectTable
+                        rows={entries.map((e) => ({
+                          id: e.id,
+                          href: `/journal/${e.entryNumber}`,
+                          cells: rowCells(e),
+                        }))}
+                        header={headerCells}
+                        footer={totalCells(true)}
+                        actions={bulkActions}
+                        emptySelectionHint="Select entries to submit or approve in bulk (segregation of duties is enforced per entry)."
+                      />
+                    );
+                  }
+                  return (
+                    <Table>
+                      <THead>
+                        <TR hover={false}>{headerCells}</TR>
+                      </THead>
+                      <TBody>
+                        {entries.map((e) => (
+                          <TR key={e.id} href={`/journal/${e.entryNumber}`}>
+                            {rowCells(e)}
+                          </TR>
+                        ))}
+                        {totalCells(false)}
+                      </TBody>
+                    </Table>
+                  );
+                })()
               )}
+              <div className="mt-3">
+                <Pagination
+                  page={currentPage}
+                  pageSize={PAGE_SIZE}
+                  total={filteredTotal}
+                />
+              </div>
             </Card>
           </div>
         </>

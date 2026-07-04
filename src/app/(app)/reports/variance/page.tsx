@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
+import { PrintButton } from "@/components/PrintButton";
 import { getVarianceNotes } from "@/lib/data";
 import { formatAmount } from "@/lib/money";
 import {
@@ -195,6 +196,7 @@ export default async function Page({
       <PageHeader
         title="Variance Analysis"
         meta={`${report.period.label} · actual vs ${report.compareLabel.toLowerCase()} · consolidated`}
+        actions={<PrintButton />}
       />
 
       <div className="px-6 my-3.5 flex flex-col gap-3.5 pb-8">

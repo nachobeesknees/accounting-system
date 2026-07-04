@@ -6,6 +6,8 @@ import { Empty } from "@/components/ui/Empty";
 import { Field } from "@/components/ui/Field";
 import { IconBox } from "@/components/ui/Icon";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
+import { PrintButton } from "@/components/PrintButton";
+import { CsvDownloadButton } from "@/components/CsvDownloadButton";
 import {
   convertToBase,
   getAssets,
@@ -165,6 +167,12 @@ export default async function Page({
       <PageHeader
         title="Assets Under Administration"
         meta={`As of ${formatDate(asOf)} · ${assets.length} assets across ${entities.length} entities`}
+        actions={
+          <>
+            <CsvDownloadButton report="aua" extraParams={{ asOf }} />
+            <PrintButton />
+          </>
+        }
       />
 
       <div

@@ -10,10 +10,10 @@
 
 import "server-only";
 
-import { and, asc, desc, eq, exists, gte, inArray, isNotNull, isNull, lte, or } from "drizzle-orm";
+import { and, asc, count, desc, eq, exists, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
-import { parseAmount, sumDebits, sumCredits } from "./money";
+import { parseAmount, sumDebits, sumCredits, toDecimalString } from "./money";
 import { getEntityScope, resolveEntityScope, type EntityScope } from "./entity-scope";
 
 /**
@@ -115,7 +115,10 @@ import type {
   TimeEntry,
   User,
   Vendor,
+  SessionUser,
 } from "./types";
+import { hasPermission } from "./permissions";
+import { getAllowedEntityIds } from "./entity-access";
 
 // --------- Row → type mappers ---------
 // Drizzle returns dates as Date objects and date columns as strings (YYYY-MM-DD)
@@ -5641,4 +5644,442 @@ export async function getCollectionActivitiesForCustomer(
     .where(eq(schema.collectionActivities.customerId, customerId))
     .orderBy(desc(schema.collectionActivities.activityDate));
   return rows.map(mapCollectionActivity);
+}
+
+// ===================================================================
+// Unified approvals inbox (/approvals)
+// ===================================================================
+
+/** One row in the unified approvals inbox. */
+export type ApprovalItem = {
+  /** Stable key. */
+  id: string;
+  /** Human-facing reference (invoice #, entry #, vendor code, etc.). */
+  reference: string;
+  /** Secondary label (customer / vendor / entity name). */
+  subtitle: string;
+  /** Workflow stage label, e.g. "Pending CFO". */
+  stage: string;
+  /** Base-currency amount string (or null for vendors). */
+  amount: string | null;
+  /** Where the existing approve/reject controls live. */
+  href: string;
+  /**
+   * True when the viewer holds the approve permission AND (per the
+   * mirrored server SoD rule) is allowed to act on THIS item. When false
+   * the row is shown but labelled "you cannot self-approve".
+   */
+  actionable: boolean;
+  /** Set when `actionable` is false to explain why (SoD). */
+  blockedReason?: string;
+};
+
+export type ApprovalGroup = {
+  type:
+    | "invoices"
+    | "bills"
+    | "vendors"
+    | "journal"
+    | "payment_runs"
+    | "distributions";
+  label: string;
+  /** Permission the viewer must hold for the group to appear at all. */
+  items: ApprovalItem[];
+  /** Count of rows the viewer can actually act on right now. */
+  actionableCount: number;
+};
+
+/**
+ * Aggregate every pending approval the current user is empowered to act
+ * on. Each group is only included when the viewer holds the relevant
+ * approve permission (`hasPermission`). Segregation-of-duties is mirrored
+ * from the server mutations so the inbox never claims the viewer can act
+ * on an item the mutation would reject (those rows are still listed, but
+ * flagged non-actionable).
+ *
+ * Reuses the existing per-source "awaiting" queries where they exist
+ * (getInvoicesAwaitingApproval, getJournalEntriesAwaitingApproval,
+ * getVendorsNeedingApproval).
+ */
+export async function getPendingApprovalsForUser(
+  user: SessionUser,
+): Promise<ApprovalGroup[]> {
+  const groups: ApprovalGroup[] = [];
+
+  // user_entity_access scoping. The journal and distributions LIST pages drop
+  // rows tagged to a client entity outside the viewer's scope; the inbox must
+  // do the same or it leaks out-of-scope references/amounts (and inflates the
+  // badge). `null` means unrestricted. Invoices/bills/vendors/payment-runs are
+  // firm-wide on their own surfaces, so only journal + distributions need it.
+  const allowedEntityIds = await getAllowedEntityIds(user);
+
+  // --- Invoices (pending_cfo / pending_assigned) ---
+  if (hasPermission(user, "invoice.approve")) {
+    // getInvoicesAwaitingApproval already applies the CFO / assigned-user
+    // rule, so every row it returns is actionable by this viewer.
+    const inv = await getInvoicesAwaitingApproval(
+      user.userId,
+      user.role,
+      user.isSuperuser,
+    );
+    const items: ApprovalItem[] = inv.map((i) => ({
+      id: i.id,
+      reference: i.invoiceNumber,
+      subtitle: i.customerName,
+      stage: i.status === "pending_cfo" ? "Pending CFO" : "Pending assigned",
+      amount: i.total,
+      href: `/invoices/${i.id}`,
+      actionable: true,
+    }));
+    groups.push({
+      type: "invoices",
+      label: "Invoices",
+      items,
+      actionableCount: items.length,
+    });
+  }
+
+  // --- Bills (draft = awaiting approval) ---
+  if (hasPermission(user, "bill.approve")) {
+    const db = getDb();
+    const rows = await db
+      .select({
+        id: schema.bills.id,
+        billNumber: schema.bills.billNumber,
+        total: schema.bills.total,
+        vendorId: schema.bills.vendorId,
+        vendorName: schema.vendors.name,
+        vendorApproval: schema.vendors.approvalStatus,
+      })
+      .from(schema.bills)
+      .leftJoin(schema.vendors, eq(schema.bills.vendorId, schema.vendors.id))
+      .where(eq(schema.bills.status, "draft"))
+      .orderBy(desc(schema.bills.billDate));
+    const items: ApprovalItem[] = rows.map((b) => {
+      // Mirror the approveBill vendor-gate: a bill against a non-approved
+      // vendor cannot be approved.
+      const vendorBlocked = b.vendorApproval !== "approved";
+      return {
+        id: b.id,
+        reference: b.billNumber,
+        subtitle: b.vendorName ?? "—",
+        stage: "Draft — awaiting approval",
+        amount: b.total,
+        href: `/bills/${b.id}`,
+        actionable: !vendorBlocked,
+        blockedReason: vendorBlocked
+          ? "Vendor is not yet approved"
+          : undefined,
+      };
+    });
+    groups.push({
+      type: "bills",
+      label: "Bills",
+      items,
+      actionableCount: items.filter((i) => i.actionable).length,
+    });
+  }
+
+  // --- Vendors (pending / rejected) ---
+  if (hasPermission(user, "vendor.approve")) {
+    const vendors = await getVendorsNeedingApproval();
+    const items: ApprovalItem[] = vendors
+      // Only surface rows still needing a decision (pending). Rejected rows
+      // are history and cannot be re-approved from the queue.
+      .filter((v) => v.approvalStatus === "pending")
+      .map((v) => ({
+        id: v.id,
+        reference: v.code,
+        subtitle: v.name,
+        stage: "Pending review",
+        amount: null,
+        href: `/vendors/pending`,
+        actionable: true,
+      }));
+    groups.push({
+      type: "vendors",
+      label: "Vendors",
+      items,
+      actionableCount: items.length,
+    });
+  }
+
+  // --- Journal entries (pending_approval) ---
+  if (hasPermission(user, "journal_entry.approve")) {
+    // Pull across ALL firm scope so the inbox is scope-independent, then apply
+    // the same user_entity_access filter the /journal list uses: firm-level
+    // (entityId null) entries are always visible, client-tagged entries only
+    // when in the viewer's allowed set.
+    const jesRaw = await getJournalEntriesAwaitingApproval("all");
+    const jes =
+      allowedEntityIds === null
+        ? jesRaw
+        : jesRaw.filter(
+            (e) => e.entityId == null || allowedEntityIds.has(e.entityId),
+          );
+    const items: ApprovalItem[] = jes.map((e) => {
+      // Mirror approveJournalEntry SoD: the submitter or the creator may
+      // not approve their own entry.
+      const selfSubmitted = !!e.submittedBy && e.submittedBy === user.userId;
+      const selfCreated = !!e.createdBy && e.createdBy === user.userId;
+      const blocked = selfSubmitted || selfCreated;
+      return {
+        id: e.id,
+        reference: e.entryNumber,
+        subtitle: e.description ?? "—",
+        stage: "Pending approval",
+        amount: toDecimalString(totalDebits(e)),
+        href: `/journal/${e.entryNumber}`,
+        actionable: !blocked,
+        blockedReason: blocked
+          ? "Segregation of duties — you submitted or created this entry"
+          : undefined,
+      };
+    });
+    groups.push({
+      type: "journal",
+      label: "Journal entries",
+      items,
+      actionableCount: items.filter((i) => i.actionable).length,
+    });
+  }
+
+  // --- Payment runs (pending_release) ---
+  if (hasPermission(user, "payment.release")) {
+    const runs = await getPaymentRuns();
+    const items: ApprovalItem[] = runs
+      .filter((r) => r.status === "pending_release")
+      .map((r) => {
+        // Mirror releasePaymentRun SoD: the preparer may not release.
+        const selfPrepared = !!r.preparedBy && r.preparedBy === user.userId;
+        return {
+          id: r.id,
+          reference: r.runNumber,
+          subtitle: `${r.itemCount} bill${r.itemCount === 1 ? "" : "s"}`,
+          stage: "Pending release",
+          amount: r.total,
+          href: `/payments/runs/${r.id}`,
+          actionable: !selfPrepared,
+          blockedReason: selfPrepared
+            ? "Dual control — you prepared this run"
+            : undefined,
+        };
+      });
+    groups.push({
+      type: "payment_runs",
+      label: "Payment runs",
+      items,
+      actionableCount: items.filter((i) => i.actionable).length,
+    });
+  }
+
+  // --- Distributions (requested / first_approved) ---
+  if (hasPermission(user, "distribution.approve")) {
+    const distsRaw = await getDistributions();
+    // Same user_entity_access filter as the /distributions list. Distribution
+    // entityId is always set, so a restricted viewer only sees their entities.
+    const dists =
+      allowedEntityIds === null
+        ? distsRaw
+        : distsRaw.filter((d) => allowedEntityIds.has(d.entityId));
+    const items: ApprovalItem[] = dists
+      .filter(
+        (d) => d.status === "requested" || d.status === "first_approved",
+      )
+      .map((d) => {
+        // Mirror approveDistribution dual-approval SoD.
+        const isRequester = !!d.requestedBy && d.requestedBy === user.userId;
+        const isFirstApprover =
+          !!d.firstApprovedBy && d.firstApprovedBy === user.userId;
+        let blocked = false;
+        let reason: string | undefined;
+        if (d.status === "requested") {
+          blocked = isRequester;
+          if (blocked) reason = "The requester cannot give the first approval";
+        } else {
+          // first_approved → second approval needed
+          blocked = isRequester || isFirstApprover;
+          if (isRequester) reason = "The requester cannot approve their own distribution";
+          else if (isFirstApprover)
+            reason = "Second approval must come from a different approver";
+        }
+        return {
+          id: d.id,
+          reference: d.distributionNumber,
+          subtitle:
+            d.status === "requested"
+              ? "First approval needed"
+              : "Second approval needed",
+          stage:
+            d.status === "requested" ? "Requested" : "First approved",
+          amount: d.amount,
+          href: `/distributions/${d.id}`,
+          actionable: !blocked,
+          blockedReason: reason,
+        };
+      });
+    groups.push({
+      type: "distributions",
+      label: "Distributions",
+      items,
+      actionableCount: items.filter((i) => i.actionable).length,
+    });
+  }
+
+  return groups;
+}
+
+/** Total count of inbox rows the viewer can ACT on — sidebar/dashboard badge. */
+export async function getActionableApprovalCount(
+  user: SessionUser,
+): Promise<number> {
+  const groups = await getPendingApprovalsForUser(user);
+  return groups.reduce((s, g) => s + g.actionableCount, 0);
+}
+
+// ===================================================================
+// Cheap sidebar badge counts (SQL count(*), no full-row hydration)
+// ===================================================================
+
+/**
+ * Sidebar badge counts computed with SQL `count(*)` rather than by
+ * hydrating full lists. The numbers match what the badges meant before:
+ *   - journal:            non-template journal entries in the active entity scope
+ *   - outstandingInvoices: invoices (non-template) with balance_due > 0
+ *   - bills:              bills with balance_due > 0
+ *   - pendingVendors:     vendors pending OR rejected
+ *   - invoiceApprovals:   invoices this user may approve now (reuses the
+ *                         existing awaiting query — small result set)
+ */
+export async function getSidebarCounts(user: SessionUser): Promise<{
+  journal: number;
+  outstandingInvoices: number;
+  bills: number;
+  pendingVendors: number;
+  invoiceApprovals: number;
+}> {
+  const db = getDb();
+  // Scope the journal badge by the active entity scope cookie, exactly like
+  // getJournalEntries (whose .length was the previous badge value). Without
+  // this, a user in an office/region scope sees the firm-wide JE total on the
+  // badge while the /journal list they click through to shows only the scoped
+  // subset.
+  const jeScope = normalizeFirmScope(await resolveEntityScope());
+  const notTemplate = eq(schema.journalEntries.isTemplate, false);
+  const jeWhere =
+    jeScope.kind === "all"
+      ? notTemplate
+      : jeScope.kind === "firm-level-null"
+        ? and(notTemplate, isNull(schema.journalEntries.firmEntityId))
+        : jeScope.kind === "office"
+          ? and(notTemplate, eq(schema.journalEntries.firmEntityId, jeScope.officeId))
+          : // region: empty office set means no rows (matches getJournalEntries)
+            jeScope.officeIds.length === 0
+            ? sql`false`
+            : and(
+                notTemplate,
+                inArray(schema.journalEntries.firmEntityId, jeScope.officeIds),
+              );
+  const [
+    [je],
+    [openInv],
+    [openBills],
+    [pendVendors],
+    invoiceApprovals,
+  ] = await Promise.all([
+    db
+      .select({ n: count() })
+      .from(schema.journalEntries)
+      .where(jeWhere),
+    db
+      .select({ n: count() })
+      .from(schema.invoices)
+      .where(
+        and(
+          eq(schema.invoices.isTemplate, false),
+          sql`${schema.invoices.balanceDue} > 0`,
+        ),
+      ),
+    db
+      .select({ n: count() })
+      .from(schema.bills)
+      .where(sql`${schema.bills.balanceDue} > 0`),
+    db
+      .select({ n: count() })
+      .from(schema.vendors)
+      .where(
+        or(
+          eq(schema.vendors.approvalStatus, "pending"),
+          eq(schema.vendors.approvalStatus, "rejected"),
+        ),
+      ),
+    getInvoicesAwaitingApproval(user.userId, user.role, user.isSuperuser),
+  ]);
+  return {
+    journal: je?.n ?? 0,
+    outstandingInvoices: openInv?.n ?? 0,
+    bills: openBills?.n ?? 0,
+    pendingVendors: pendVendors?.n ?? 0,
+    invoiceApprovals: invoiceApprovals.length,
+  };
+}
+
+// ===================================================================
+// Saved views (per-user, per-route list filter/sort presets)
+// ===================================================================
+
+export type SavedViewRecord = {
+  id: string;
+  userId: string;
+  route: string;
+  name: string;
+  /** URL search-param snapshot, e.g. { status: "draft", sort: "date" }. */
+  params: Record<string, string>;
+  isDefault: boolean;
+  createdAt: string;
+};
+
+function mapSavedView(
+  r: typeof schema.savedViews.$inferSelect,
+): SavedViewRecord {
+  // params is jsonb — coerce loosely into a string map for URL use.
+  const raw = (r.params ?? {}) as Record<string, unknown>;
+  const params: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    if (v == null) continue;
+    params[k] = String(v);
+  }
+  return {
+    id: r.id,
+    userId: r.userId,
+    route: r.route,
+    name: r.name,
+    params,
+    isDefault: r.isDefault,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+/**
+ * Saved views for ONE user on ONE route. Always scoped by userId so a user
+ * can never see another user's views. Default view (if any) sorts first,
+ * then by name.
+ */
+export async function getSavedViews(
+  userId: string,
+  route: string,
+): Promise<SavedViewRecord[]> {
+  if (!userId) return [];
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.savedViews)
+    .where(
+      and(
+        eq(schema.savedViews.userId, userId),
+        eq(schema.savedViews.route, route),
+      ),
+    )
+    .orderBy(desc(schema.savedViews.isDefault), asc(schema.savedViews.name));
+  return rows.map(mapSavedView);
 }
