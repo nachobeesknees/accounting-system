@@ -188,6 +188,9 @@ export default async function Page({
             <ButtonLink variant="secondary" href="/invoices/generate">
               Generate from fees
             </ButtonLink>
+            <ButtonLink variant="secondary" href="/invoices/new?kind=credit_memo">
+              + Credit memo
+            </ButtonLink>
             <ButtonLink variant="primary" href="/invoices/new">
               + New invoice
             </ButtonLink>

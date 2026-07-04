@@ -11,9 +11,12 @@ import { SmartSelect, type SmartSelectOption } from "@/components/ui/SmartSelect
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/Table";
 import {
   getAssetsByClientId,
+  getBankAccounts,
+  getCollectionActivitiesForCustomer,
   getCustomerAssignments,
   getCustomerById,
   getEntitiesByClientId,
+  getFundsOnAccount,
   getInvoices,
   getKycReviewsForSubject,
   getPendingChargebacksForClient,
@@ -23,6 +26,7 @@ import {
   getUsers,
   getVendors,
 } from "@/lib/data";
+import { Field, Row, SelectField, TextareaField } from "@/components/ui/Field";
 import { getSessionUser } from "@/lib/session";
 import { hasPermission } from "@/lib/permissions";
 import { KycCard } from "@/components/compliance/KycCard";
@@ -97,6 +101,8 @@ function methodLabel(bill: Bill): string {
 }
 import {
   addAssignmentAction,
+  logCustomerCollectionAction,
+  recordRetainerAction,
   removeAssignmentAction,
   setAssignedUserAction,
   setCustomerTaxAction,
@@ -139,6 +145,9 @@ export default async function Page({
     regions,
     regionGroups,
     kycReviews,
+    fundsOnAccount,
+    collectionActivities,
+    bankAccounts,
   ] = await Promise.all([
     getInvoices(),
     getEntitiesByClientId(customer.id),
@@ -151,6 +160,9 @@ export default async function Page({
     getRegions(),
     getRegionGroups(),
     getKycReviewsForSubject("customer", id),
+    getFundsOnAccount(customer.id),
+    getCollectionActivitiesForCustomer(customer.id),
+    getBankAccounts(),
   ]);
   const canWriteKyc = hasPermission(sessionUser, "kyc.write");
   const kycUserNameById = new Map(users.map((u) => [u.id, u.fullName] as const));
@@ -220,9 +232,17 @@ export default async function Page({
         title={customer.name}
         meta={customer.code}
         actions={
-          <ButtonLink variant="secondary" href="/customers">
-            ← All clients
-          </ButtonLink>
+          <>
+            <ButtonLink
+              variant="secondary"
+              href={`/customers/${customer.id}/statement`}
+            >
+              Statement
+            </ButtonLink>
+            <ButtonLink variant="secondary" href="/customers">
+              ← All clients
+            </ButtonLink>
+          </>
         }
       />
 
@@ -383,12 +403,152 @@ export default async function Page({
               mono
             />
             <KV
+              k="Funds on account"
+              v={formatMoney(fundsOnAccount, "USD", { compact: true })}
+              mono
+              sub="Unapplied client payments / retainers"
+            />
+            <KV
               k="Last invoice date"
               v={lastInvoiceDate ? formatDate(lastInvoiceDate) : "—"}
             />
           </KVGrid>
         </Card>
       </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 px-6 my-3.5">
+        <Card title="Record retainer / advance">
+          <form action={recordRetainerAction}>
+            <input type="hidden" name="customerId" value={customer.id} />
+            <div className="p-3.5 flex flex-col gap-3">
+              <Row>
+                <Field
+                  label="Amount"
+                  name="amount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                  mono
+                />
+                <Field
+                  label="Payment date"
+                  name="paymentDate"
+                  type="date"
+                  defaultValue={new Date().toISOString().slice(0, 10)}
+                />
+              </Row>
+              <Row>
+                <SelectField label="Bank account" name="bankAccountId" defaultValue="">
+                  <option value="">Default cash</option>
+                  {bankAccounts.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                      {b.lastFour ? ` ••${b.lastFour}` : ""}
+                    </option>
+                  ))}
+                </SelectField>
+                <Field label="Reference" name="reference" placeholder="Wire ref, check #" />
+              </Row>
+              <div className="flex justify-end">
+                <Button variant="primary" type="submit">
+                  Record retainer
+                </Button>
+              </div>
+            </div>
+          </form>
+        </Card>
+
+        <Card title="Log collection activity" actions={<span id="collections" />}>
+          <form action={logCustomerCollectionAction}>
+            <input type="hidden" name="customerId" value={customer.id} />
+            <div className="p-3.5 flex flex-col gap-3">
+              <Row>
+                <SelectField label="Kind" name="kind" defaultValue="note">
+                  <option value="note">Note</option>
+                  <option value="call">Call</option>
+                  <option value="email">Email</option>
+                  <option value="promise">Promise to pay</option>
+                  <option value="reminder">Reminder</option>
+                </SelectField>
+                <Field
+                  label="Promise date (if promise)"
+                  name="promiseDate"
+                  type="date"
+                />
+              </Row>
+              <Row>
+                <Field label="Amount" name="amount" type="number" step="0.01" min="0" mono />
+                <div />
+              </Row>
+              <TextareaField
+                label="Notes"
+                name="notes"
+                placeholder="Spoke with controller — will pay by Friday."
+              />
+              <div className="flex justify-end">
+                <Button variant="primary" type="submit">
+                  Log activity
+                </Button>
+              </div>
+            </div>
+          </form>
+        </Card>
+      </div>
+
+      {collectionActivities.length > 0 && (
+        <div className="px-6 mb-3.5">
+          <Card title="Collection history">
+            <Table>
+              <THead>
+                <TR hover={false}>
+                  <TH>Date</TH>
+                  <TH>Kind</TH>
+                  <TH num>Amount</TH>
+                  <TH>Promise</TH>
+                  <TH>Status</TH>
+                  <TH>Notes</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {collectionActivities.map((a) => {
+                  const broken =
+                    a.kind === "promise" &&
+                    a.status === "open" &&
+                    a.promiseDate != null &&
+                    a.promiseDate < new Date().toISOString().slice(0, 10);
+                  return (
+                    <TR key={a.id} hover={false}>
+                      <TD>{formatDate(a.activityDate)}</TD>
+                      <TD>
+                        <Pill variant={a.kind === "promise" ? "formation" : "neutral"}>
+                          {a.kind}
+                        </Pill>
+                      </TD>
+                      <TD num>
+                        {a.amount
+                          ? formatMoney(a.amount, "USD", { compact: true })
+                          : "—"}
+                      </TD>
+                      <TD num neg={broken}>
+                        {a.promiseDate ? formatDate(a.promiseDate) : "—"}
+                      </TD>
+                      <TD>
+                        <Pill variant={broken ? "review" : "neutral"}>
+                          {broken ? "broken" : a.status}
+                        </Pill>
+                      </TD>
+                      <TD style={{ color: "var(--ink-3)", fontSize: 11.5 }}>
+                        {a.notes ?? "—"}
+                      </TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          </Card>
+        </div>
+      )}
 
       <div className="px-6 mb-3.5">
         <KycCard

@@ -55,10 +55,13 @@ import type {
   AttachmentRecordType,
   Bill,
   BillLine,
+  BillCreditApplication,
   BankAccount,
   BankAccountSigner,
   BankTransaction,
+  CollectionActivity,
   Contact,
+  CreditApplication,
   ContactKind,
   ContactLink,
   ContactLinkRefType,
@@ -95,15 +98,20 @@ import type {
   LookupTable,
   LookupValue,
   Office,
+  Payment,
+  PaymentAllocation,
   PaymentRun,
   PaymentRunItem,
   PriceList,
   PriceListEntry,
   PriceListItemType,
   ReconciliationSession,
+  RevenueRecognitionEntry,
+  RevenueRecognitionSchedule,
   RiskRating,
   SigningAuthority,
   StatementImport,
+  TaxCode,
   TimeEntry,
   User,
   Vendor,
@@ -113,7 +121,7 @@ import type {
 // Drizzle returns dates as Date objects and date columns as strings (YYYY-MM-DD)
 // already; here we just narrow status fields and convert timestamps to ISO.
 
-function isoOrNull(d: Date | null): string | null {
+function isoOrNull(d: Date | null | undefined): string | null {
   return d == null ? null : d.toISOString();
 }
 
@@ -317,6 +325,7 @@ function mapEntityFee(r: typeof schema.entityFees.$inferSelect): EntityFee {
     nextBillingDate: r.nextBillingDate,
     lastBilledDate: r.lastBilledDate,
     perPeriodAmount: r.perPeriodAmount,
+    deferRevenue: (r as { deferRevenue?: boolean }).deferRevenue ?? false,
   };
 }
 
@@ -768,6 +777,11 @@ function mapInvoiceLine(r: typeof schema.invoiceLines.$inferSelect): InvoiceLine
     unitPrice: r.unitPrice,
     amount: r.amount,
     accountId: r.accountId,
+    taxCodeId: (r as { taxCodeId?: string | null }).taxCodeId ?? null,
+    taxAmount: (r as { taxAmount?: string }).taxAmount ?? "0.00",
+    deferRevenue: (r as { deferRevenue?: boolean }).deferRevenue ?? false,
+    deferralStart: (r as { deferralStart?: string | null }).deferralStart ?? null,
+    deferralEnd: (r as { deferralEnd?: string | null }).deferralEnd ?? null,
     dimensions: asDimensionMap(r.dimensions),
   };
 }
@@ -782,6 +796,8 @@ function mapBillLine(r: typeof schema.billLines.$inferSelect): BillLine {
     unitPrice: r.unitPrice,
     amount: r.amount,
     accountId: r.accountId,
+    taxCodeId: (r as { taxCodeId?: string | null }).taxCodeId ?? null,
+    taxAmount: (r as { taxAmount?: string }).taxAmount ?? "0.00",
     clientId: r.clientId ?? null,
     entityId: r.entityId ?? null,
     chargebackInvoiceId: r.chargebackInvoiceId ?? null,
@@ -833,6 +849,7 @@ function mapInvoice(
   return {
     id: r.id,
     invoiceNumber: r.invoiceNumber,
+    kind: ((r as { kind?: string }).kind ?? "invoice") as Invoice["kind"],
     customerId: r.customerId,
     entityId: r.entityId,
     clientId: r.clientId,
@@ -854,6 +871,7 @@ function mapInvoice(
     amountPaid: r.amountPaid,
     balanceDue: r.balanceDue,
     currencyCode: r.currencyCode,
+    firmEntityId: (r as { firmEntityId?: string | null }).firmEntityId ?? null,
     expectedPaymentDate: r.expectedPaymentDate,
     notes: r.notes,
     journalEntryId: r.journalEntryId,
@@ -875,6 +893,11 @@ function mapInvoice(
     billingPeriodEnd:
       (r as { billingPeriodEnd?: string | null }).billingPeriodEnd ?? null,
     fxRate: (r as { fxRate?: string | null }).fxRate ?? null,
+    writtenOffAt: isoOrNull((r as { writtenOffAt?: Date | null }).writtenOffAt),
+    writtenOffBy: (r as { writtenOffBy?: string | null }).writtenOffBy ?? null,
+    writeoffReason: (r as { writeoffReason?: string | null }).writeoffReason ?? null,
+    writeoffJournalEntryId:
+      (r as { writeoffJournalEntryId?: string | null }).writeoffJournalEntryId ?? null,
     lines: lines.sort((a, b) => a.lineNumber - b.lineNumber),
   };
 }
@@ -883,6 +906,7 @@ function mapBill(r: typeof schema.bills.$inferSelect, lines: BillLine[]): Bill {
   return {
     id: r.id,
     billNumber: r.billNumber,
+    kind: ((r as { kind?: string }).kind ?? "bill") as Bill["kind"],
     vendorId: r.vendorId,
     vendorInvoiceNumber: r.vendorInvoiceNumber ?? null,
     billDate: r.billDate,
@@ -4724,4 +4748,327 @@ export async function getBeneficiaryContacts(): Promise<Contact[]> {
     .where(eq(schema.contacts.isBeneficiary, true))
     .orderBy(schema.contacts.name);
   return rows.map(mapContact);
+}
+
+// ================= Revenue chain read-side =================
+
+function mapTaxCode(r: typeof schema.taxCodes.$inferSelect): TaxCode {
+  return {
+    id: r.id,
+    code: r.code,
+    name: r.name,
+    rate: r.rate,
+    kind: r.kind as TaxCode["kind"],
+    country: r.country ?? null,
+    isActive: r.isActive,
+    notes: r.notes ?? null,
+  };
+}
+
+/** All tax codes, active first then by code. */
+export async function getTaxCodes(): Promise<TaxCode[]> {
+  const db = getDb();
+  const rows = await db.select().from(schema.taxCodes).orderBy(schema.taxCodes.code);
+  return rows.map(mapTaxCode).sort((a, b) => {
+    if (a.isActive !== b.isActive) return a.isActive ? -1 : 1;
+    return a.code.localeCompare(b.code);
+  });
+}
+
+export async function getActiveTaxCodes(): Promise<TaxCode[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.taxCodes)
+    .where(eq(schema.taxCodes.isActive, true))
+    .orderBy(schema.taxCodes.code);
+  return rows.map(mapTaxCode);
+}
+
+export async function getTaxCodeById(id: string): Promise<TaxCode | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.taxCodes)
+    .where(eq(schema.taxCodes.id, id))
+    .limit(1);
+  return row ? mapTaxCode(row) : undefined;
+}
+
+function mapPayment(r: typeof schema.payments.$inferSelect): Payment {
+  return {
+    id: r.id,
+    paymentNumber: r.paymentNumber,
+    paymentDate: r.paymentDate,
+    amount: r.amount,
+    paymentMethod: r.paymentMethod ?? null,
+    reference: r.reference ?? null,
+    direction: r.direction as Payment["direction"],
+    customerId: r.customerId ?? null,
+    vendorId: r.vendorId ?? null,
+    bankAccountId: r.bankAccountId ?? null,
+    journalEntryId: r.journalEntryId ?? null,
+    unappliedAmount: (r as { unappliedAmount?: string }).unappliedAmount ?? "0.00",
+    firmEntityId: (r as { firmEntityId?: string | null }).firmEntityId ?? null,
+    currencyCode: (r as { currencyCode?: string }).currencyCode ?? "USD",
+    kind: ((r as { kind?: string }).kind ?? "standard") as Payment["kind"],
+    notes: r.notes ?? null,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+/** All inbound payments for a customer (any kind), newest first. */
+export async function getPaymentsForCustomer(customerId: string): Promise<Payment[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.payments)
+    .where(eq(schema.payments.customerId, customerId))
+    .orderBy(desc(schema.payments.paymentDate));
+  return rows.map(mapPayment);
+}
+
+/** Funds on account = sum of unapplied_amount across a customer's payments. */
+export async function getFundsOnAccount(customerId: string): Promise<number> {
+  const payments = await getPaymentsForCustomer(customerId);
+  return payments.reduce((s, p) => s + parseAmount(p.unappliedAmount), 0);
+}
+
+/** Payments for a customer that still hold unapplied funds (> 0). */
+export async function getPaymentsWithFunds(customerId: string): Promise<Payment[]> {
+  const payments = await getPaymentsForCustomer(customerId);
+  return payments.filter((p) => parseAmount(p.unappliedAmount) > 0.005);
+}
+
+function mapPaymentAllocation(
+  r: typeof schema.paymentAllocations.$inferSelect,
+): PaymentAllocation {
+  return {
+    id: r.id,
+    paymentId: r.paymentId,
+    invoiceId: r.invoiceId ?? null,
+    billId: r.billId ?? null,
+    amount: r.amount,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+/** Allocations of funds-on-account applied to a given invoice. */
+export async function getPaymentAllocationsForInvoice(
+  invoiceId: string,
+): Promise<PaymentAllocation[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.paymentAllocations)
+    .where(eq(schema.paymentAllocations.invoiceId, invoiceId))
+    .orderBy(desc(schema.paymentAllocations.createdAt));
+  return rows.map(mapPaymentAllocation);
+}
+
+function mapCreditApplication(
+  r: typeof schema.creditApplications.$inferSelect,
+): CreditApplication {
+  return {
+    id: r.id,
+    creditInvoiceId: r.creditInvoiceId,
+    targetInvoiceId: r.targetInvoiceId,
+    amount: r.amount,
+    appliedBy: r.appliedBy ?? null,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+/** Applications made FROM a credit memo. */
+export async function getCreditApplicationsByCredit(
+  creditInvoiceId: string,
+): Promise<CreditApplication[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.creditApplications)
+    .where(eq(schema.creditApplications.creditInvoiceId, creditInvoiceId))
+    .orderBy(desc(schema.creditApplications.createdAt));
+  return rows.map(mapCreditApplication);
+}
+
+/** Applications made TO a target invoice (credits reducing its balance). */
+export async function getCreditApplicationsForInvoice(
+  targetInvoiceId: string,
+): Promise<CreditApplication[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.creditApplications)
+    .where(eq(schema.creditApplications.targetInvoiceId, targetInvoiceId))
+    .orderBy(desc(schema.creditApplications.createdAt));
+  return rows.map(mapCreditApplication);
+}
+
+/** Remaining unapplied credit on a credit memo (abs(total) − applied). */
+export async function getCreditRemaining(creditInvoiceId: string): Promise<number> {
+  const inv = await getInvoiceById(creditInvoiceId);
+  if (!inv) return 0;
+  const apps = await getCreditApplicationsByCredit(creditInvoiceId);
+  const applied = apps.reduce((s, a) => s + parseAmount(a.amount), 0);
+  return Math.abs(parseAmount(inv.total)) - applied;
+}
+
+function mapBillCreditApplication(
+  r: typeof schema.billCreditApplications.$inferSelect,
+): BillCreditApplication {
+  return {
+    id: r.id,
+    creditBillId: r.creditBillId,
+    targetBillId: r.targetBillId,
+    amount: r.amount,
+    appliedBy: r.appliedBy ?? null,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+export async function getBillCreditApplicationsByCredit(
+  creditBillId: string,
+): Promise<BillCreditApplication[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.billCreditApplications)
+    .where(eq(schema.billCreditApplications.creditBillId, creditBillId))
+    .orderBy(desc(schema.billCreditApplications.createdAt));
+  return rows.map(mapBillCreditApplication);
+}
+
+export async function getBillCreditApplicationsForBill(
+  targetBillId: string,
+): Promise<BillCreditApplication[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.billCreditApplications)
+    .where(eq(schema.billCreditApplications.targetBillId, targetBillId))
+    .orderBy(desc(schema.billCreditApplications.createdAt));
+  return rows.map(mapBillCreditApplication);
+}
+
+export async function getVendorCreditRemaining(creditBillId: string): Promise<number> {
+  const bill = await getBillById(creditBillId);
+  if (!bill) return 0;
+  const apps = await getBillCreditApplicationsByCredit(creditBillId);
+  const applied = apps.reduce((s, a) => s + parseAmount(a.amount), 0);
+  return Math.abs(parseAmount(bill.total)) - applied;
+}
+
+function mapRevRecSchedule(
+  r: typeof schema.revenueRecognitionSchedules.$inferSelect,
+): RevenueRecognitionSchedule {
+  return {
+    id: r.id,
+    invoiceId: r.invoiceId,
+    invoiceLineId: r.invoiceLineId,
+    deferralAccountId: r.deferralAccountId,
+    revenueAccountId: r.revenueAccountId,
+    startDate: r.startDate,
+    endDate: r.endDate,
+    total: r.total,
+    recognizedAmount: r.recognizedAmount,
+    status: r.status as RevenueRecognitionSchedule["status"],
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  };
+}
+
+export async function getRevenueSchedules(): Promise<RevenueRecognitionSchedule[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.revenueRecognitionSchedules)
+    .orderBy(desc(schema.revenueRecognitionSchedules.createdAt));
+  return rows.map(mapRevRecSchedule);
+}
+
+export async function getRevenueScheduleById(
+  id: string,
+): Promise<RevenueRecognitionSchedule | undefined> {
+  const db = getDb();
+  const [row] = await db
+    .select()
+    .from(schema.revenueRecognitionSchedules)
+    .where(eq(schema.revenueRecognitionSchedules.id, id))
+    .limit(1);
+  return row ? mapRevRecSchedule(row) : undefined;
+}
+
+export async function getRevenueSchedulesForInvoice(
+  invoiceId: string,
+): Promise<RevenueRecognitionSchedule[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.revenueRecognitionSchedules)
+    .where(eq(schema.revenueRecognitionSchedules.invoiceId, invoiceId));
+  return rows.map(mapRevRecSchedule);
+}
+
+function mapRevRecEntry(
+  r: typeof schema.revenueRecognitionEntries.$inferSelect,
+): RevenueRecognitionEntry {
+  return {
+    id: r.id,
+    scheduleId: r.scheduleId,
+    periodDate: r.periodDate,
+    amount: r.amount,
+    journalEntryId: r.journalEntryId ?? null,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+export async function getRevenueEntriesForSchedule(
+  scheduleId: string,
+): Promise<RevenueRecognitionEntry[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.revenueRecognitionEntries)
+    .where(eq(schema.revenueRecognitionEntries.scheduleId, scheduleId))
+    .orderBy(asc(schema.revenueRecognitionEntries.periodDate));
+  return rows.map(mapRevRecEntry);
+}
+
+function mapCollectionActivity(
+  r: typeof schema.collectionActivities.$inferSelect,
+): CollectionActivity {
+  return {
+    id: r.id,
+    customerId: r.customerId,
+    activityDate: r.activityDate,
+    kind: r.kind as CollectionActivity["kind"],
+    amount: r.amount ?? null,
+    promiseDate: r.promiseDate ?? null,
+    status: r.status as CollectionActivity["status"],
+    ownerUserId: r.ownerUserId ?? null,
+    notes: r.notes ?? null,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
+export async function getCollectionActivities(): Promise<CollectionActivity[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.collectionActivities)
+    .orderBy(desc(schema.collectionActivities.activityDate));
+  return rows.map(mapCollectionActivity);
+}
+
+export async function getCollectionActivitiesForCustomer(
+  customerId: string,
+): Promise<CollectionActivity[]> {
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(schema.collectionActivities)
+    .where(eq(schema.collectionActivities.customerId, customerId))
+    .orderBy(desc(schema.collectionActivities.activityDate));
+  return rows.map(mapCollectionActivity);
 }

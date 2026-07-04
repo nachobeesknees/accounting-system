@@ -26,6 +26,10 @@ type ParsedLine = {
   accountId: string;
   quantity: number;
   unitPrice: number;
+  taxCodeId: string | null;
+  deferRevenue: boolean;
+  deferralStart: string | null;
+  deferralEnd: string | null;
   dimensions: Record<string, string>;
 };
 
@@ -62,11 +66,30 @@ function parseLines(formData: FormData): ParsedLine[] {
       break;
     }
 
+    const taxCodeRaw = formData.get(`lines[${i}][taxCodeId]`);
+    const deferRaw = formData.get(`lines[${i}][deferRevenue]`);
+    const deferStartRaw = formData.get(`lines[${i}][deferralStart]`);
+    const deferEndRaw = formData.get(`lines[${i}][deferralEnd]`);
+    const taxCodeId =
+      typeof taxCodeRaw === "string" && taxCodeRaw.trim() !== ""
+        ? taxCodeRaw.trim()
+        : null;
+    const deferRevenue = typeof deferRaw === "string" && deferRaw.trim() !== "";
     lines.push({
       description: typeof description === "string" ? description : "",
       accountId: typeof accountId === "string" ? accountId : "",
       quantity: parseAmount(typeof quantity === "string" ? quantity : ""),
       unitPrice: parseAmount(typeof unitPrice === "string" ? unitPrice : ""),
+      taxCodeId,
+      deferRevenue,
+      deferralStart:
+        deferRevenue && typeof deferStartRaw === "string" && deferStartRaw.trim() !== ""
+          ? deferStartRaw.trim()
+          : null,
+      deferralEnd:
+        deferRevenue && typeof deferEndRaw === "string" && deferEndRaw.trim() !== ""
+          ? deferEndRaw.trim()
+          : null,
       dimensions: parseDimensionsForLine(formData, i),
     });
   }
@@ -107,6 +130,8 @@ export async function createInvoiceAction(
     formData.get("periodOverrideReason") ?? "",
   ).trim();
   const action = String(formData.get("action") ?? "draft");
+  const kindRaw = String(formData.get("kind") ?? "invoice");
+  const kind = kindRaw === "credit_memo" ? "credit_memo" : "invoice";
 
   // Tax: rate comes in as a percent ("8.75"); convert to decimal.
   // Exempt is a checkbox, absent in FormData when unchecked.
@@ -142,6 +167,10 @@ export async function createInvoiceAction(
       accountId: l.accountId,
       quantity: l.quantity,
       unitPrice: l.unitPrice,
+      taxCodeId: l.taxCodeId,
+      deferRevenue: l.deferRevenue,
+      deferralStart: l.deferralStart,
+      deferralEnd: l.deferralEnd,
       dimensions: l.dimensions,
     }));
 
@@ -199,6 +228,7 @@ export async function createInvoiceAction(
   try {
     const created = await createInvoice(user, {
       customerId,
+      kind,
       invoiceDate,
       dueDate,
       notes: notes === "" ? null : notes,

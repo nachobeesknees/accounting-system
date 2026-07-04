@@ -177,9 +177,14 @@ export default async function Page({
         title="Bills"
         meta={`${rows.length} bills`}
         actions={
-          <ButtonLink variant="primary" href="/bills/new">
-            + New bill
-          </ButtonLink>
+          <>
+            <ButtonLink variant="secondary" href="/bills/new?kind=vendor_credit">
+              + Vendor credit
+            </ButtonLink>
+            <ButtonLink variant="primary" href="/bills/new">
+              + New bill
+            </ButtonLink>
+          </>
         }
       />
 

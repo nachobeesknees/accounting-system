@@ -125,6 +125,16 @@ export default async function Page() {
               Tag offices, entities, and clients with a region (e.g. North
               America, EMEA) for slicing reports and lists.
             </span>
+            <Link
+              href="/settings/tax-codes"
+              style={{ color: "var(--ink)", textDecoration: "underline" }}
+            >
+              VAT / GST tax codes →
+            </Link>
+            <span style={{ fontSize: 11.5, color: "var(--ink-4)" }}>
+              Manage per-line VAT/GST rates and exemptions used on invoice and
+              bill lines and the VAT return.
+            </span>
           </div>
         </Section>
 

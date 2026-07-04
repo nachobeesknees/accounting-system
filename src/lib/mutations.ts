@@ -12,7 +12,7 @@
 
 import "server-only";
 
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 
 import { getDb, schema } from "@/db";
 import { parseAmount, sumCredits, sumDebits, toDecimalString } from "./money";
@@ -36,9 +36,10 @@ import {
   kycReviewIntervalMonths,
 } from "./compliance";
 import { getJournalEntryById } from "./data";
+import { lineTaxAmount } from "./tax";
 import { computeClearedTotal, findOpeningAnchor } from "./reconciliation";
 import { getEntityScope } from "./entity-scope";
-import { checkPeriodForPost } from "./periods";
+import { checkPeriodForPost, getPeriodForDate } from "./periods";
 import { logAuditEvent } from "./audit";
 import { hasPermission, requirePermission } from "./permissions";
 
@@ -2782,12 +2783,20 @@ export type DraftInvoiceLine = {
   quantity: number;
   unitPrice: number;
   accountId: string;
+  /** Optional per-line VAT/GST code (soft FK → tax_codes.id). */
+  taxCodeId?: string | null;
+  /** Opt-in deferred revenue with a coverage window. */
+  deferRevenue?: boolean;
+  deferralStart?: string | null;
+  deferralEnd?: string | null;
   /** Dimension map: { [dimension.key]: dimension_value.id }. Defaults to {}. */
   dimensions?: Record<string, string>;
 };
 
 export type CreateInvoiceInput = {
   customerId: string;
+  /** 'invoice' (default) | 'credit_memo'. Credit memos store NEGATIVE totals. */
+  kind?: "invoice" | "credit_memo";
   invoiceDate: string;
   dueDate: string;
   notes?: string | null;
@@ -2824,6 +2833,8 @@ export type CreateInvoiceInput = {
 export async function createInvoice(user: SessionUser, input: CreateInvoiceInput) {
   requirePermission(user, "invoice.create");
 
+  const kind = input.kind ?? "invoice";
+  const isCredit = kind === "credit_memo";
   if (input.lines.length === 0) throw new Error("Invoice must have at least 1 line.");
   for (const [i, l] of input.lines.entries()) {
     if (!l.accountId) throw new Error(`Line ${i + 1}: account is required.`);
@@ -2857,14 +2868,28 @@ export async function createInvoice(user: SessionUser, input: CreateInvoiceInput
   const invoiceNumber = isTemplate
     ? await nextInvoiceTemplateNumber()
     : await nextInvoiceNumber();
-  const subtotal = input.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  // Positive line amounts; sign flips to NEGATIVE for a credit memo so every
+  // AR sum stays correct without kind-awareness downstream.
+  const sign = isCredit ? -1 : 1;
+  const grossSubtotal = input.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  const subtotal = grossSubtotal * sign;
   const now = new Date();
   // Inherit currency + firm from the active entity scope. This way an invoice
   // drafted under a non-USD scope (e.g. Europe SARL) gets the right ccy
   // straight away rather than always defaulting to USD.
   const { firmEntityId, currencyCode } = await getFirmIssuingCurrency();
 
-  // Tax: pull customer defaults, allow per-invoice override, snapshot
+  // Per-line VAT/GST: if ANY line carries a tax code, header tax = sum of
+  // line tax (each line stores its own tax_amount). Otherwise fall back to
+  // the legacy invoice-level rate/exempt snapshot (back-compat).
+  const lineTaxInfo = await computeLineTaxes(
+    input.lines.map((l) => ({
+      amount: l.quantity * l.unitPrice,
+      taxCodeId: l.taxCodeId,
+    })),
+  );
+
+  // Legacy tax: pull customer defaults, allow per-invoice override, snapshot
   // both rate + exempt onto the invoice row so historical totals stay
   // stable when the customer's default later changes.
   const [cust] = await db
@@ -2880,23 +2905,31 @@ export async function createInvoice(user: SessionUser, input: CreateInvoiceInput
       ? Math.max(0, input.taxRate)
       : parseFloat(cust?.taxRate ?? "0") || 0;
   const taxExempt = input.taxExempt ?? !!cust?.taxExempt;
-  const taxAmount =
+  const legacyTaxAmount =
     taxExempt || taxRate === 0
       ? 0
-      : Math.round(subtotal * taxRate * 100) / 100;
+      : Math.round(grossSubtotal * taxRate * 100) / 100;
+  // Header tax = per-line sum when line codes are used, else legacy.
+  const grossTax = lineTaxInfo.usedLineCodes
+    ? lineTaxInfo.headerTax
+    : legacyTaxAmount;
+  const taxAmount = grossTax * sign;
   const total = subtotal + taxAmount;
 
   await db.transaction(async (tx) => {
     await tx.insert(schema.invoices).values({
       id,
       invoiceNumber,
+      kind,
       customerId: input.customerId,
       invoiceDate: input.invoiceDate,
       dueDate: input.dueDate,
       status: isTemplate ? "template" : "draft",
       subtotal: toDecimalString(subtotal),
-      taxRate: taxRate.toFixed(5),
-      taxExempt,
+      // When per-line codes drive tax, the invoice-level rate is not
+      // meaningful — store 0 and rely on line tax_amounts.
+      taxRate: (lineTaxInfo.usedLineCodes ? 0 : taxRate).toFixed(5),
+      taxExempt: lineTaxInfo.usedLineCodes ? false : taxExempt,
       taxAmount: toDecimalString(taxAmount),
       total: toDecimalString(total),
       amountPaid: "0.00",
@@ -2927,8 +2960,13 @@ export async function createInvoice(user: SessionUser, input: CreateInvoiceInput
         description: l.description,
         quantity: l.quantity.toString(),
         unitPrice: toDecimalString(l.unitPrice),
-        amount: toDecimalString(l.quantity * l.unitPrice),
+        amount: toDecimalString(l.quantity * l.unitPrice * sign),
         accountId: l.accountId,
+        taxCodeId: l.taxCodeId ?? null,
+        taxAmount: toDecimalString(lineTaxInfo.lineTax[i] * sign),
+        deferRevenue: l.deferRevenue ?? false,
+        deferralStart: l.deferRevenue ? l.deferralStart ?? null : null,
+        deferralEnd: l.deferRevenue ? l.deferralEnd ?? null : null,
         dimensions: l.dimensions ?? {},
         createdAt: now,
       })),
@@ -3022,38 +3060,86 @@ async function postInvoiceCore(
     .where(eq(schema.invoiceLines.invoiceId, invoiceId));
   if (lines.length === 0) throw new Error("Invoice has no lines.");
 
+  const isCredit = (inv as { kind?: string }).kind === "credit_memo";
+
   // Use the persisted totals so the JE matches whatever the invoice
   // table says (including tax). Falls back to summing lines for legacy
-  // rows where total wasn't persisted yet.
+  // rows where total wasn't persisted yet. Values are NEGATIVE for a
+  // credit memo; the leg helper below routes each to the correct side.
   const subtotal =
     parseFloat(inv.subtotal) ||
     lines.reduce((s, l) => s + parseFloat(l.amount), 0);
   const taxAmount = parseFloat(inv.taxAmount) || 0;
   const total = parseFloat(inv.total) || subtotal + taxAmount;
-  const jeLines: DraftJournalLine[] = [
-    {
-      accountId: AR_ACCOUNT_ID,
-      description: `${inv.invoiceNumber}`,
-      debit: total,
-      credit: 0,
-    },
-    ...lines.map((l) => ({
-      accountId: l.accountId,
-      description: l.description,
-      debit: 0,
-      credit: parseFloat(l.amount),
-    })),
-  ];
-  // Tax credit balances the AR debit that includes tax. Only add the
-  // Tax Payable leg when there's actually tax — keeps zero-tax JEs
-  // unchanged from the old behavior.
-  if (taxAmount > 0) {
-    jeLines.push({
-      accountId: SALES_TAX_PAYABLE_ACCOUNT_ID,
-      description: `Sales tax — ${inv.invoiceNumber}`,
-      debit: 0,
-      credit: taxAmount,
-    });
+
+  // Deferred revenue: for opt-in lines route the revenue credit to a
+  // deferred-revenue liability instead of the line's revenue account, and
+  // schedule straight-line recognition. Non-deferred lines behave exactly
+  // as before. Deferral is skipped for credit memos (nothing to defer) and
+  // when no deferred-revenue account exists (documented fallback).
+  const anyDeferred =
+    !isCredit &&
+    lines.some(
+      (l) =>
+        (l as { deferRevenue?: boolean }).deferRevenue === true &&
+        (l as { deferralStart?: string | null }).deferralStart &&
+        (l as { deferralEnd?: string | null }).deferralEnd,
+    );
+  const deferredAccountId = anyDeferred
+    ? await resolveDeferredRevenueAccountId()
+    : null;
+
+  // A signed "credit" leg: positive → credit; negative → debit (abs).
+  const jeLines: DraftJournalLine[] = [];
+  function pushCreditLeg(accountId: string, description: string, signedCredit: number) {
+    if (Math.abs(signedCredit) < 0.005) return;
+    if (signedCredit >= 0) {
+      jeLines.push({ accountId, description, debit: 0, credit: signedCredit });
+    } else {
+      jeLines.push({ accountId, description, debit: -signedCredit, credit: 0 });
+    }
+  }
+  function pushDebitLeg(accountId: string, description: string, signedDebit: number) {
+    pushCreditLeg(accountId, description, -signedDebit);
+  }
+
+  // AR debit for the full total (credit for a credit memo, since total < 0).
+  pushDebitLeg(AR_ACCOUNT_ID, `${inv.invoiceNumber}`, total);
+
+  const schedulesToCreate: Array<{
+    line: typeof lines[number];
+    revenueAccountId: string;
+    deferralAccountId: string;
+  }> = [];
+  for (const l of lines) {
+    const amt = parseFloat(l.amount);
+    const deferred =
+      !isCredit &&
+      deferredAccountId != null &&
+      (l as { deferRevenue?: boolean }).deferRevenue === true &&
+      (l as { deferralStart?: string | null }).deferralStart != null &&
+      (l as { deferralEnd?: string | null }).deferralEnd != null;
+    if (deferred && deferredAccountId) {
+      pushCreditLeg(deferredAccountId, `Deferred — ${l.description}`, amt);
+      schedulesToCreate.push({
+        line: l,
+        revenueAccountId: l.accountId,
+        deferralAccountId: deferredAccountId,
+      });
+    } else {
+      pushCreditLeg(l.accountId, l.description, amt);
+    }
+  }
+
+  // Tax leg — credit sales-tax-payable (output VAT). Negative on a credit
+  // memo (reverses the original output VAT). Only added when non-zero, so
+  // untaxed / legacy documents keep their old two-line JE.
+  if (Math.abs(taxAmount) > 0.005) {
+    pushCreditLeg(
+      SALES_TAX_PAYABLE_ACCOUNT_ID,
+      `Sales tax — ${inv.invoiceNumber}`,
+      taxAmount,
+    );
   }
 
   const entityId =
@@ -3071,7 +3157,9 @@ async function postInvoiceCore(
 
   const je = await createJournalEntry(user, {
     entryDate: inv.invoiceDate,
-    description: `Service invoice issued (${inv.invoiceNumber})`,
+    description: isCredit
+      ? `Credit memo issued (${inv.invoiceNumber})`
+      : `Service invoice issued (${inv.invoiceNumber})`,
     reference: inv.invoiceNumber,
     source: "invoice",
     status: "posted",
@@ -3083,6 +3171,26 @@ async function postInvoiceCore(
     fxRate: (inv as { fxRate?: string | null }).fxRate ?? null,
     lines: jeLines,
   });
+
+  // Persist recognition schedules for deferred lines.
+  for (const s of schedulesToCreate) {
+    const start = (s.line as { deferralStart?: string | null }).deferralStart!;
+    const end = (s.line as { deferralEnd?: string | null }).deferralEnd!;
+    await db.insert(schema.revenueRecognitionSchedules).values({
+      id: uid("rrs"),
+      invoiceId: inv.id,
+      invoiceLineId: s.line.id,
+      deferralAccountId: s.deferralAccountId,
+      revenueAccountId: s.revenueAccountId,
+      startDate: start,
+      endDate: end,
+      total: toDecimalString(parseFloat(s.line.amount)),
+      recognizedAmount: "0.00",
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
 
   await db
     .update(schema.invoices)
@@ -3129,6 +3237,13 @@ export async function recordInvoicePayment(
     .where(eq(schema.invoices.id, input.invoiceId))
     .limit(1);
   if (!inv) throw new Error("Invoice not found.");
+  if ((inv as { kind?: string }).kind === "credit_memo") {
+    // A credit memo carries a negative balance; a cash receipt against it
+    // would clamp `applied` to 0, dump the whole amount into funds-on-account,
+    // and falsely flip the memo to "paid". Credit memos are consumed via
+    // applyCreditMemo, never paid.
+    throw new Error("Cannot record a payment against a credit memo.");
+  }
   if (inv.status === "draft") {
     throw new Error("Post the invoice before recording a payment.");
   }
@@ -3137,11 +3252,11 @@ export async function recordInvoicePayment(
 
   if (input.amount <= 0) throw new Error("Payment amount must be > 0.");
   const balanceDue = parseFloat(inv.balanceDue);
-  if (input.amount > balanceDue + 0.005) {
-    throw new Error(
-      `Payment ${input.amount.toFixed(2)} exceeds balance due ${balanceDue.toFixed(2)}.`,
-    );
-  }
+  // Overpayment is now allowed: the amount applied to AR is capped at the
+  // balance due; any excess lands in funds-on-account (a client-funds
+  // liability) rather than being rejected.
+  const applied = Math.min(input.amount, Math.max(0, balanceDue));
+  const overpay = Math.round((input.amount - applied) * 100) / 100;
 
   let cashAccountId = DEFAULT_CASH_ACCOUNT_ID;
   if (input.bankAccountId) {
@@ -3157,6 +3272,31 @@ export async function recordInvoicePayment(
     inv.entityId ?? (await getPrimaryEntityForCustomer(inv.customerId));
   const firmEntityId = inv.firmEntityId ?? (await getDefaultFirmEntityId());
 
+  // JE: Dr cash (full amount received) / Cr AR (applied) / Cr client funds
+  // (overpayment excess). The excess leg is only added when > 0, so ordinary
+  // exact / partial payments keep the unchanged two-line JE.
+  const clientFundsAccountId =
+    overpay > 0.005 ? await resolveClientFundsAccountId() : null;
+  const jeLines: DraftJournalLine[] = [
+    { accountId: cashAccountId, description: "Deposit", debit: input.amount, credit: 0 },
+  ];
+  if (applied > 0.005) {
+    jeLines.push({
+      accountId: AR_ACCOUNT_ID,
+      description: "Apply AR",
+      debit: 0,
+      credit: applied,
+    });
+  }
+  if (overpay > 0.005 && clientFundsAccountId) {
+    jeLines.push({
+      accountId: clientFundsAccountId,
+      description: "Funds on account (overpayment)",
+      debit: 0,
+      credit: overpay,
+    });
+  }
+
   const je = await createJournalEntry(user, {
     entryDate: input.paymentDate,
     description: `Payment received (${inv.invoiceNumber})`,
@@ -3165,13 +3305,44 @@ export async function recordInvoicePayment(
     status: "posted",
     entityId,
     firmEntityId,
-    lines: [
-      { accountId: cashAccountId, description: "Deposit", debit: input.amount, credit: 0 },
-      { accountId: AR_ACCOUNT_ID, description: "Apply AR", debit: 0, credit: input.amount },
-    ],
+    lines: jeLines,
   });
 
-  const newPaid = parseFloat(inv.amountPaid) + input.amount;
+  // Record a payment row (so funds-on-account is queryable) + an allocation
+  // for the applied portion. The unapplied excess sits on the payment.
+  const paymentId = uid("pmt");
+  const paymentNumber = await nextPaymentNumber();
+  await db.insert(schema.payments).values({
+    id: paymentId,
+    paymentNumber,
+    paymentDate: input.paymentDate,
+    amount: toDecimalString(input.amount),
+    paymentMethod: null,
+    reference: input.reference ?? inv.invoiceNumber,
+    direction: "inbound",
+    customerId: inv.customerId,
+    vendorId: null,
+    bankAccountId: input.bankAccountId ?? null,
+    journalEntryId: je.id,
+    unappliedAmount: toDecimalString(overpay),
+    firmEntityId,
+    currencyCode: inv.currencyCode,
+    kind: "standard",
+    notes: null,
+    createdAt: new Date(),
+  });
+  if (applied > 0.005) {
+    await db.insert(schema.paymentAllocations).values({
+      id: uid("pa"),
+      paymentId,
+      invoiceId: inv.id,
+      billId: null,
+      amount: toDecimalString(applied),
+      createdAt: new Date(),
+    });
+  }
+
+  const newPaid = parseFloat(inv.amountPaid) + applied;
   const newBalance = parseFloat(inv.total) - newPaid;
   const newStatus = newBalance < 0.005 ? "paid" : "partial";
   await db
@@ -3184,7 +3355,25 @@ export async function recordInvoicePayment(
     })
     .where(eq(schema.invoices.id, input.invoiceId));
 
-  return { invoiceId: input.invoiceId, journalEntryId: je.id, entryNumber: je.entryNumber };
+  return {
+    invoiceId: input.invoiceId,
+    journalEntryId: je.id,
+    entryNumber: je.entryNumber,
+    overpayment: overpay,
+  };
+}
+
+/** Next payment number on the PAY-NNNNNN sequence. */
+export async function nextPaymentNumber(): Promise<string> {
+  const db = getDb();
+  const [row] = await db
+    .select({ paymentNumber: schema.payments.paymentNumber })
+    .from(schema.payments)
+    .where(sql`${schema.payments.paymentNumber} ~ '^PAY-[0-9]+$'`)
+    .orderBy(desc(schema.payments.paymentNumber))
+    .limit(1);
+  const n = parseTrailingInt(row?.paymentNumber) + 1;
+  return `PAY-${pad(n, 6)}`;
 }
 
 export async function voidInvoice(user: SessionUser, invoiceId: string, reason: string) {
@@ -3206,6 +3395,21 @@ export async function voidInvoice(user: SessionUser, invoiceId: string, reason: 
       `Invoice ${inv.invoiceNumber} voided: ${reason}`,
     );
   }
+  // Voiding reverses the posting JE (Dr AR / Cr deferred-revenue), so the
+  // deferred-revenue liability nets back to 0. Any active recognition
+  // schedule created at post time must be cancelled too — otherwise
+  // recognizeRevenue would keep crediting revenue that was reversed and drive
+  // the deferred-revenue liability negative. "cancelled" keeps it out of the
+  // `status = "active"` recognition query.
+  await db
+    .update(schema.revenueRecognitionSchedules)
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(
+      and(
+        eq(schema.revenueRecognitionSchedules.invoiceId, invoiceId),
+        eq(schema.revenueRecognitionSchedules.status, "active"),
+      ),
+    );
   await db
     .update(schema.invoices)
     .set({ status: "void", updatedAt: new Date() })
@@ -3457,11 +3661,19 @@ export async function generateInvoiceFromEntityFees(
       if (fee.billingYear !== input.billingYear) continue;
       const amount = parseFloat(fee.annualFee);
       if (amount <= 0) continue;
+      // When the fee opts into deferred revenue, defer the generated line
+      // over the fee's coverage window (falling back to the billing year).
+      const deferRevenue = (fee as { deferRevenue?: boolean }).deferRevenue === true;
+      const deferralStart = fee.startDate ?? `${input.billingYear}-01-01`;
+      const deferralEnd = fee.endDate ?? `${input.billingYear}-12-31`;
       feeLines.push({
         description: `Annual fee — ${ent.name} (${ent.code}, ${input.billingYear})`,
         quantity: 1,
         unitPrice: amount,
         accountId: SERVICE_REVENUE_ACCOUNT_ID,
+        deferRevenue,
+        deferralStart: deferRevenue ? deferralStart : null,
+        deferralEnd: deferRevenue ? deferralEnd : null,
       });
     }
   }
@@ -3506,6 +3718,8 @@ export type DraftBillLine = {
   quantity: number;
   unitPrice: number;
   accountId: string; // expense account
+  /** Optional per-line input-VAT code (soft FK → tax_codes.id). */
+  taxCodeId?: string | null;
   /** Optional per-line client/entity allocation (inherits header default). */
   clientId?: string | null;
   entityId?: string | null;
@@ -3515,6 +3729,8 @@ export type DraftBillLine = {
 
 export type CreateBillInput = {
   vendorId: string;
+  /** 'bill' (default) | 'vendor_credit'. Vendor credits store NEGATIVE totals. */
+  kind?: "bill" | "vendor_credit";
   billDate: string;
   dueDate: string;
   reference?: string | null;
@@ -3595,12 +3811,26 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
 
   const db = getDb();
   const id = uid("b");
+  const kind = input.kind ?? "bill";
+  const isCredit = kind === "vendor_credit";
+  const sign = isCredit ? -1 : 1;
   const billNumber = input.reference?.trim() || (await nextBillNumber());
-  const subtotal = input.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  const grossSubtotal = input.lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+  const subtotal = grossSubtotal * sign;
   const now = new Date();
   // Same firm-derived currency rule as invoices — a bill recorded under a
   // non-USD scope picks up that firm's ccy.
   const { currencyCode } = await getFirmIssuingCurrency();
+
+  // Per-line input VAT: header tax = sum of line tax when any line codes.
+  const lineTaxInfo = await computeLineTaxes(
+    input.lines.map((l) => ({
+      amount: l.quantity * l.unitPrice,
+      taxCodeId: l.taxCodeId,
+    })),
+  );
+  const taxAmount = lineTaxInfo.headerTax * sign;
+  const total = subtotal + taxAmount;
 
   const vendorInvoiceNumber =
     input.vendorInvoiceNumber?.trim() ? input.vendorInvoiceNumber.trim() : null;
@@ -3609,16 +3839,17 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
     await tx.insert(schema.bills).values({
       id,
       billNumber,
+      kind,
       vendorId: input.vendorId,
       vendorInvoiceNumber,
       billDate: input.billDate,
       dueDate: input.dueDate,
       status: "draft",
       subtotal: toDecimalString(subtotal),
-      taxAmount: "0.00",
-      total: toDecimalString(subtotal),
+      taxAmount: toDecimalString(taxAmount),
+      total: toDecimalString(total),
       amountPaid: "0.00",
-      balanceDue: toDecimalString(subtotal),
+      balanceDue: toDecimalString(total),
       currencyCode,
       notes: input.notes ?? null,
       ocrText: input.ocrText ?? null,
@@ -3650,8 +3881,10 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
         description: l.description,
         quantity: l.quantity.toString(),
         unitPrice: toDecimalString(l.unitPrice),
-        amount: toDecimalString(l.quantity * l.unitPrice),
+        amount: toDecimalString(l.quantity * l.unitPrice * sign),
         accountId: l.accountId,
+        taxCodeId: l.taxCodeId ?? null,
+        taxAmount: toDecimalString(lineTaxInfo.lineTax[i] * sign),
         // Split rebills: a line with no allocation is deliberately not
         // billed — don't let the header on-behalf-of client/entity leak in
         // as its payer.
@@ -3682,7 +3915,7 @@ export async function createBill(user: SessionUser, input: CreateBillInput) {
     resourceType: "bill",
     resourceId: id,
     resourceName: billNumber,
-    changes: { after: { vendorId: input.vendorId, total: subtotal } },
+    changes: { after: { vendorId: input.vendorId, kind, total } },
     metadata: periodCheck.overrideRecorded
       ? { periodOverrideReason: periodCheck.overrideRecorded }
       : undefined,
@@ -3735,16 +3968,44 @@ export async function approveBill(
     .where(eq(schema.billLines.billId, billId));
   if (lines.length === 0) throw new Error("Bill has no lines.");
 
-  const total = lines.reduce((s, l) => s + parseFloat(l.amount), 0);
-  const jeLines: DraftJournalLine[] = [
-    ...lines.map((l) => ({
-      accountId: l.accountId,
-      description: l.description,
-      debit: parseFloat(l.amount),
-      credit: 0,
-    })),
-    { accountId: AP_ACCOUNT_ID, description: bill.billNumber, debit: 0, credit: total },
-  ];
+  const isCredit = (bill as { kind?: string }).kind === "vendor_credit";
+  const total = parseFloat(bill.total) || lines.reduce((s, l) => s + parseFloat(l.amount), 0);
+  const headerTax = parseFloat(bill.taxAmount) || 0;
+
+  // Recoverable input VAT: total already includes tax; without a dedicated
+  // input-VAT asset account we expense it into the line account (documented
+  // fallback) rather than adding a separate leg.
+  const inputVatAccountId = Math.abs(headerTax) > 0.005
+    ? await resolveInputVatAccountId()
+    : null;
+
+  // Signed leg helper: positive → debit; negative → credit. Bill expense
+  // lines are debited; a vendor credit's NEGATIVE amounts flip to credits
+  // (contra JE Dr AP / Cr expense).
+  const jeLines: DraftJournalLine[] = [];
+  function pushDebitLeg(accountId: string, description: string, signedDebit: number) {
+    if (Math.abs(signedDebit) < 0.005) return;
+    if (signedDebit >= 0) {
+      jeLines.push({ accountId, description, debit: signedDebit, credit: 0 });
+    } else {
+      jeLines.push({ accountId, description, debit: 0, credit: -signedDebit });
+    }
+  }
+  for (const l of lines) {
+    pushDebitLeg(l.accountId, l.description, parseFloat(l.amount));
+  }
+  if (Math.abs(headerTax) > 0.005) {
+    if (inputVatAccountId) {
+      // Separate recoverable input-VAT asset leg.
+      pushDebitLeg(inputVatAccountId, `Input VAT — ${bill.billNumber}`, headerTax);
+    } else {
+      // Fallback: no input-VAT account — expense the tax into the FIRST
+      // line's account so the JE still balances against AP (which includes tax).
+      pushDebitLeg(lines[0].accountId, `Input VAT — ${bill.billNumber}`, headerTax);
+    }
+  }
+  // AP credit for the full total (debit for a vendor credit, since total < 0).
+  pushDebitLeg(AP_ACCOUNT_ID, bill.billNumber, -total);
 
   // Attribute the JE to the firm that's currently scoped (or the default
   // active firm) so bills show up in scoped views just like invoices do.
@@ -3757,7 +4018,9 @@ export async function approveBill(
 
   const je = await createJournalEntry(user, {
     entryDate: bill.billDate,
-    description: `Bill approved (${bill.billNumber})`,
+    description: isCredit
+      ? `Vendor credit approved (${bill.billNumber})`
+      : `Bill approved (${bill.billNumber})`,
     reference: bill.billNumber,
     source: "bill",
     status: "posted",
@@ -5411,6 +5674,8 @@ export type UpdateEntityFeeBillingInput = {
   includedHours?: number;
   status?: "draft" | "active" | "billed" | "paid" | "void";
   notes?: string | null;
+  /** Opt-in deferred revenue for invoices generated from this fee. */
+  deferRevenue?: boolean;
 };
 
 export async function updateEntityFeeBilling(
@@ -5434,6 +5699,7 @@ export async function updateEntityFeeBilling(
   if (input.includedHours != null) patch.includedHours = input.includedHours.toString();
   if (input.status != null) patch.status = input.status;
   if (input.notes !== undefined) patch.notes = input.notes;
+  if (input.deferRevenue !== undefined) patch.deferRevenue = input.deferRevenue;
 
   await db
     .update(schema.entityFees)
@@ -7160,4 +7426,1021 @@ export async function markDistributionPaid(user: SessionUser, id: string) {
     metadata: { journalEntryId, entryNumber },
   });
   return { distributionId: id, journalEntryId, entryNumber };
+}
+
+// ================= Revenue chain mutations =================
+
+/**
+ * Special GL accounts the revenue chain needs but that the seed doesn't
+ * hard-code. We resolve each by scanning firm-level (entityId IS NULL)
+ * accounts by name regex, then fall back to a sensible existing account so
+ * postings never crash on a missing account. `fallbackId` is the documented
+ * fallback (see the return notes on each feature).
+ */
+async function resolveFirmAccountByName(
+  patterns: RegExp[],
+  opts: { accountType?: string } = {},
+): Promise<{ id: string } | null> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: schema.accounts.id,
+      name: schema.accounts.name,
+      accountType: schema.accounts.accountType,
+    })
+    .from(schema.accounts)
+    .where(isNull(schema.accounts.entityId));
+  for (const p of patterns) {
+    const hit = rows.find(
+      (r) =>
+        p.test(r.name) &&
+        (!opts.accountType || r.accountType === opts.accountType),
+    );
+    if (hit) return { id: hit.id };
+  }
+  return null;
+}
+
+/**
+ * Recoverable input-VAT asset for bills. Looked up by name /input (vat|gst|
+ * tax)/i. FALLBACK NOTE: if none exists, callers expense the input VAT into
+ * the line account (i.e. no separate input-VAT leg) — see approveBill.
+ */
+async function resolveInputVatAccountId(): Promise<string | null> {
+  const acct = await resolveFirmAccountByName(
+    [/input\s*(vat|gst|tax)/i, /(vat|gst)\s*receivable/i, /recoverable\s*(vat|gst|tax)/i],
+    { accountType: "asset" },
+  );
+  return acct?.id ?? null;
+}
+
+/**
+ * Deferred/unearned revenue liability. Looked up by /deferred|unearned
+ * revenue/i. FALLBACK NOTE: if none exists, deferral is skipped and the line
+ * posts to revenue as usual (see postInvoiceCore).
+ */
+async function resolveDeferredRevenueAccountId(): Promise<string | null> {
+  const acct = await resolveFirmAccountByName(
+    [/deferred\s*revenue/i, /unearned\s*revenue/i, /deferred\s*income/i],
+    { accountType: "liability" },
+  );
+  return acct?.id ?? null;
+}
+
+/**
+ * Client funds / deposits / retainer liability. Looked up by
+ * /client (funds|deposit)|retainer|unearned|funds on account/i. FALLBACK
+ * NOTE: if none exists we fall back to the sales-tax-payable liability so
+ * the credit still lands in a liability (documented; create a dedicated
+ * "Client funds on account" liability account for clean books).
+ */
+async function resolveClientFundsAccountId(): Promise<string> {
+  const acct = await resolveFirmAccountByName(
+    [
+      /client\s*(funds|deposit)/i,
+      /funds\s*on\s*account/i,
+      /customer\s*deposit/i,
+      /retainer/i,
+      /unearned/i,
+    ],
+    { accountType: "liability" },
+  );
+  return acct?.id ?? SALES_TAX_PAYABLE_ACCOUNT_ID;
+}
+
+/**
+ * Bad-debt expense for write-offs. Looked up by /bad debt/i. FALLBACK NOTE:
+ * if none exists we fall back to the service-revenue account (contra-revenue
+ * treatment) so the AR still clears; create a "Bad debt expense" account for
+ * proper expense classification.
+ */
+async function resolveBadDebtAccountId(): Promise<string> {
+  const acct = await resolveFirmAccountByName([/bad\s*debt/i, /doubtful/i]);
+  return acct?.id ?? SERVICE_REVENUE_ACCOUNT_ID;
+}
+
+// --------- Feature 1: Tax code CRUD + seeding ---------
+
+export type TaxCodeInput = {
+  code: string;
+  name: string;
+  /** decimal rate (0.15). */
+  rate: number;
+  kind: "standard" | "reduced" | "zero_rated" | "exempt" | "out_of_scope";
+  country?: string | null;
+  isActive?: boolean;
+  notes?: string | null;
+};
+
+export async function createTaxCode(user: SessionUser, input: TaxCodeInput) {
+  requirePermission(user, "tax.manage_codes");
+  const code = input.code.trim();
+  const name = input.name.trim();
+  if (!code) throw new Error("Code is required.");
+  if (!name) throw new Error("Name is required.");
+  const rate = Math.max(0, input.rate || 0);
+  const db = getDb();
+  const id = uid("tc");
+  await db.insert(schema.taxCodes).values({
+    id,
+    code,
+    name,
+    rate: rate.toFixed(5),
+    kind: input.kind,
+    country: input.country?.trim() || null,
+    isActive: input.isActive ?? true,
+    notes: input.notes?.trim() || null,
+  });
+  await logAuditEvent(user, {
+    action: "tax_code.create",
+    resourceType: "tax_code",
+    resourceId: id,
+    resourceName: code,
+    changes: { after: { code, name, rate, kind: input.kind } },
+  });
+  return { id, code };
+}
+
+export async function updateTaxCode(
+  user: SessionUser,
+  id: string,
+  input: Partial<TaxCodeInput>,
+) {
+  requirePermission(user, "tax.manage_codes");
+  const db = getDb();
+  await db
+    .update(schema.taxCodes)
+    .set({
+      ...(input.code !== undefined && { code: input.code.trim() }),
+      ...(input.name !== undefined && { name: input.name.trim() }),
+      ...(input.rate !== undefined && { rate: Math.max(0, input.rate || 0).toFixed(5) }),
+      ...(input.kind !== undefined && { kind: input.kind }),
+      ...(input.country !== undefined && { country: input.country?.trim() || null }),
+      ...(input.isActive !== undefined && { isActive: input.isActive }),
+      ...(input.notes !== undefined && { notes: input.notes?.trim() || null }),
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.taxCodes.id, id));
+  await logAuditEvent(user, {
+    action: "tax_code.update",
+    resourceType: "tax_code",
+    resourceId: id,
+  });
+}
+
+/**
+ * Seed a small set of sensible defaults the first time /settings/tax-codes
+ * is viewed with an empty table. Created via the mutation (not a DB seed).
+ */
+export async function seedDefaultTaxCodesIfEmpty(user: SessionUser): Promise<number> {
+  requirePermission(user, "tax.manage_codes");
+  const db = getDb();
+  const existing = await db.select({ id: schema.taxCodes.id }).from(schema.taxCodes).limit(1);
+  if (existing.length > 0) return 0;
+  const defaults: TaxCodeInput[] = [
+    { code: "NZ-GST-15", name: "NZ GST 15%", rate: 0.15, kind: "standard", country: "NZ" },
+    { code: "NZ-GST-0", name: "NZ Zero-rated", rate: 0, kind: "zero_rated", country: "NZ" },
+    { code: "NZ-EXEMPT", name: "NZ Exempt", rate: 0, kind: "exempt", country: "NZ" },
+    { code: "US-NOTAX", name: "US No-tax", rate: 0, kind: "out_of_scope", country: "US" },
+  ];
+  for (const d of defaults) {
+    await createTaxCode(user, d);
+  }
+  return defaults.length;
+}
+
+/**
+ * Per-line tax computation shared by create/post. Resolves each line's tax
+ * code, computes tax_amount, and returns the header tax total. Returns
+ * `usedLineCodes=false` when NO line has a tax code (legacy fall-back path).
+ */
+async function computeLineTaxes(
+  lines: Array<{ amount: number; taxCodeId?: string | null }>,
+): Promise<{
+  usedLineCodes: boolean;
+  lineTax: number[];
+  headerTax: number;
+  codesById: Map<string, { id: string; rate: string; kind: string }>;
+}> {
+  const db = getDb();
+  const codeIds = Array.from(
+    new Set(lines.map((l) => l.taxCodeId).filter((v): v is string => !!v)),
+  );
+  const codesById = new Map<string, { id: string; rate: string; kind: string }>();
+  if (codeIds.length > 0) {
+    const rows = await db
+      .select({ id: schema.taxCodes.id, rate: schema.taxCodes.rate, kind: schema.taxCodes.kind })
+      .from(schema.taxCodes)
+      .where(inArray(schema.taxCodes.id, codeIds));
+    for (const r of rows) codesById.set(r.id, r);
+  }
+  const lineTax = lines.map((l) => {
+    if (!l.taxCodeId) return 0;
+    const code = codesById.get(l.taxCodeId);
+    if (!code) return 0;
+    return lineTaxAmount(l.amount, { rate: code.rate, kind: code.kind as never });
+  });
+  const headerTax = Math.round(lineTax.reduce((s, t) => s + t, 0) * 100) / 100;
+  return { usedLineCodes: codeIds.length > 0, lineTax, headerTax, codesById };
+}
+
+// --------- Feature 2: apply credit memo / vendor credit + write-off ---------
+
+/**
+ * Apply an AR credit memo to one open invoice. Reduces both the credit's
+ * remaining and the target's balanceDue. Never over-applies. Records a
+ * credit_applications row (no JE — the credit memo already posted the
+ * revenue reversal; this is a subledger contra between two AR docs).
+ */
+export async function applyCreditMemo(
+  user: SessionUser,
+  input: { creditInvoiceId: string; targetInvoiceId: string; amount: number },
+) {
+  requirePermission(user, "invoice.update");
+  const db = getDb();
+  const [credit] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, input.creditInvoiceId))
+    .limit(1);
+  const [target] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, input.targetInvoiceId))
+    .limit(1);
+  if (!credit) throw new Error("Credit memo not found.");
+  if (!target) throw new Error("Target invoice not found.");
+  if ((credit as { kind?: string }).kind !== "credit_memo") {
+    throw new Error("Source is not a credit memo.");
+  }
+  if ((target as { kind?: string }).kind === "credit_memo") {
+    throw new Error("Cannot apply a credit memo to another credit memo.");
+  }
+  if (credit.status === "draft" || credit.status === "void") {
+    throw new Error("Post the credit memo before applying it.");
+  }
+  if (target.status === "void" || target.status === "paid") {
+    throw new Error(`Target invoice is ${target.status}.`);
+  }
+  // A credit memo may only be applied to the same customer's invoice, and
+  // only across matching currencies — otherwise we'd net raw amounts across
+  // customers or currencies and silently corrupt AR.
+  if (credit.customerId !== target.customerId) {
+    throw new Error("Credit memo and target invoice belong to different customers.");
+  }
+  if (credit.currencyCode !== target.currencyCode) {
+    throw new Error(
+      `Currency mismatch: credit memo is ${credit.currencyCode}, target invoice is ${target.currencyCode}.`,
+    );
+  }
+
+  // Remaining credit = abs(total) − already-applied.
+  const apps = await db
+    .select({ amount: schema.creditApplications.amount })
+    .from(schema.creditApplications)
+    .where(eq(schema.creditApplications.creditInvoiceId, input.creditInvoiceId));
+  const alreadyApplied = apps.reduce((s, a) => s + parseFloat(a.amount), 0);
+  const remaining = Math.abs(parseFloat(credit.total)) - alreadyApplied;
+  const targetBalance = parseFloat(target.balanceDue);
+  const amount = Math.min(input.amount, remaining, targetBalance);
+  if (!(amount > 0.005)) {
+    throw new Error("Nothing left to apply (credit exhausted or invoice settled).");
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.creditApplications).values({
+      id: uid("ca"),
+      creditInvoiceId: input.creditInvoiceId,
+      targetInvoiceId: input.targetInvoiceId,
+      amount: toDecimalString(amount),
+      appliedBy: user.userId,
+      createdAt: new Date(),
+    });
+    // Reduce the target's balance; mark paid when fully settled.
+    const newTargetPaid = parseFloat(target.amountPaid) + amount;
+    const newTargetBalance = parseFloat(target.total) - newTargetPaid;
+    await tx
+      .update(schema.invoices)
+      .set({
+        amountPaid: toDecimalString(newTargetPaid),
+        balanceDue: toDecimalString(Math.max(0, newTargetBalance)),
+        status: newTargetBalance < 0.005 ? "paid" : "partial",
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.invoices.id, input.targetInvoiceId));
+    // Reduce the credit's remaining: its balanceDue is NEGATIVE, so applying
+    // moves it toward 0. amountPaid tracks how much has been consumed.
+    const creditPaid = parseFloat(credit.amountPaid) + amount;
+    const newCreditBalance = parseFloat(credit.total) + creditPaid; // total<0
+    await tx
+      .update(schema.invoices)
+      .set({
+        amountPaid: toDecimalString(creditPaid),
+        balanceDue: toDecimalString(Math.min(0, newCreditBalance)),
+        status: newCreditBalance > -0.005 ? "paid" : "partial",
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.invoices.id, input.creditInvoiceId));
+  });
+
+  await logAuditEvent(user, {
+    action: "invoice.apply_credit",
+    resourceType: "invoice",
+    resourceId: input.targetInvoiceId,
+    resourceName: target.invoiceNumber,
+    metadata: { creditInvoiceId: input.creditInvoiceId, amount },
+  });
+  return { amount };
+}
+
+/** Apply a vendor credit against one open bill (mirror of applyCreditMemo). */
+export async function applyVendorCredit(
+  user: SessionUser,
+  input: { creditBillId: string; targetBillId: string; amount: number },
+) {
+  requirePermission(user, "bill.update");
+  const db = getDb();
+  const [credit] = await db
+    .select()
+    .from(schema.bills)
+    .where(eq(schema.bills.id, input.creditBillId))
+    .limit(1);
+  const [target] = await db
+    .select()
+    .from(schema.bills)
+    .where(eq(schema.bills.id, input.targetBillId))
+    .limit(1);
+  if (!credit) throw new Error("Vendor credit not found.");
+  if (!target) throw new Error("Target bill not found.");
+  if ((credit as { kind?: string }).kind !== "vendor_credit") {
+    throw new Error("Source is not a vendor credit.");
+  }
+  if ((target as { kind?: string }).kind === "vendor_credit") {
+    throw new Error("Cannot apply a vendor credit to another vendor credit.");
+  }
+  if (credit.status === "draft" || credit.status === "void") {
+    throw new Error("Approve the vendor credit before applying it.");
+  }
+  if (target.status === "void" || target.status === "paid") {
+    throw new Error(`Target bill is ${target.status}.`);
+  }
+  // A vendor credit may only be applied to the same vendor's bill, and only
+  // across matching currencies — otherwise we'd net raw amounts across
+  // vendors or currencies and silently corrupt AP.
+  if (credit.vendorId !== target.vendorId) {
+    throw new Error("Vendor credit and target bill belong to different vendors.");
+  }
+  if (credit.currencyCode !== target.currencyCode) {
+    throw new Error(
+      `Currency mismatch: vendor credit is ${credit.currencyCode}, target bill is ${target.currencyCode}.`,
+    );
+  }
+
+  const apps = await db
+    .select({ amount: schema.billCreditApplications.amount })
+    .from(schema.billCreditApplications)
+    .where(eq(schema.billCreditApplications.creditBillId, input.creditBillId));
+  const alreadyApplied = apps.reduce((s, a) => s + parseFloat(a.amount), 0);
+  const remaining = Math.abs(parseFloat(credit.total)) - alreadyApplied;
+  const targetBalance = parseFloat(target.balanceDue);
+  const amount = Math.min(input.amount, remaining, targetBalance);
+  if (!(amount > 0.005)) {
+    throw new Error("Nothing left to apply (credit exhausted or bill settled).");
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.insert(schema.billCreditApplications).values({
+      id: uid("bca"),
+      creditBillId: input.creditBillId,
+      targetBillId: input.targetBillId,
+      amount: toDecimalString(amount),
+      appliedBy: user.userId,
+      createdAt: new Date(),
+    });
+    const newTargetPaid = parseFloat(target.amountPaid) + amount;
+    const newTargetBalance = parseFloat(target.total) - newTargetPaid;
+    await tx
+      .update(schema.bills)
+      .set({
+        amountPaid: toDecimalString(newTargetPaid),
+        balanceDue: toDecimalString(Math.max(0, newTargetBalance)),
+        status: newTargetBalance < 0.005 ? "paid" : "partial",
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.bills.id, input.targetBillId));
+    const creditPaid = parseFloat(credit.amountPaid) + amount;
+    const newCreditBalance = parseFloat(credit.total) + creditPaid;
+    await tx
+      .update(schema.bills)
+      .set({
+        amountPaid: toDecimalString(creditPaid),
+        balanceDue: toDecimalString(Math.min(0, newCreditBalance)),
+        status: newCreditBalance > -0.005 ? "paid" : "partial",
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.bills.id, input.creditBillId));
+  });
+
+  await logAuditEvent(user, {
+    action: "bill.apply_credit",
+    resourceType: "bill",
+    resourceId: input.targetBillId,
+    resourceName: target.billNumber,
+    metadata: { creditBillId: input.creditBillId, amount },
+  });
+  return { amount };
+}
+
+/**
+ * Bad-debt write-off of an open posted invoice. Posts Dr bad-debt-expense /
+ * Cr AR for the remaining balance, flips the invoice to written_off, and
+ * zeroes balanceDue. Gated on invoice.void (same class of authority as
+ * voiding). Does NOT delete the invoice.
+ */
+export async function writeOffInvoice(
+  user: SessionUser,
+  invoiceId: string,
+  reason: string,
+) {
+  requirePermission(user, "invoice.void");
+  const db = getDb();
+  const [inv] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, invoiceId))
+    .limit(1);
+  if (!inv) throw new Error("Invoice not found.");
+  if (inv.status === "void") throw new Error("Invoice is voided.");
+  if (inv.status === "draft") throw new Error("Post the invoice before writing it off.");
+  if ((inv as { writtenOffAt?: Date | null }).writtenOffAt) {
+    throw new Error("Invoice is already written off.");
+  }
+  const balance = parseFloat(inv.balanceDue);
+  if (!(balance > 0.005)) throw new Error("Invoice has no open balance to write off.");
+
+  const badDebtAccountId = await resolveBadDebtAccountId();
+  const entityId =
+    inv.entityId ?? (await getPrimaryEntityForCustomer(inv.customerId));
+  const firmEntityId = inv.firmEntityId ?? (await getDefaultFirmEntityId());
+
+  const je = await createJournalEntry(user, {
+    entryDate: new Date().toISOString().slice(0, 10),
+    description: `Bad-debt write-off (${inv.invoiceNumber})`,
+    reference: inv.invoiceNumber,
+    source: "invoice",
+    status: "posted",
+    entityId,
+    firmEntityId,
+    fxRate: (inv as { fxRate?: string | null }).fxRate ?? null,
+    lines: [
+      { accountId: badDebtAccountId, description: "Bad debt expense", debit: balance, credit: 0 },
+      { accountId: AR_ACCOUNT_ID, description: "Write off AR", debit: 0, credit: balance },
+    ],
+  });
+
+  await db
+    .update(schema.invoices)
+    .set({
+      status: "written_off",
+      balanceDue: "0.00",
+      writtenOffAt: new Date(),
+      writtenOffBy: user.userId,
+      writeoffReason: reason || "(no reason given)",
+      writeoffJournalEntryId: je.id,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.invoices.id, invoiceId));
+
+  await logAuditEvent(user, {
+    action: "invoice.write_off",
+    resourceType: "invoice",
+    resourceId: invoiceId,
+    resourceName: inv.invoiceNumber,
+    changes: { before: { status: inv.status }, after: { status: "written_off" } },
+    metadata: { journalEntryId: je.id, reason },
+  });
+  return { invoiceId, journalEntryId: je.id, entryNumber: je.entryNumber };
+}
+
+// --------- Feature 3: retainers / funds on account ---------
+
+/**
+ * Record a client retainer / advance: an inbound payment (kind='retainer')
+ * that lands wholly in unapplied_amount. JE Dr cash / Cr client-funds
+ * liability.
+ */
+export async function recordRetainer(
+  user: SessionUser,
+  input: {
+    customerId: string;
+    amount: number;
+    paymentDate: string;
+    bankAccountId?: string | null;
+    reference?: string | null;
+    notes?: string | null;
+  },
+) {
+  requirePermission(user, "bank.create_transaction");
+  if (!(input.amount > 0)) throw new Error("Retainer amount must be > 0.");
+  const db = getDb();
+  const [cust] = await db
+    .select({ id: schema.customers.id, currencyCode: schema.customers.taxRate })
+    .from(schema.customers)
+    .where(eq(schema.customers.id, input.customerId))
+    .limit(1);
+  if (!cust) throw new Error("Customer not found.");
+
+  let cashAccountId = DEFAULT_CASH_ACCOUNT_ID;
+  if (input.bankAccountId) {
+    const [ba] = await db
+      .select({ accountId: schema.bankAccounts.accountId })
+      .from(schema.bankAccounts)
+      .where(eq(schema.bankAccounts.id, input.bankAccountId))
+      .limit(1);
+    if (ba?.accountId) cashAccountId = ba.accountId;
+  }
+  const clientFundsAccountId = await resolveClientFundsAccountId();
+  const entityId = await getPrimaryEntityForCustomer(input.customerId);
+  const { firmEntityId, currencyCode } = await getFirmIssuingCurrency();
+
+  const je = await createJournalEntry(user, {
+    entryDate: input.paymentDate,
+    description: `Client retainer received`,
+    reference: input.reference ?? null,
+    source: "invoice",
+    status: "posted",
+    entityId,
+    firmEntityId,
+    lines: [
+      { accountId: cashAccountId, description: "Retainer deposit", debit: input.amount, credit: 0 },
+      {
+        accountId: clientFundsAccountId,
+        description: "Client funds on account",
+        debit: 0,
+        credit: input.amount,
+      },
+    ],
+  });
+
+  const paymentId = uid("pmt");
+  const paymentNumber = await nextPaymentNumber();
+  await db.insert(schema.payments).values({
+    id: paymentId,
+    paymentNumber,
+    paymentDate: input.paymentDate,
+    amount: toDecimalString(input.amount),
+    paymentMethod: null,
+    reference: input.reference ?? null,
+    direction: "inbound",
+    customerId: input.customerId,
+    vendorId: null,
+    bankAccountId: input.bankAccountId ?? null,
+    journalEntryId: je.id,
+    unappliedAmount: toDecimalString(input.amount),
+    firmEntityId,
+    currencyCode,
+    kind: "retainer",
+    notes: input.notes ?? null,
+    createdAt: new Date(),
+  });
+
+  await logAuditEvent(user, {
+    action: "payment.retainer",
+    resourceType: "payment",
+    resourceId: paymentId,
+    resourceName: paymentNumber,
+    metadata: { customerId: input.customerId, amount: input.amount, journalEntryId: je.id },
+  });
+  return { paymentId, paymentNumber, journalEntryId: je.id, entryNumber: je.entryNumber };
+}
+
+/**
+ * Apply a client's funds on account to an open invoice via
+ * payment_allocations. JE Dr client-funds liability / Cr AR. Draws from the
+ * customer's payments with unapplied balance, oldest first.
+ */
+export async function applyFundsToInvoice(
+  user: SessionUser,
+  input: { invoiceId: string; amount: number; paymentDate?: string | null },
+) {
+  requirePermission(user, "bank.create_transaction");
+  const db = getDb();
+  const [inv] = await db
+    .select()
+    .from(schema.invoices)
+    .where(eq(schema.invoices.id, input.invoiceId))
+    .limit(1);
+  if (!inv) throw new Error("Invoice not found.");
+  if (inv.status === "draft") throw new Error("Post the invoice first.");
+  if (inv.status === "void" || inv.status === "paid") {
+    throw new Error(`Invoice is ${inv.status}.`);
+  }
+  const balanceDue = parseFloat(inv.balanceDue);
+  if (!(balanceDue > 0.005)) throw new Error("Invoice has no open balance.");
+
+  // Available funds across the client's payments (oldest first).
+  const fundsRows = await db
+    .select()
+    .from(schema.payments)
+    .where(eq(schema.payments.customerId, inv.customerId))
+    .orderBy(asc(schema.payments.paymentDate));
+  const withFunds = fundsRows.filter((p) => parseFloat(p.unappliedAmount) > 0.005);
+  const available = withFunds.reduce((s, p) => s + parseFloat(p.unappliedAmount), 0);
+  const amount = Math.min(input.amount, balanceDue, available);
+  if (!(amount > 0.005)) throw new Error("No funds on account available to apply.");
+
+  const clientFundsAccountId = await resolveClientFundsAccountId();
+  const entityId =
+    inv.entityId ?? (await getPrimaryEntityForCustomer(inv.customerId));
+  const firmEntityId = inv.firmEntityId ?? (await getDefaultFirmEntityId());
+
+  const je = await createJournalEntry(user, {
+    entryDate: input.paymentDate ?? new Date().toISOString().slice(0, 10),
+    description: `Funds on account applied (${inv.invoiceNumber})`,
+    reference: inv.invoiceNumber,
+    source: "invoice",
+    status: "posted",
+    entityId,
+    firmEntityId,
+    lines: [
+      {
+        accountId: clientFundsAccountId,
+        description: "Draw client funds",
+        debit: amount,
+        credit: 0,
+      },
+      { accountId: AR_ACCOUNT_ID, description: "Apply AR", debit: 0, credit: amount },
+    ],
+  });
+
+  await db.transaction(async (tx) => {
+    // Draw down the payments' unapplied balances oldest-first, writing an
+    // allocation row per payment touched.
+    let toDraw = amount;
+    for (const p of withFunds) {
+      if (toDraw <= 0.005) break;
+      const avail = parseFloat(p.unappliedAmount);
+      const take = Math.min(avail, toDraw);
+      await tx.insert(schema.paymentAllocations).values({
+        id: uid("pa"),
+        paymentId: p.id,
+        invoiceId: inv.id,
+        billId: null,
+        amount: toDecimalString(take),
+        createdAt: new Date(),
+      });
+      await tx
+        .update(schema.payments)
+        .set({ unappliedAmount: toDecimalString(avail - take) })
+        .where(eq(schema.payments.id, p.id));
+      toDraw -= take;
+    }
+    const newPaid = parseFloat(inv.amountPaid) + amount;
+    const newBalance = parseFloat(inv.total) - newPaid;
+    await tx
+      .update(schema.invoices)
+      .set({
+        amountPaid: toDecimalString(newPaid),
+        balanceDue: toDecimalString(Math.max(0, newBalance)),
+        status: newBalance < 0.005 ? "paid" : "partial",
+        updatedAt: new Date(),
+      })
+      .where(eq(schema.invoices.id, input.invoiceId));
+  });
+
+  await logAuditEvent(user, {
+    action: "invoice.apply_funds",
+    resourceType: "invoice",
+    resourceId: input.invoiceId,
+    resourceName: inv.invoiceNumber,
+    metadata: { amount, journalEntryId: je.id },
+  });
+  return { amount, journalEntryId: je.id, entryNumber: je.entryNumber };
+}
+
+// --------- Feature 4: deferred revenue recognition run ---------
+
+/** Month diff (whole months) between two yyyy-mm-dd first-of-month dates. */
+function monthsBetweenInclusive(startIso: string, endIso: string): number {
+  const [sy, sm] = startIso.split("-").map((n) => parseInt(n, 10));
+  const [ey, em] = endIso.split("-").map((n) => parseInt(n, 10));
+  return (ey - sy) * 12 + (em - sm) + 1;
+}
+
+function firstOfMonth(iso: string): string {
+  const [y, m] = iso.split("-");
+  return `${y}-${m}-01`;
+}
+
+function addMonthsFirst(iso: string, add: number): string {
+  const [y, m] = iso.split("-").map((n) => parseInt(n, 10));
+  let ny = y;
+  let nm = m + add;
+  while (nm > 12) {
+    nm -= 12;
+    ny += 1;
+  }
+  while (nm < 1) {
+    nm += 12;
+    ny -= 1;
+  }
+  return `${pad(ny, 4)}-${pad(nm, 2)}-01`;
+}
+
+/**
+ * Recognize deferred revenue through `throughDate` (yyyy-mm-dd). For each
+ * active schedule, posts straight-line monthly slices (total / months) for
+ * each whole month from startDate up to throughDate whose month-date sits in
+ * an OPEN accounting period. Dr deferred revenue / Cr revenue. Skips months
+ * already recognized; completes the schedule when fully recognized.
+ */
+export async function recognizeRevenue(
+  user: SessionUser,
+  throughDate: string,
+): Promise<{ postedMonths: number; totalRecognized: number; scheduleIds: string[] }> {
+  requirePermission(user, "close.task");
+  const db = getDb();
+  const schedules = await db
+    .select()
+    .from(schema.revenueRecognitionSchedules)
+    .where(eq(schema.revenueRecognitionSchedules.status, "active"));
+
+  const throughMonth = firstOfMonth(throughDate);
+  let postedMonths = 0;
+  let totalRecognized = 0;
+  const touched: string[] = [];
+
+  for (const sch of schedules) {
+    const months = Math.max(1, monthsBetweenInclusive(
+      firstOfMonth(sch.startDate),
+      firstOfMonth(sch.endDate),
+    ));
+    const total = parseFloat(sch.total);
+    const perMonth = Math.round((total / months) * 100) / 100;
+
+    // Existing recognized months for this schedule.
+    const existing = await db
+      .select({ periodDate: schema.revenueRecognitionEntries.periodDate })
+      .from(schema.revenueRecognitionEntries)
+      .where(eq(schema.revenueRecognitionEntries.scheduleId, sch.id));
+    const done = new Set(existing.map((e) => firstOfMonth(e.periodDate)));
+
+    let recognized = parseFloat(sch.recognizedAmount);
+    let scheduleTouched = false;
+
+    for (let k = 0; k < months; k++) {
+      const monthDate = addMonthsFirst(firstOfMonth(sch.startDate), k);
+      if (monthDate > throughMonth) break;
+      if (done.has(monthDate)) continue;
+
+      // Only recognize into an OPEN period (or a month with no period seeded
+      // yet). Closed/locked months are skipped until the period reopens.
+      const period = await getPeriodForDate(monthDate);
+      if (period && period.status !== "open") continue;
+
+      // Each month gets an equal straight-line slice; the FINAL month of the
+      // window carries the deterministic rounding remainder (total minus the
+      // per-month slices for all earlier months). This is independent of the
+      // order months are recognized in, so skipping a closed month earlier
+      // never causes a later month to grab its portion.
+      const isLast = k === months - 1;
+      let slice = isLast
+        ? Math.round((total - perMonth * (months - 1)) * 100) / 100
+        : perMonth;
+      // Never recognize past the schedule total (defensive).
+      const remaining = Math.round((total - recognized) * 100) / 100;
+      if (slice > remaining) slice = remaining;
+      if (slice <= 0.005) continue;
+
+      const je = await createJournalEntry(user, {
+        entryDate: monthDate,
+        description: `Revenue recognition — ${sch.id}`,
+        reference: sch.invoiceId,
+        source: "invoice",
+        status: "posted",
+        lines: [
+          {
+            accountId: sch.deferralAccountId,
+            description: "Recognize deferred revenue",
+            debit: slice,
+            credit: 0,
+          },
+          {
+            accountId: sch.revenueAccountId,
+            description: "Earned revenue",
+            debit: 0,
+            credit: slice,
+          },
+        ],
+      });
+      await db.insert(schema.revenueRecognitionEntries).values({
+        id: uid("rre"),
+        scheduleId: sch.id,
+        periodDate: monthDate,
+        amount: toDecimalString(slice),
+        journalEntryId: je.id,
+        createdAt: new Date(),
+      });
+      recognized = Math.round((recognized + slice) * 100) / 100;
+      postedMonths += 1;
+      totalRecognized += slice;
+      scheduleTouched = true;
+    }
+
+    if (scheduleTouched) {
+      touched.push(sch.id);
+      const complete = recognized >= total - 0.005;
+      await db
+        .update(schema.revenueRecognitionSchedules)
+        .set({
+          recognizedAmount: toDecimalString(recognized),
+          status: complete ? "complete" : "active",
+          updatedAt: new Date(),
+        })
+        .where(eq(schema.revenueRecognitionSchedules.id, sch.id));
+    }
+  }
+
+  await logAuditEvent(user, {
+    action: "revenue.recognize",
+    resourceType: "revenue_recognition",
+    resourceId: throughDate,
+    metadata: { postedMonths, totalRecognized, scheduleCount: touched.length },
+  });
+  return { postedMonths, totalRecognized, scheduleIds: touched };
+}
+
+// --------- Feature 6: collection activities ---------
+
+export async function logCollectionActivity(
+  user: SessionUser,
+  input: {
+    customerId: string;
+    kind: "note" | "call" | "email" | "promise" | "reminder";
+    activityDate?: string | null;
+    amount?: number | null;
+    promiseDate?: string | null;
+    status?: "open" | "kept" | "broken" | "done";
+    notes?: string | null;
+  },
+) {
+  requirePermission(user, "bank.create_transaction");
+  const db = getDb();
+  const id = uid("col");
+  await db.insert(schema.collectionActivities).values({
+    id,
+    customerId: input.customerId,
+    activityDate: input.activityDate ?? new Date().toISOString().slice(0, 10),
+    kind: input.kind,
+    amount: input.amount != null ? toDecimalString(input.amount) : null,
+    promiseDate: input.kind === "promise" ? input.promiseDate ?? null : (input.promiseDate ?? null),
+    status: input.status ?? "open",
+    ownerUserId: user.userId,
+    notes: input.notes ?? null,
+    createdAt: new Date(),
+  });
+  await logAuditEvent(user, {
+    action: "collection.log",
+    resourceType: "collection_activity",
+    resourceId: id,
+    metadata: { customerId: input.customerId, kind: input.kind },
+  });
+  return { id };
+}
+
+export async function updateCollectionActivityStatus(
+  user: SessionUser,
+  id: string,
+  status: "open" | "kept" | "broken" | "done",
+) {
+  requirePermission(user, "bank.create_transaction");
+  const db = getDb();
+  await db
+    .update(schema.collectionActivities)
+    .set({ status })
+    .where(eq(schema.collectionActivities.id, id));
+  await logAuditEvent(user, {
+    action: "collection.update",
+    resourceType: "collection_activity",
+    resourceId: id,
+    metadata: { status },
+  });
+}
+
+// --------- Feature 5: included-hours overage billing ---------
+
+/**
+ * Draft an invoice for the billable overage on an entity fee: billable
+ * overage hours = max(0, logged billable hours in the fee's coverage window
+ * − includedHours). Hours are valued at each entry's rateAtLog (falling back
+ * to a default rate). Links the covered UNBILLED time entries to the new
+ * invoice so hours aren't double-billed (respects time_entries.invoice_id).
+ */
+export async function invoiceOverageForFee(
+  user: SessionUser,
+  input: { entityFeeId: string; rate?: number | null; invoiceDate?: string | null },
+): Promise<{ id: string; invoiceNumber: string; overageHours: number; amount: number }> {
+  requirePermission(user, "invoice.create");
+  const db = getDb();
+  const [fee] = await db
+    .select()
+    .from(schema.entityFees)
+    .where(eq(schema.entityFees.id, input.entityFeeId))
+    .limit(1);
+  if (!fee) throw new Error("Entity fee not found.");
+  const [ent] = await db
+    .select()
+    .from(schema.entities)
+    .where(eq(schema.entities.id, fee.entityId))
+    .limit(1);
+  if (!ent) throw new Error("Entity not found.");
+  if (!ent.clientId) throw new Error("Entity has no client to invoice.");
+
+  // Coverage window: fee.startDate/endDate, else the whole billing year.
+  const winStart = fee.startDate ?? `${fee.billingYear}-01-01`;
+  const winEnd = fee.endDate ?? `${fee.billingYear}-12-31`;
+
+  // Unbilled billable time entries for this entity inside the window.
+  const entries = await db
+    .select()
+    .from(schema.timeEntries)
+    .where(
+      and(
+        eq(schema.timeEntries.entityId, fee.entityId),
+        eq(schema.timeEntries.isBillable, true),
+        isNull(schema.timeEntries.invoiceId),
+        gte(schema.timeEntries.entryDate, winStart),
+        lte(schema.timeEntries.entryDate, winEnd),
+      ),
+    )
+    .orderBy(asc(schema.timeEntries.entryDate));
+
+  const loggedHours = entries.reduce((s, e) => s + parseFloat(e.durationHours), 0);
+  const includedHours = parseFloat(fee.includedHours);
+  const overageHours = Math.max(0, Math.round((loggedHours - includedHours) * 100) / 100);
+  if (!(overageHours > 0.005)) {
+    throw new Error(
+      `No billable overage: ${loggedHours.toFixed(2)}h logged vs ${includedHours.toFixed(2)}h included.`,
+    );
+  }
+
+  // Value the overage hours. We bill the LAST `overageHours` of logged time
+  // (included hours are consumed first), pricing each entry at its rateAtLog
+  // (falling back to input.rate or a default). The whole set of covered
+  // entries is linked to the invoice so none can be double-billed.
+  const gte0 = (n: number) => (n > 0 ? n : 0);
+  const defaultRate = input.rate != null && input.rate > 0 ? input.rate : 250;
+  // Walk newest-consumed: allocate overage from the tail of the sorted list.
+  let remainingOverage = overageHours;
+  const lineByRate = new Map<number, number>(); // rate → hours billed
+  for (let i = entries.length - 1; i >= 0 && remainingOverage > 0.005; i--) {
+    const e = entries[i];
+    const h = parseFloat(e.durationHours);
+    const billHere = Math.min(h, remainingOverage);
+    const rate =
+      e.rateAtLog != null && parseFloat(e.rateAtLog) > 0
+        ? parseFloat(e.rateAtLog)
+        : defaultRate;
+    lineByRate.set(rate, gte0((lineByRate.get(rate) ?? 0) + billHere));
+    remainingOverage -= billHere;
+  }
+
+  const lines: DraftInvoiceLine[] = Array.from(lineByRate.entries())
+    .filter(([, hrs]) => hrs > 0.005)
+    .map(([rate, hrs]) => ({
+      description: `Excess hours over included — ${ent.code} (${fee.billingYear}) @ ${rate}/hr`,
+      quantity: Math.round(hrs * 100) / 100,
+      unitPrice: rate,
+      accountId: SERVICE_REVENUE_ACCOUNT_ID,
+    }));
+  if (lines.length === 0) throw new Error("No billable overage lines computed.");
+
+  const amount = lines.reduce((s, l) => s + l.quantity * l.unitPrice, 0);
+
+  const today = input.invoiceDate ?? new Date().toISOString().slice(0, 10);
+  const [cust] = await db
+    .select({ id: schema.customers.id, paymentTerms: schema.customers.paymentTerms })
+    .from(schema.customers)
+    .where(eq(schema.customers.id, ent.clientId))
+    .limit(1);
+  const due = new Date();
+  due.setDate(due.getDate() + (cust?.paymentTerms ?? 30));
+
+  const created = await createInvoice(user, {
+    customerId: ent.clientId,
+    invoiceDate: today,
+    dueDate: due.toISOString().slice(0, 10),
+    notes: `Excess-hours billing for ${ent.name} (${ent.code}) — ${overageHours.toFixed(2)}h over ${includedHours.toFixed(0)}h included.`,
+    lines,
+    timeEntryIds: entries.map((e) => e.id),
+  });
+
+  await logAuditEvent(user, {
+    action: "invoice.overage",
+    resourceType: "invoice",
+    resourceId: created.id,
+    resourceName: created.invoiceNumber,
+    metadata: { entityFeeId: fee.id, overageHours, amount },
+  });
+  return { ...created, overageHours, amount };
 }

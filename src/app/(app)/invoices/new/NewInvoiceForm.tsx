@@ -20,6 +20,7 @@ import type {
   Customer,
   Dimension,
   DimensionValue,
+  TaxCode,
 } from "@/lib/types";
 import { formatDate } from "@/lib/format";
 import { PeriodStatusBanner } from "@/components/PeriodStatusBanner";
@@ -65,6 +66,10 @@ type Line = {
   accountId: string;
   quantity: string;
   unitPrice: string;
+  taxCodeId: string;
+  deferRevenue: boolean;
+  deferralStart: string;
+  deferralEnd: string;
   dimensions: Record<string, string>;
 };
 
@@ -74,6 +79,10 @@ function blankLine(): Line {
     accountId: "",
     quantity: "1",
     unitPrice: "",
+    taxCodeId: "",
+    deferRevenue: false,
+    deferralStart: "",
+    deferralEnd: "",
     dimensions: {},
   };
 }
@@ -83,6 +92,8 @@ const INITIAL_STATE: CreateInvoiceState = { error: null };
 export function NewInvoiceForm({
   customers,
   revenueAccounts,
+  taxCodes,
+  kind = "invoice",
   today,
   dueDefault,
   dimensionsWithValues,
@@ -97,6 +108,9 @@ export function NewInvoiceForm({
 }: {
   customers: Customer[];
   revenueAccounts: Account[];
+  taxCodes: TaxCode[];
+  /** 'invoice' (default) | 'credit_memo'. */
+  kind?: "invoice" | "credit_memo";
   today: string;
   dueDefault: string;
   dimensionsWithValues: Array<{ dimension: Dimension; values: DimensionValue[] }>;
@@ -109,6 +123,18 @@ export function NewInvoiceForm({
   currencyCode: string;
   latestFxRates: Record<string, number>;
 }) {
+  const isCreditMemo = kind === "credit_memo";
+  const taxCodeOptions = useMemo<SmartSelectOption[]>(
+    () =>
+      taxCodes
+        .filter((c) => c.isActive)
+        .map((c) => ({
+          value: c.id,
+          label: `${c.code} — ${c.name}`,
+          search: c.code,
+        })),
+    [taxCodes],
+  );
   // FX: only show controls when the invoice currency differs from base.
   // Default the input to the latest rate (if any) so common case is a
   // single click submit. Stored as a string so the user can clear it.
@@ -231,6 +257,10 @@ export function NewInvoiceForm({
                 : li.total != null && li.quantity
                   ? (li.total / li.quantity).toFixed(2)
                   : "",
+            taxCodeId: "",
+            deferRevenue: false,
+            deferralStart: "",
+            deferralEnd: "",
             dimensions: {},
           })),
         );
@@ -296,11 +326,11 @@ export function NewInvoiceForm({
     const picks = pendingChargebacks.filter((r) => selectedBillIds.has(r.billId));
     if (picks.length === 0) return;
     const newLines: Line[] = picks.map((r) => ({
+      ...blankLine(),
       description: r.description,
       accountId: SERVICE_REVENUE_ACCOUNT_ID,
       quantity: "1",
       unitPrice: r.rebillAmount.toFixed(2),
-      dimensions: {},
     }));
     appendLines(newLines);
     setChargebackBillIds((prev) => [...prev, ...picks.map((p) => p.billId)]);
@@ -313,6 +343,7 @@ export function NewInvoiceForm({
     );
     if (picks.length === 0) return;
     const newLines: Line[] = picks.map((e) => ({
+      ...blankLine(),
       description: e.label,
       accountId: SERVICE_REVENUE_ACCOUNT_ID,
       quantity:
@@ -320,7 +351,6 @@ export function NewInvoiceForm({
           ? String(e.includedQuantity)
           : "1",
       unitPrice: e.unitPrice.toFixed(2),
-      dimensions: {},
     }));
     appendLines(newLines);
     setSelectedPriceEntryIds(new Set());
@@ -396,11 +426,11 @@ export function NewInvoiceForm({
       const range = start === end ? formatDate(start) : `${formatDate(start)}–${formatDate(end)}`;
       newLines = [
         {
+          ...blankLine(),
           description: `Professional services — ${range}`,
           accountId: defaultServiceRevenueAccountId,
           quantity: "1",
           unitPrice: total.toFixed(2),
-          dimensions: {},
         },
       ];
     } else if (timeAggregation === "per-staff") {
@@ -419,20 +449,20 @@ export function NewInvoiceForm({
         const rate = hours > 0 ? amount / hours : 0;
         const userName = rows[0]?.userName ?? "Staff";
         return {
+          ...blankLine(),
           description: `Professional services — ${userName} (${hours.toFixed(2)} hrs)`,
           accountId: defaultServiceRevenueAccountId,
           quantity: hours.toFixed(2),
           unitPrice: rate.toFixed(2),
-          dimensions: {},
         };
       });
     } else {
       newLines = picks.map((p) => ({
+        ...blankLine(),
         description: `${formatDate(p.entryDate)} — ${p.userName}: ${p.description}`,
         accountId: defaultServiceRevenueAccountId,
         quantity: p.hours.toFixed(2),
         unitPrice: p.rate.toFixed(2),
-        dimensions: {},
       }));
     }
     appendLines(newLines);
@@ -455,6 +485,7 @@ export function NewInvoiceForm({
         </div>
       )}
 
+      <input type="hidden" name="kind" value={kind} />
       <OcrUpload formType="invoice" onExtracted={applyOcr} />
       {showReview && <ReviewBanner onDismiss={() => setShowReview(false)} />}
       <input type="hidden" name="ocrText" value={ocrText} />
@@ -1010,6 +1041,81 @@ export function NewInvoiceForm({
                           ariaLabel={dimension.label}
                         />
                       ))}
+                      {taxCodeOptions.length > 0 && (
+                        <SmartSelect
+                          name={`lines[${i}][taxCodeId]`}
+                          value={line.taxCodeId}
+                          onChange={(v) => updateLine(i, { taxCodeId: v })}
+                          options={taxCodeOptions}
+                          emptyLabel="— No VAT/GST code —"
+                          clearable
+                          ariaLabel="Tax code"
+                        />
+                      )}
+                      {!isCreditMemo && (
+                        <label
+                          className="inline-flex items-center gap-1.5 text-[11.5px]"
+                          style={{ color: "var(--ink-3)" }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={line.deferRevenue}
+                            onChange={(e) =>
+                              updateLine(i, { deferRevenue: e.target.checked })
+                            }
+                          />
+                          Defer revenue
+                        </label>
+                      )}
+                      {line.deferRevenue && !isCreditMemo && (
+                        <div className="flex gap-1.5">
+                          <input
+                            type="date"
+                            aria-label="Deferral start"
+                            value={line.deferralStart}
+                            onChange={(e) =>
+                              updateLine(i, { deferralStart: e.target.value })
+                            }
+                            className="px-1.5 py-0.5 text-[11.5px] rounded"
+                            style={{
+                              background: "var(--paper)",
+                              border: "1px solid var(--line-2)",
+                              color: "var(--ink)",
+                            }}
+                          />
+                          <input
+                            type="date"
+                            aria-label="Deferral end"
+                            value={line.deferralEnd}
+                            onChange={(e) =>
+                              updateLine(i, { deferralEnd: e.target.value })
+                            }
+                            className="px-1.5 py-0.5 text-[11.5px] rounded"
+                            style={{
+                              background: "var(--paper)",
+                              border: "1px solid var(--line-2)",
+                              color: "var(--ink)",
+                            }}
+                          />
+                        </div>
+                      )}
+                      {/* Hidden inputs so the server action always sees defer
+                          state even when the date pickers aren't rendered. */}
+                      <input
+                        type="hidden"
+                        name={`lines[${i}][deferRevenue]`}
+                        value={line.deferRevenue ? "1" : ""}
+                      />
+                      <input
+                        type="hidden"
+                        name={`lines[${i}][deferralStart]`}
+                        value={line.deferRevenue ? line.deferralStart : ""}
+                      />
+                      <input
+                        type="hidden"
+                        name={`lines[${i}][deferralEnd]`}
+                        value={line.deferRevenue ? line.deferralEnd : ""}
+                      />
                     </div>
                   </TD>
                   <TD num>
@@ -1101,12 +1207,41 @@ export function NewInvoiceForm({
                 and Total === Subtotal. The math runs live so the user
                 sees the final invoice amount before submitting. */}
             {(() => {
-              const ratePct = parseFloat(taxRatePct);
-              const rate =
-                taxExempt || !Number.isFinite(ratePct) || ratePct <= 0
-                  ? 0
-                  : ratePct / 100;
-              const taxAmount = Math.round(subtotal * rate * 100) / 100;
+              // Per-line VAT/GST codes override the invoice-level rate. If any
+              // line has a tax code, header tax = sum of each line's computed
+              // tax; otherwise fall back to the legacy invoice-level rate.
+              const usesLineCodes = lines.some((l) => l.taxCodeId !== "");
+              let taxAmount: number;
+              if (usesLineCodes) {
+                taxAmount = lines.reduce((s, l) => {
+                  const amt = parseAmount(l.quantity) * parseAmount(l.unitPrice);
+                  const code = taxCodes.find((c) => c.id === l.taxCodeId);
+                  if (!code) return s;
+                  if (
+                    code.kind === "standard" ||
+                    code.kind === "reduced" ||
+                    code.kind === "zero_rated"
+                  ) {
+                    return s + Math.round(amt * (parseFloat(code.rate) || 0) * 100) / 100;
+                  }
+                  return s;
+                }, 0);
+              } else {
+                const ratePct = parseFloat(taxRatePct);
+                const rate =
+                  taxExempt || !Number.isFinite(ratePct) || ratePct <= 0
+                    ? 0
+                    : ratePct / 100;
+                taxAmount = Math.round(subtotal * rate * 100) / 100;
+              }
+              const legacyRatePct = parseFloat(taxRatePct);
+              const taxLabel = usesLineCodes
+                ? " (per-line codes)"
+                : taxExempt
+                  ? " (exempt)"
+                  : Number.isFinite(legacyRatePct) && legacyRatePct > 0
+                    ? ` (${legacyRatePct}%)`
+                    : "";
               const total = subtotal + taxAmount;
               // Live base-currency conversion for the FX case. fxRate
               // convention is `1 baseCode = fxRate currencyCode`, so the
@@ -1125,12 +1260,7 @@ export function NewInvoiceForm({
                     <TD>{""}</TD>
                     <TD>{""}</TD>
                     <TD style={{ color: "var(--ink-3)" }}>
-                      Tax
-                      {taxExempt
-                        ? " (exempt)"
-                        : ratePct > 0
-                          ? ` (${ratePct}%)`
-                          : ""}
+                      Tax{taxLabel}
                     </TD>
                     <TD>{""}</TD>
                     <TD>{""}</TD>

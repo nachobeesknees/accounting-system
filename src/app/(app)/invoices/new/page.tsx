@@ -7,6 +7,7 @@ import {
   getVendors,
   getPriceLists,
   getPriceListEntries,
+  getTaxCodes,
   getTimeEntries,
   getUsers,
   getBaseCurrency,
@@ -75,7 +76,13 @@ function methodLabel(t: string | null | undefined, markupPct?: string | null): s
   }
 }
 
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ kind?: string }>;
+}) {
+  const sp = await searchParams;
+  const kind = sp.kind === "credit_memo" ? "credit_memo" : "invoice";
   await ensureAccountingPeriods(new Date().getUTCFullYear());
   const [
     customers,
@@ -91,6 +98,7 @@ export default async function Page() {
     base,
     currencies,
     firmEntities,
+    taxCodes,
   ] = await Promise.all([
     getCustomers(),
     getAccounts(),
@@ -105,6 +113,7 @@ export default async function Page() {
     getBaseCurrency(),
     getCurrencies(),
     getFirmEntities(),
+    getTaxCodes(),
   ]);
   const baseCode = base?.code ?? "USD";
   // Resolve the currency this invoice will be issued in. Mirrors
@@ -220,10 +229,15 @@ export default async function Page() {
 
   return (
     <>
-      <PageHeader title="New invoice" meta="Invoices / New" />
+      <PageHeader
+        title={kind === "credit_memo" ? "New credit memo" : "New invoice"}
+        meta={kind === "credit_memo" ? "Invoices / New credit memo" : "Invoices / New"}
+      />
       <NewInvoiceForm
         customers={customers}
         revenueAccounts={revenueAccounts}
+        taxCodes={taxCodes}
+        kind={kind}
         today={todayISO()}
         dueDefault={plusDaysISO(30)}
         dimensionsWithValues={dimensionsWithValues}

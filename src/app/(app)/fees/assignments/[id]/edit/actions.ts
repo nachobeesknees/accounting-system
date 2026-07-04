@@ -80,6 +80,7 @@ export async function saveFeeAction(formData: FormData) {
   const billingDay = parseIntOrNull(String(formData.get("billingDay") ?? ""));
 
   const notes = emptyToNull(String(formData.get("notes") ?? ""));
+  const deferRevenue = formData.get("deferRevenue") === "on";
 
   try {
     await updateEntityFeeBilling(user, id, {
@@ -94,6 +95,7 @@ export async function saveFeeAction(formData: FormData) {
       ...(includedHours !== undefined ? { includedHours } : {}),
       status,
       notes,
+      deferRevenue,
     });
   } catch (err: unknown) {
     redirect(

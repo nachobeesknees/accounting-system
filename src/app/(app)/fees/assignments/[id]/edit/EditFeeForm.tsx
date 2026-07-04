@@ -244,6 +244,18 @@ export function EditFeeForm({
               name="notes"
               defaultValue={fee.notes ?? ""}
             />
+            <label
+              className="inline-flex items-center gap-2 text-[12.5px]"
+              style={{ color: "var(--ink-2)" }}
+            >
+              <input
+                type="checkbox"
+                name="deferRevenue"
+                defaultChecked={fee.deferRevenue === true}
+              />
+              Defer revenue — invoices generated from this fee spread revenue
+              straight-line over the coverage window.
+            </label>
           </div>
           <div className="flex justify-end gap-2 mt-3.5">
             <Link
